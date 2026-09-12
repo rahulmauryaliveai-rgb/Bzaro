@@ -1,0 +1,93 @@
+import { z } from "zod";
+import { checkSlug } from "@/lib/tenant/reserved";
+
+/**
+ * Authentication and registration schemas.
+ *
+ * These are shared between the client form and the server action, so the rules
+ * cannot drift apart. Server-side validation is authoritative; the client copy
+ * exists purely so the user sees the error before a round trip.
+ *
+ * Every string is length-capped. An unbounded string field is a cheap
+ * denial-of-service: a 10 MB "name" costs nothing to send and a great deal to
+ * validate, log and store.
+ */
+
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(254) // RFC 5321
+  .email("Enter a valid email address");
+
+/**
+ * Password policy: length over composition rules. NIST SP 800-63B guidance is
+ * that mandatory symbol/digit rules push users toward predictable patterns
+ * ("Password1!") without adding real entropy.
+ */
+export const passwordSchema = z.string().min(10, "Use at least 10 characters").max(200, "Too long");
+
+/** Login. Deliberately lenient — the authorize() callback is the real gate. */
+export const credentialsSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1).max(200),
+});
+
+/** E.164, which is what wa.me links and every SMS gateway expect. */
+export const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{7,14}$/, "Enter a phone number in international format, e.g. +919876543210");
+
+export const registerSchema = z
+  .object({
+    name: z.string().trim().min(2, "Enter your name").max(120),
+    email: emailSchema,
+    password: passwordSchema,
+    confirmPassword: z.string(),
+    acceptTerms: z.literal(true, { message: "You must accept the terms to continue" }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+/**
+ * Seller registration. The slug becomes the subdomain, so it is validated
+ * against the reserved list and DNS label rules here — before the database
+ * CHECK constraint has to catch it.
+ */
+export const sellerRegistrationSchema = z.object({
+  businessName: z.string().trim().min(2, "Enter your business name").max(200),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .superRefine((value, ctx) => {
+      const result = checkSlug(value);
+      if (!result.ok) {
+        ctx.addIssue({ code: "custom", message: result.message });
+      }
+    }),
+  phone: phoneSchema,
+  locationId: z.string().cuid().optional(),
+  categoryIds: z.array(z.string().cuid()).min(1, "Choose at least one category").max(5),
+});
+
+export const passwordResetRequestSchema = z.object({ email: emailSchema });
+
+export const passwordResetSchema = z
+  .object({
+    token: z.string().min(1).max(500),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+export type Credentials = z.infer<typeof credentialsSchema>;
+export type RegisterInput = z.infer<typeof registerSchema>;
+export type SellerRegistrationInput = z.infer<typeof sellerRegistrationSchema>;

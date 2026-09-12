@@ -1,0 +1,53 @@
+# Optional. `npm run db:start` uses Prisma 7's built-in local Postgres and
+# needs no Docker at all — prefer that unless you specifically want Redis or a
+# mail catcher locally.
+#
+#   docker compose up -d
+#
+# Then point DATABASE_URL and DIRECT_DATABASE_URL at localhost:5432.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: marketplace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: marketplace
+      POSTGRES_DB: marketplace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Rate limiting. Optional locally: src/lib/ratelimit.ts falls back to an
+  # in-memory limiter when Upstash credentials are absent. Production requires
+  # real Upstash — the fallback is per-process and protects nothing across
+  # serverless instances.
+  redis:
+    image: redis:7-alpine
+    container_name: marketplace-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  # Catches transactional mail so nothing is sent to real addresses in dev.
+  # Web UI on http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: marketplace-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  postgres-data:
+  redis-data:

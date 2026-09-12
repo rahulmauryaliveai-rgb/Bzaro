@@ -1,0 +1,870 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Seller Marketplace — data model
+//
+// Multi-tenancy: shared database, shared schema. The tenant is the `Seller`.
+// Every seller-owned model carries `sellerId`, and every index serving a
+// seller-scoped query leads with it. Slugs are unique WITHIN a tenant, not
+// globally — see @@unique([sellerId, slug]).
+//
+// Money is stored as integer minor units (paise/cents) plus a currency code.
+// Never Float. See src/lib/utils/money.ts.
+//
+// Postgres extensions (citext, pg_trgm, unaccent) and everything Prisma cannot
+// express — generated tsvector columns, CHECK constraints, partial indexes,
+// table partitioning — live in prisma/migrations/*/migration.sql.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ══════════════════════════════ ENUMS ════════════════════════════════════════
+
+enum UserRole {
+  BUYER
+  SELLER_OWNER
+  SELLER_STAFF
+  SUPPORT
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SellerStatus {
+  DRAFT
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+  SUSPENDED
+  BANNED
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
+}
+
+enum LocationType {
+  COUNTRY
+  STATE
+  CITY
+  LOCALITY
+}
+
+enum EnquiryStatus {
+  NEW
+  VIEWED
+  RESPONDED
+  CONVERTED
+  CLOSED
+  SPAM
+}
+
+enum EnquirySource {
+  MARKETPLACE_PRODUCT
+  MARKETPLACE_SELLER
+  MICROSITE_CONTACT
+  MICROSITE_PRODUCT
+  WHATSAPP_CLICK
+  PHONE_REVEAL
+}
+
+enum SubStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum BillingInterval {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum MediaProvider {
+  CLOUDINARY
+  S3
+}
+
+enum DomainStatus {
+  NONE
+  PENDING_DNS
+  VERIFYING
+  ACTIVE
+  FAILED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocumentType {
+  GSTIN
+  PAN
+  BUSINESS_REG
+  ADDRESS_PROOF
+  OTHER
+}
+
+// ═══════════════════════ IDENTITY & ACCESS ═══════════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique @db.Citext
+  emailVerified DateTime?
+  passwordHash  String?
+  name          String?
+  phone         String?   @unique
+  phoneVerified DateTime?
+  image         String?
+  role          UserRole  @default(BUYER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  failedLogins  Int       @default(0)
+  lockedUntil   DateTime?
+  /// Immediate session revocation. Auth.js cannot combine the Credentials
+  /// provider with database sessions, so sessions are JWT-backed; any token
+  /// issued before this timestamp is rejected. Set on suspend, ban, role
+  /// change, password reset, and "sign out everywhere".
+  /// See docs/SECURITY.md §Sessions.
+  sessionsInvalidAfter DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships SellerMember[]
+  reviews     Review[]
+  auditLogs   AuditLog[]
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// Join table between User and Seller. Exists from day one so seller staff
+/// accounts arrive later as a feature, not a migration.
+model SellerMember {
+  id        String   @id @default(cuid())
+  userId    String
+  sellerId  String
+  role      UserRole @default(SELLER_OWNER)
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sellerId])
+  @@index([sellerId])
+}
+
+// ══════════════════════════════ TENANT ═══════════════════════════════════════
+
+model Seller {
+  id           String       @id @default(cuid())
+  /// Doubles as the subdomain label. Validated against the reserved list in
+  /// src/lib/tenant/reserved.ts. Must never contain a dot — wildcard TLS
+  /// certificates cover exactly one label.
+  slug         String       @unique @db.Citext
+  businessName String
+  legalName    String?
+  tagline      String?
+  description  String?      @db.Text
+  status       SellerStatus @default(DRAFT)
+
+  // Branding
+  logoUrl       String?
+  coverImageUrl String?
+
+  // Contact — phone numbers stored E.164 (+919876543210)
+  email      String? @db.Citext
+  phone      String?
+  whatsapp   String?
+  websiteUrl String?
+
+  // Address
+  addressLine1 String?
+  addressLine2 String?
+  postalCode   String?
+  locationId   String?
+  latitude     Float?
+  longitude    Float?
+
+  // Business metadata
+  establishedYear Int?
+  employeeCount   String?
+  gstin           String? @unique
+  pan             String?
+  /// { mon: [{ open: "09:00", close: "18:00" }], ... } — validated by Zod.
+  businessHours   Json?
+  timezone        String  @default("Asia/Kolkata")
+  locale          String  @default("en")
+  /// { facebook, instagram, linkedin, youtube, x } — validated by Zod.
+  socialLinks     Json?
+
+  // Denormalised counters. Maintained in the service layer inside the same
+  // transaction as the write; reconciled nightly by refresh-counters.
+  productCount Int   @default(0)
+  serviceCount Int   @default(0)
+  ratingAvg    Float @default(0)
+  ratingCount  Int   @default(0)
+  /// 0-100 profile completeness. Drives the indexability gate (decision D2).
+  profileScore Int   @default(0)
+
+  verifiedAt   DateTime?
+  verifiedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  location      Location?           @relation(fields: [locationId], references: [id])
+  members       SellerMember[]
+  website       SellerWebsite?
+  categories    SellerCategory[]
+  products      Product[]
+  services      Service[]
+  gallery       GalleryItem[]
+  enquiries     Enquiry[]
+  reviews       Review[]
+  subscriptions Subscription[]
+  documents     SellerDocument[]
+  slugHistory   SellerSlugHistory[]
+  events        AnalyticsEvent[]
+  analytics     AnalyticsDaily[]
+  payments      Payment[]
+
+  @@index([status, deletedAt])
+  @@index([locationId, status])
+  @@index([createdAt])
+  @@index([ratingAvg(sort: Desc)])
+}
+
+/// Permanent 301 targets for renamed slugs. Never deleted — link equity depends
+/// on old subdomains redirecting forever.
+model SellerSlugHistory {
+  id        String   @id @default(cuid())
+  sellerId  String
+  slug      String   @unique @db.Citext
+  createdAt DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+}
+
+/// KYC documents. PRIVATE bucket only — never public, never CDN-served.
+/// Access is admin-only and audit-logged. See docs/SECURITY.md.
+model SellerDocument {
+  id           String           @id @default(cuid())
+  sellerId     String
+  type         DocumentType
+  storageKey   String
+  status       ModerationStatus @default(PENDING)
+  reviewNote   String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime         @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, type])
+  @@index([status])
+}
+
+// ══════════════════════ WEBSITE / TEMPLATE ═══════════════════════════════════
+
+/// Templates are code-registered (decision D7): `key` maps to a React component
+/// in src/components/site/templates/registry.ts. No user-authored markup.
+model WebsiteTemplate {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  name          String
+  description   String?
+  previewImage  String?
+  isPremium     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  /// Default themeTokens for this template, validated by Zod on read.
+  defaultTokens Json
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  websites SellerWebsite[]
+}
+
+model SellerWebsite {
+  id         String @id @default(cuid())
+  sellerId   String @unique
+  templateId String
+
+  /// Zod-validated design tokens, emitted as CSS custom properties on <html>.
+  /// Never interpolated into an unsanitised <style> block.
+  themeTokens Json
+  /// Per-section enable / order / config.
+  sections    Json?
+
+  // SEO overrides — fall back to computed defaults when null.
+  metaTitle       String?
+  metaDescription String?
+  ogImageUrl      String?
+  gaMeasurementId String?
+
+  /// Derived and persisted (decision D2) so robots.ts and generateMetadata
+  /// never compute the gate at request time. Recomputed on every seller /
+  /// product write and swept nightly by recompute-indexability.
+  indexable        Boolean @default(false)
+  indexBlockReason String?
+
+  // Custom domains (decision D3) — resolver is built for these from day one,
+  // provisioning ships in Phase 10.
+  customDomain           String?      @unique @db.Citext
+  customDomainStatus     DomainStatus @default(NONE)
+  customDomainVerifiedAt DateTime?
+  domainVerifyToken      String?
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  seller   Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  template WebsiteTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([indexable])
+  @@index([customDomainStatus])
+}
+
+// ═══════════════════ TAXONOMY & GEOGRAPHY ════════════════════════════════════
+
+/// Adjacency list + materialised path + ancestorIds array. The GIN index on
+/// ancestorIds turns "everything in this subtree" into one indexed lookup
+/// instead of a recursive CTE.
+model Category {
+  id          String   @id @default(cuid())
+  parentId    String?
+  slug        String   @db.Citext
+  name        String
+  description String?  @db.Text
+  iconUrl     String?
+  imageUrl    String?
+  /// "/electronics/lighting/led-bulbs"
+  path        String   @unique
+  depth       Int      @default(0)
+  ancestorIds String[]
+
+  productCount Int     @default(0)
+  sellerCount  Int     @default(0)
+  isActive     Boolean @default(true)
+  sortOrder    Int     @default(0)
+
+  metaTitle       String?
+  metaDescription String?
+  createdAt       DateTime @default(now())
+
+  parent   Category?        @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[]       @relation("CategoryTree")
+  products Product[]
+  services Service[]
+  sellers  SellerCategory[]
+
+  @@unique([parentId, slug])
+  @@index([parentId, isActive, sortOrder])
+  @@index([ancestorIds], type: Gin)
+  @@index([depth])
+}
+
+model SellerCategory {
+  sellerId   String
+  categoryId String
+  isPrimary  Boolean @default(false)
+
+  seller   Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([sellerId, categoryId])
+  @@index([categoryId])
+}
+
+model Location {
+  id          String       @id @default(cuid())
+  parentId    String?
+  type        LocationType
+  slug        String       @db.Citext
+  name        String
+  /// "/in/maharashtra/mumbai"
+  path        String       @unique
+  ancestorIds String[]
+  latitude    Float?
+  longitude   Float?
+  sellerCount Int          @default(0)
+  isActive    Boolean      @default(true)
+
+  metaTitle       String?
+  metaDescription String?
+
+  parent   Location?  @relation("LocationTree", fields: [parentId], references: [id])
+  children Location[] @relation("LocationTree")
+  sellers  Seller[]
+
+  @@unique([parentId, slug])
+  @@index([type, isActive])
+  @@index([ancestorIds], type: Gin)
+}
+
+// ════════════════════════════ CATALOGUE ══════════════════════════════════════
+
+model Product {
+  id         String  @id @default(cuid())
+  /// Tenant key. Every query from the dashboard is scoped by this via the
+  /// Prisma client extension in src/lib/db-tenant.ts.
+  sellerId   String
+  categoryId String?
+  slug       String  @db.Citext
+
+  name             String
+  shortDescription String?
+  description      String? @db.Text
+  brand            String?
+  sku              String?
+  modelNumber      String?
+
+  // Pricing — integer minor units. Null means "ask for price".
+  priceMinor     Int?
+  priceMaxMinor  Int?
+  currency       String  @default("INR")
+  unit           String?
+  minOrderQty    Int?
+  priceOnRequest Boolean @default(true)
+
+  /// [{ key, value }] — validated by Zod, length-capped.
+  specifications Json?
+  tags           String[]
+
+  status           PublishStatus    @default(DRAFT)
+  moderationStatus ModerationStatus @default(PENDING)
+  isFeatured       Boolean          @default(false)
+  viewCount        Int              @default(0)
+  enquiryCount     Int              @default(0)
+
+  metaTitle       String?
+  metaDescription String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  seller    Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category  Category?      @relation(fields: [categoryId], references: [id])
+  images    ProductImage[]
+  enquiries Enquiry[]
+
+  // Slug is unique per tenant, not globally — two sellers may both have
+  // /products/led-panel-40w on their own subdomains.
+  @@unique([sellerId, slug])
+  @@index([sellerId, status, deletedAt])
+  @@index([categoryId, status, createdAt(sort: Desc)])
+  @@index([status, isFeatured, createdAt(sort: Desc)])
+  @@index([tags], type: Gin)
+  // search_vector tsvector column + GIN index: see migration SQL.
+}
+
+model ProductImage {
+  id        String @id @default(cuid())
+  productId String
+  /// Denormalised from Product so upload-signing and tenant checks never need
+  /// a join.
+  sellerId  String
+
+  provider    MediaProvider @default(CLOUDINARY)
+  publicId    String
+  url         String
+  width       Int?
+  height      Int?
+  bytes       Int?
+  mimeType    String?
+  blurDataUrl String?
+  alt         String?
+  sortOrder   Int           @default(0)
+
+  moderationStatus ModerationStatus @default(PENDING)
+  createdAt        DateTime         @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@index([sellerId])
+}
+
+model Service {
+  id         String  @id @default(cuid())
+  sellerId   String
+  categoryId String?
+  slug       String  @db.Citext
+
+  name             String
+  shortDescription String?
+  description      String? @db.Text
+
+  priceMinor     Int?
+  currency       String  @default("INR")
+  /// "hourly" | "fixed" | "quote"
+  pricingModel   String?
+  priceOnRequest Boolean @default(true)
+
+  serviceAreas String[]
+  deliverables Json?
+  imageUrl     String?
+  tags         String[]
+
+  status           PublishStatus    @default(DRAFT)
+  moderationStatus ModerationStatus @default(PENDING)
+  isFeatured       Boolean          @default(false)
+  viewCount        Int              @default(0)
+  enquiryCount     Int              @default(0)
+
+  metaTitle       String?
+  metaDescription String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  seller    Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id])
+  enquiries Enquiry[]
+
+  @@unique([sellerId, slug])
+  @@index([sellerId, status, deletedAt])
+  @@index([categoryId, status])
+}
+
+model GalleryItem {
+  id       String @id @default(cuid())
+  sellerId String
+
+  provider    MediaProvider @default(CLOUDINARY)
+  publicId    String
+  url         String
+  width       Int?
+  height      Int?
+  blurDataUrl String?
+  title       String?
+  caption     String?
+  alt         String?
+  sortOrder   Int           @default(0)
+
+  moderationStatus ModerationStatus @default(PENDING)
+  createdAt        DateTime         @default(now())
+  deletedAt        DateTime?
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, sortOrder])
+}
+
+// ══════════════════════════ DEMAND SIDE ══════════════════════════════════════
+
+model Enquiry {
+  id          String  @id @default(cuid())
+  sellerId    String
+  productId   String?
+  serviceId   String?
+  /// Null for anonymous enquiries, which is the common case.
+  buyerUserId String?
+
+  name     String
+  email    String? @db.Citext
+  phone    String?
+  company  String?
+  message  String  @db.Text
+  quantity Int?
+
+  source    EnquirySource
+  status    EnquiryStatus @default(NEW)
+  isSpam    Boolean       @default(false)
+  spamScore Float?
+
+  /// Metered-leads groundwork (decision D5). Unused in v1 — present so the
+  /// switch to paid lead unlocks is a feature flag, not a migration.
+  unlockedAt DateTime?
+
+  // Attribution. ipHash is salted+hashed at write time — raw IPs are never
+  // stored. Not exposed to the seller UI.
+  ipHash      String?
+  userAgent   String?
+  referrer    String?
+  landingPath String?
+
+  respondedAt DateTime?
+  sellerNote  String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  seller  Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([sellerId, status, createdAt(sort: Desc)])
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([productId])
+  @@index([createdAt])
+}
+
+model Review {
+  id       String @id @default(cuid())
+  sellerId String
+  userId   String
+
+  /// 1-5. Bounds enforced by a CHECK constraint in the migration SQL.
+  rating      Int
+  title       String?
+  body        String?      @db.Text
+  status      ReviewStatus @default(PENDING)
+  sellerReply String?      @db.Text
+  repliedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, userId])
+  @@index([sellerId, status, createdAt(sort: Desc)])
+}
+
+// ═══════════════════════════ MONETISATION ════════════════════════════════════
+
+model Plan {
+  id          String          @id @default(cuid())
+  key         String          @unique
+  name        String
+  description String?
+  priceMinor  Int             @default(0)
+  currency    String          @default("INR")
+  interval    BillingInterval @default(MONTHLY)
+  trialDays   Int             @default(0)
+
+  // Quotas — enforced by PlanGuard before every create.
+  maxProducts     Int  @default(10)
+  maxServices     Int  @default(5)
+  maxGalleryItems Int  @default(10)
+  maxCategories   Int  @default(3)
+  /// Null = unlimited. Dormant in v1 under decision D5(a).
+  leadCreditsPerMonth Int?
+
+  // Feature flags
+  allowCustomDomain     Boolean @default(false)
+  allowPremiumTemplates Boolean @default(false)
+  removeBranding        Boolean @default(false)
+  prioritySupport       Boolean @default(false)
+  searchBoost           Int     @default(0)
+  features              Json?
+
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id       String    @id @default(cuid())
+  sellerId String
+  planId   String
+  status   SubStatus @default(TRIALING)
+
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean   @default(false)
+  canceledAt         DateTime?
+  trialEndsAt        DateTime?
+  gracePeriodEndsAt  DateTime?
+
+  leadCreditsUsed Int @default(0)
+
+  gatewayCustomerId     String?
+  gatewaySubscriptionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller   Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  plan     Plan      @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  @@index([sellerId, status])
+  @@index([status, currentPeriodEnd])
+}
+
+model Payment {
+  id             String @id @default(cuid())
+  subscriptionId String
+  sellerId       String
+
+  amountMinor      Int
+  currency         String    @default("INR")
+  status           String
+  gatewayPaymentId String?   @unique
+  invoiceNumber    String?   @unique
+  invoiceUrl       String?
+  paidAt           DateTime?
+  createdAt        DateTime  @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  seller       Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, createdAt(sort: Desc)])
+}
+
+/// Webhook idempotency. Payment gateways retry aggressively; the unique
+/// constraint on (provider, eventId) makes replays provable no-ops.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String
+  type        String
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, eventId])
+  @@index([processedAt])
+}
+
+// ═══════════════════════ ANALYTICS & AUDIT ═══════════════════════════════════
+
+/// Append-only. PARTITIONED BY RANGE (createdAt) — see migration SQL.
+/// Raw rows are pruned at 90 days; AnalyticsDaily is the permanent record.
+model AnalyticsEvent {
+  /// Composite primary key: Postgres requires the partition key to be part of
+  /// every unique constraint on a partitioned table. `id` alone is still
+  /// effectively unique (cuid), but `createdAt` must ride along.
+  id         String  @default(cuid())
+  sellerId   String
+  /// page_view | product_view | whatsapp_click | phone_reveal | enquiry_submit
+  type       String
+  entityType String?
+  entityId   String?
+  path       String?
+  referrer   String?
+  country    String?
+  city       String?
+  deviceType String?
+  sessionId  String?
+  ipHash     String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@id([id, createdAt])
+  @@index([sellerId, type, createdAt])
+  @@index([createdAt])
+}
+
+model AnalyticsDaily {
+  id       String   @id @default(cuid())
+  sellerId String
+  date     DateTime @db.Date
+
+  pageViews      Int @default(0)
+  uniqueVisitors Int @default(0)
+  productViews   Int @default(0)
+  enquiries      Int @default(0)
+  whatsappClicks Int @default(0)
+  phoneReveals   Int @default(0)
+
+  /// Top pages, referrers, cities.
+  breakdown Json?
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, date])
+  @@index([date])
+}
+
+model AuditLog {
+  id        String    @id @default(cuid())
+  actorId   String?
+  actorRole UserRole?
+  sellerId  String?
+  /// "seller.verify", "product.delete", "enquiry.export"
+  action    String
+
+  entityType String?
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+}
+
+/// Runtime-tunable platform configuration (indexability thresholds, feature
+/// flags, rate-limit overrides). Read through src/lib/settings.ts.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
