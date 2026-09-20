@@ -96,6 +96,17 @@ enum BillingInterval {
   YEARLY
 }
 
+/// What a plan buys on the web (decision D32). Ordered: each tier includes
+/// the ones before it.
+///   CATALOGUE      marketplace listing + catalogue page on the apex only
+///   SUBDOMAIN      + a website at {slug}.bzaro.in
+///   CUSTOM_DOMAIN  + that website on the seller's own domain (D3, Phase 10)
+enum WebPresence {
+  CATALOGUE
+  SUBDOMAIN
+  CUSTOM_DOMAIN
+}
+
 enum MediaProvider {
   CLOUDINARY
   S3
@@ -123,37 +134,144 @@ enum DocumentType {
   OTHER
 }
 
+// ── Discovery & leads ────────────────────────────────────────────────────────
+// State machines and masking rules are documented in docs/LEADS.md.
+
+enum BusinessType {
+  MANUFACTURER
+  WHOLESALER
+  DISTRIBUTOR
+  TRADER
+  RETAILER
+  SERVICE_PROVIDER
+  EXPORTER
+}
+
+enum OnboardingStep {
+  ACCOUNT
+  BUSINESS
+  TRUST
+  /// Pick a website template (D33). Sits between TRUST and CATALOG.
+  THEME
+  CATALOG
+  COMPLETE
+}
+
+enum OtpPurpose {
+  /// Buyer contact-intent popup (WhatsApp / Get Best Price).
+  BUYER_CONTACT
+  /// Seller onboarding step 1, mobile verification.
+  SELLER_SIGNUP
+}
+
+enum RequirementTimeline {
+  IMMEDIATE
+  WITHIN_WEEK
+  WITHIN_MONTH
+  EXPLORING
+}
+
+enum RequirementPurpose {
+  RESALE
+  BUSINESS_USE
+  PERSONAL_USE
+}
+
+/// Async fan-out state. The request that creates a Requirement only ever
+/// writes PENDING; the worker owns every other transition.
+enum FanoutStatus {
+  PENDING
+  RUNNING
+  DONE
+  /// 7-day duplicate rule, or no eligible sellers.
+  SKIPPED
+  FAILED
+}
+
+enum LeadType {
+  DIRECT
+  MARKET
+}
+
+enum LeadStatus {
+  NEW
+  VIEWED
+  ACCEPTED
+  CLOSED
+  EXPIRED
+}
+
+enum LeadChannel {
+  PANEL
+  WHATSAPP
+  EMAIL
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum CreditReason {
+  MONTHLY_GRANT
+  LEAD_ACCEPT
+  FLAG_REFUND
+  ADMIN_ADJUST
+}
+
+enum LeadFlagReason {
+  UNREACHABLE
+  WRONG_CATEGORY
+  WRONG_CITY
+  DUPLICATE
+  SPAM
+  OTHER
+}
+
+enum LeadFlagStatus {
+  OPEN
+  REFUNDED
+  REJECTED
+}
+
 // ═══════════════════════ IDENTITY & ACCESS ═══════════════════════════════════
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique @db.Citext
-  emailVerified DateTime?
-  passwordHash  String?
-  name          String?
-  phone         String?   @unique
-  phoneVerified DateTime?
-  image         String?
-  role          UserRole  @default(BUYER)
-  isActive      Boolean   @default(true)
-  lastLoginAt   DateTime?
-  failedLogins  Int       @default(0)
-  lockedUntil   DateTime?
+  id                   String    @id @default(cuid())
+  email                String    @unique @db.Citext
+  emailVerified        DateTime?
+  passwordHash         String?
+  name                 String?
+  phone                String?   @unique
+  phoneVerified        DateTime?
+  /// Collected at seller sign-up step 1 (docs/LEADS.md onboarding); copied to
+  /// Seller.whatsapp when the business is created.
+  whatsapp             String?
+  image                String?
+  role                 UserRole  @default(BUYER)
+  isActive             Boolean   @default(true)
+  lastLoginAt          DateTime?
+  failedLogins         Int       @default(0)
+  lockedUntil          DateTime?
   /// Immediate session revocation. Auth.js cannot combine the Credentials
   /// provider with database sessions, so sessions are JWT-backed; any token
   /// issued before this timestamp is rejected. Set on suspend, ban, role
   /// change, password reset, and "sign out everywhere".
   /// See docs/SECURITY.md §Sessions.
   sessionsInvalidAfter DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
 
   accounts    Account[]
   sessions    Session[]
   memberships SellerMember[]
   reviews     Review[]
   auditLogs   AuditLog[]
+  /// Set only if a phone-first Buyer later creates a full account.
+  buyer       Buyer?
 
   @@index([role])
   @@index([createdAt])
@@ -267,6 +385,32 @@ model Seller {
   /// 0-100 profile completeness. Drives the indexability gate (decision D2).
   profileScore Int   @default(0)
 
+  // Onboarding (multi-step, see src/lib/onboarding). Step 2 = business,
+  // step 3 = trust. employeeCount / establishedYear / gstin / logoUrl above
+  // already belong to those steps; photos reuse GalleryItem.
+  businessType    BusinessType?
+  onboardingStep  OnboardingStep @default(ACCOUNT)
+  /// Bucket label from a fixed list, e.g. "1-5 Cr". Never a number.
+  annualTurnover  String?
+  /// From a fixed list: ["ISO 9001", "MSME", ...]. Validated by Zod.
+  certifications  String[]
+  gstinVerifiedAt DateTime?
+
+  // Lead-matching signals. Denormalised, maintained in the same transaction as
+  // the lead write; reconciled nightly by refresh-lead-stats.
+  /// 0..1. Null = "no history yet" → the matcher substitutes a neutral
+  /// default. Never 0 for a new seller, which would bury them permanently.
+  responseRate  Float?
+  leadsReceived Int    @default(0)
+  leadsAccepted Int    @default(0)
+  /// Cache of SUM(CreditLedger.delta). The ledger is the source of truth.
+  creditBalance Int    @default(0)
+
+  /// Denormalised from the active subscription's plan (D32), recomputed by
+  /// `recomputeWebPresence` on every subscription write and swept nightly.
+  /// Read on every microsite request, so it must not be a join.
+  webPresence WebPresence @default(CATALOGUE)
+
   verifiedAt   DateTime?
   verifiedById String?
   createdAt    DateTime  @default(now())
@@ -277,10 +421,14 @@ model Seller {
   members       SellerMember[]
   website       SellerWebsite?
   categories    SellerCategory[]
+  serviceAreas  SellerServiceArea[]
   products      Product[]
   services      Service[]
   gallery       GalleryItem[]
   enquiries     Enquiry[]
+  leads         Lead[]
+  creditLedger  CreditLedger[]
+  leadFlags     LeadFlag[]
   reviews       Review[]
   subscriptions Subscription[]
   documents     SellerDocument[]
@@ -288,11 +436,15 @@ model Seller {
   events        AnalyticsEvent[]
   analytics     AnalyticsDaily[]
   payments      Payment[]
+  // searchVector tsvector column + GIN index: see migration SQL.
 
   @@index([status, deletedAt])
   @@index([locationId, status])
   @@index([createdAt])
   @@index([ratingAvg(sort: Desc)])
+  // Matcher's tie-break inside a category bucket.
+  @@index([status, responseRate(sort: Desc)])
+  @@index([webPresence])
 }
 
 /// Permanent 301 targets for renamed slugs. Never deleted — link equity depends
@@ -415,11 +567,13 @@ model Category {
   metaDescription String?
   createdAt       DateTime @default(now())
 
-  parent   Category?        @relation("CategoryTree", fields: [parentId], references: [id])
-  children Category[]       @relation("CategoryTree")
-  products Product[]
-  services Service[]
-  sellers  SellerCategory[]
+  parent       Category?        @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]       @relation("CategoryTree")
+  products     Product[]
+  services     Service[]
+  sellers      SellerCategory[]
+  requirements Requirement[]
+  // name trigram index: see migration SQL.
 
   @@unique([parentId, slug])
   @@index([parentId, isActive, sortOrder])
@@ -427,16 +581,33 @@ model Category {
   @@index([depth])
 }
 
+/// One primary + up to four secondary categories per seller (Zod-enforced).
 model SellerCategory {
   sellerId   String
   categoryId String
-  isPrimary  Boolean @default(false)
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
   seller   Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@id([sellerId, categoryId])
-  @@index([categoryId])
+  // Matcher prefers sellers whose PRIMARY category matches.
+  @@index([categoryId, isPrimary])
+}
+
+/// Cities a seller serves beyond its own ("cities served" at onboarding).
+model SellerServiceArea {
+  sellerId   String
+  locationId String
+  createdAt  DateTime @default(now())
+
+  seller   Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([sellerId, locationId])
+  // Matcher: "who serves this city?"
+  @@index([locationId])
 }
 
 model Location {
@@ -452,17 +623,24 @@ model Location {
   longitude   Float?
   sellerCount Int          @default(0)
   isActive    Boolean      @default(true)
+  /// Metro cluster for the lead matcher's city tier — "ncr" on Delhi,
+  /// Gurugram, Noida, Faridabad, Ghaziabad. Null outside any cluster.
+  clusterKey  String?
 
   metaTitle       String?
   metaDescription String?
 
-  parent   Location?  @relation("LocationTree", fields: [parentId], references: [id])
-  children Location[] @relation("LocationTree")
-  sellers  Seller[]
+  parent       Location?           @relation("LocationTree", fields: [parentId], references: [id])
+  children     Location[]          @relation("LocationTree")
+  sellers      Seller[]
+  serviceAreas SellerServiceArea[]
+  buyers       Buyer[]
+  requirements Requirement[]
 
   @@unique([parentId, slug])
   @@index([type, isActive])
   @@index([ancestorIds], type: Gin)
+  @@index([clusterKey])
 }
 
 // ════════════════════════════ CATALOGUE ══════════════════════════════════════
@@ -507,10 +685,12 @@ model Product {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  seller    Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  category  Category?      @relation(fields: [categoryId], references: [id])
-  images    ProductImage[]
-  enquiries Enquiry[]
+  seller       Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category     Category?      @relation(fields: [categoryId], references: [id])
+  images       ProductImage[]
+  enquiries    Enquiry[]
+  requirements Requirement[]
+  // search_vector tsvector column + GIN index: see migration SQL.
 
   // Slug is unique per tenant, not globally — two sellers may both have
   // /products/led-panel-40w on their own subdomains.
@@ -519,7 +699,6 @@ model Product {
   @@index([categoryId, status, createdAt(sort: Desc)])
   @@index([status, isFeatured, createdAt(sort: Desc)])
   @@index([tags], type: Gin)
-  // search_vector tsvector column + GIN index: see migration SQL.
 }
 
 model ProductImage {
@@ -686,6 +865,238 @@ model Review {
   @@index([sellerId, status, createdAt(sort: Desc)])
 }
 
+// ═══════════════════════ BUYERS & LEADS ══════════════════════════════════════
+//
+// A buyer proves a phone number (OtpChallenge), states what they want
+// (Requirement), and that requirement is shown to sellers as Leads: one DIRECT
+// lead to the seller whose product was clicked, plus 0–10 MARKET leads fanned
+// out asynchronously to matched sellers. State machines, masking and credit
+// rules: docs/LEADS.md.
+
+/// Phone-first buyer identity. Exists the moment an OTP is verified; no
+/// password, no email. `userId` links to a full account if one is ever made.
+model Buyer {
+  id              String   @id @default(cuid())
+  /// E.164, e.g. +919876543210. The identity key.
+  phone           String   @unique
+  phoneVerifiedAt DateTime
+  name            String?
+  email           String?  @db.Citext
+  company         String?
+  /// Last city the buyer chose.
+  locationId      String?
+  userId          String?  @unique
+  isBlocked       Boolean  @default(false)
+  lastSeenAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  location     Location?     @relation(fields: [locationId], references: [id])
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  requirements Requirement[]
+
+  @@index([createdAt])
+}
+
+/// One row per OTP send. Only `codeHash` is stored — HMAC-SHA256 keyed by
+/// OTP_PEPPER over `${phone}:${purpose}:${code}` — so a database dump alone
+/// cannot be used to brute-force a 6-digit code offline. 5-minute expiry,
+/// 3 attempts, single use. See src/lib/otp/challenge.ts.
+model OtpChallenge {
+  id          String     @id @default(cuid())
+  phone       String
+  purpose     OtpPurpose
+  codeHash    String
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(3)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  ipHash      String?
+  createdAt   DateTime   @default(now())
+
+  // Verify path: latest open challenge for this phone + purpose.
+  @@index([phone, purpose, createdAt(sort: Desc)])
+  // Nightly prune.
+  @@index([expiresAt])
+}
+
+/// What the buyer wants. One Requirement → one DIRECT lead + 0–10 MARKET leads.
+model Requirement {
+  id             String  @id @default(cuid())
+  buyerId        String
+  /// The product whose contact button was clicked. Null for "Post requirement".
+  productId      String?
+  /// Owner of that product — recipient of the DIRECT lead. Null for
+  /// "Post requirement" (market-only). Denormalised so the fan-out can exclude
+  /// this seller without joining Product, which may since have been deleted.
+  directSellerId String?
+  /// Matching key. Derived from product → category (falling back to the
+  /// seller's primary category), or chosen by the buyer on "Post requirement".
+  categoryId     String
+  /// Buyer's city.
+  locationId     String
+
+  productName  String
+  quantity     Int
+  /// "pieces" | "kg" | "tonnes" | "metres" | ... from a fixed list.
+  quantityUnit String
+  timeline     RequirementTimeline
+  purpose      RequirementPurpose
+  notes        String?             @db.Text
+
+  /// sha256 of normalised productName + categoryId. Together with buyerId and
+  /// createdAt this is the 7-day "same buyer, same requirement" dedupe key.
+  fingerprint String
+
+  // Async fan-out — DB-polled outbox drained by the worker.
+  fanoutStatus   FanoutStatus @default(PENDING)
+  fanoutAttempts Int          @default(0)
+  fanoutAt       DateTime?
+  fanoutError    String?
+
+  // Attribution. Same rules as Enquiry: salted hash, never a raw IP.
+  ipHash    String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buyer    Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category Category @relation(fields: [categoryId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+  leads    Lead[]
+
+  // Worker poll (a partial index on PENDING rows also exists — see SQL).
+  @@index([fanoutStatus, createdAt])
+  // 7-day dedupe.
+  @@index([buyerId, fingerprint, createdAt(sort: Desc)])
+  @@index([buyerId, createdAt(sort: Desc)])
+  @@index([categoryId, locationId, createdAt(sort: Desc)])
+}
+
+/// A Requirement as seen by ONE seller. Masking is a read-time decision: the
+/// buyer's phone is revealed when type = DIRECT or status = ACCEPTED. The
+/// `masked` column is a CHECK-enforced invariant and a cheap filter for the
+/// teaser UI, not the source of truth.
+model Lead {
+  id            String     @id @default(cuid())
+  requirementId String
+  sellerId      String
+  type          LeadType
+  status        LeadStatus @default(NEW)
+
+  /// True until the seller accepts (MARKET). DIRECT is never masked.
+  masked    Boolean
+  /// Matcher output, kept for admin debugging and inbox ranking.
+  score     Int?
+  rank      Int?
+  /// MARKET only: createdAt + leads.market.expiryHours. DIRECT never expires.
+  expiresAt DateTime?
+
+  viewedAt     DateTime?
+  acceptedAt   DateTime?
+  /// User who accepted (audit; the seller is `sellerId`).
+  acceptedById String?
+  closedAt     DateTime?
+  sellerNote   String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requirement   Requirement    @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  seller        Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  deliveries    LeadDelivery[]
+  flag          LeadFlag?
+  creditEntries CreditLedger[]
+
+  // A seller sees a requirement at most once.
+  @@unique([requirementId, sellerId])
+  // Inbox: default view.
+  @@index([sellerId, status, createdAt(sort: Desc)])
+  // Inbox: Direct / Market tabs.
+  @@index([sellerId, type, status, createdAt(sort: Desc)])
+  // Expiry sweeper: status IN (NEW, VIEWED) AND expiresAt < now().
+  @@index([status, expiresAt])
+  @@index([requirementId])
+}
+
+/// Outbox row per (lead, channel). The request path only ever inserts; the
+/// worker drains PENDING rows through the LeadNotifier provider.
+model LeadDelivery {
+  id                String         @id @default(cuid())
+  leadId            String
+  channel           LeadChannel
+  status            DeliveryStatus @default(PENDING)
+  /// Name of the LeadNotifier that handled it: "console" | "whatsapp-cloud".
+  provider          String?
+  providerMessageId String?
+  attempts          Int            @default(0)
+  lastError         String?
+  sentAt            DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, channel])
+  // Worker poll (partial index on PENDING rows in SQL).
+  @@index([status, createdAt])
+}
+
+/// Append-only. Balance = SUM(delta); Seller.creditBalance caches it.
+model CreditLedger {
+  id             String       @id @default(cuid())
+  sellerId       String
+  /// +10 monthly grant, -1 accept, +1 refund. Never 0.
+  delta          Int
+  balanceAfter   Int
+  reason         CreditReason
+  leadId         String?
+  /// Set on FLAG_REFUND entries (LeadFlag.refundLedgerId points back).
+  leadFlagId     String?
+  subscriptionId String?
+  /// "2026-09" on MONTHLY_GRANT. Unique with (sellerId, reason) so the monthly
+  /// job is idempotent. Postgres treats NULLs as distinct, so the other reasons
+  /// — which leave it null — are unaffected.
+  periodKey      String?
+  note           String?
+  /// Admin user for ADMIN_ADJUST / FLAG_REFUND; null for system entries.
+  actorId        String?
+  createdAt      DateTime     @default(now())
+
+  seller       Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  lead         Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([sellerId, reason, periodKey])
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([leadId])
+}
+
+/// A seller disputes a MARKET lead after accepting. One flag per lead. An
+/// admin resolves it; REFUNDED writes a FLAG_REFUND ledger entry.
+model LeadFlag {
+  id       String         @id @default(cuid())
+  leadId   String         @unique
+  sellerId String
+  reason   LeadFlagReason
+  note     String?        @db.Text
+  status   LeadFlagStatus @default(OPEN)
+
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?
+  refundLedgerId String?   @unique
+  createdAt      DateTime  @default(now())
+
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Admin refund queue.
+  @@index([status, createdAt(sort: Desc)])
+  @@index([sellerId, createdAt(sort: Desc)])
+}
+
 // ═══════════════════════════ MONETISATION ════════════════════════════════════
 
 model Plan {
@@ -699,15 +1110,17 @@ model Plan {
   trialDays   Int             @default(0)
 
   // Quotas — enforced by PlanGuard before every create.
-  maxProducts     Int  @default(10)
-  maxServices     Int  @default(5)
-  maxGalleryItems Int  @default(10)
-  maxCategories   Int  @default(3)
-  /// Null = unlimited. Dormant in v1 under decision D5(a).
+  maxProducts         Int  @default(10)
+  maxServices         Int  @default(5)
+  maxGalleryItems     Int  @default(10)
+  maxCategories       Int  @default(3)
+  /// Market-lead credits granted on the 1st of each month (docs/LEADS.md).
+  /// Null = unlimited. DIRECT leads never consume credits.
   leadCreditsPerMonth Int?
 
   // Feature flags
-  allowCustomDomain     Boolean @default(false)
+  /// The web-presence tier this plan buys (D32).
+  webPresence           WebPresence @default(CATALOGUE)
   allowPremiumTemplates Boolean @default(false)
   removeBranding        Boolean @default(false)
   prioritySupport       Boolean @default(false)
@@ -734,6 +1147,7 @@ model Subscription {
   trialEndsAt        DateTime?
   gracePeriodEndsAt  DateTime?
 
+  /// DEPRECATED — superseded by CreditLedger (docs/LEADS.md). Never written.
   leadCreditsUsed Int @default(0)
 
   gatewayCustomerId     String?
@@ -742,9 +1156,10 @@ model Subscription {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  seller   Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  plan     Plan      @relation(fields: [planId], references: [id])
-  payments Payment[]
+  seller       Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  plan         Plan           @relation(fields: [planId], references: [id])
+  payments     Payment[]
+  creditLedger CreditLedger[]
 
   @@index([sellerId, status])
   @@index([status, currentPeriodEnd])

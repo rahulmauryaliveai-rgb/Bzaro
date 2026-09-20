@@ -22,7 +22,21 @@ import { clientEnv } from "@/env.client";
 export type WhatsAppContext =
   | { kind: "product"; productName: string; sellerName: string; url?: string }
   | { kind: "service"; serviceName: string; sellerName: string; url?: string }
-  | { kind: "seller"; sellerName: string; url?: string };
+  | { kind: "seller"; sellerName: string; url?: string }
+  | {
+      /** After the buyer has filled the requirement form (docs/LEADS.md §1). */
+      kind: "requirement";
+      sellerName: string;
+      productName: string;
+      quantity: number;
+      quantityUnit: string;
+      city: string;
+      timeline: string;
+      purpose: string;
+      buyerName?: string | null;
+      notes?: string | null;
+      url?: string;
+    };
 
 /** Strip everything that is not a digit. */
 export function toWhatsAppNumber(e164: string): string {
@@ -77,6 +91,25 @@ export function buildMessage(context: WhatsAppContext): string {
       ]
         .filter(Boolean)
         .join(" ")
+        .trim();
+
+    case "requirement":
+      // Structured, one fact per line: the seller reads this on a phone and
+      // quotes from it. The buyer name comes last so the message still reads
+      // naturally when it is missing.
+      return [
+        `Hello ${context.sellerName}, I found you on ${platform} and have a requirement:`,
+        `• Product: ${context.productName}`,
+        `• Quantity: ${context.quantity} ${context.quantityUnit}`,
+        `• City: ${context.city}`,
+        `• Needed: ${context.timeline}`,
+        `• Purpose: ${context.purpose}`,
+        context.notes ? `• Notes: ${context.notes}` : "",
+        `Please share your best price.${context.buyerName ? ` — ${context.buyerName}` : ""}`,
+        context.url ?? "",
+      ]
+        .filter(Boolean)
+        .join("\n")
         .trim();
   }
 }

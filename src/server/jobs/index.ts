@@ -2,6 +2,10 @@ import "server-only";
 import { db } from "@/lib/db";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { pruneExpiredTokens } from "@/lib/tokens";
+import { pruneExpiredOtpChallenges } from "@/lib/otp/challenge";
+import { expireMarketLeads, refreshLeadStats } from "@/server/services/fanout.service";
+import { grantMonthlyCredits, periodKeyFor } from "@/server/services/credit.service";
+import { recomputeAllWebPresence } from "@/server/services/plan.service";
 
 /**
  * Scheduled jobs.
@@ -216,12 +220,17 @@ export async function pruneEventsJob(): Promise<JobResult> {
   }
 
   const tokens = await pruneExpiredTokens();
+  const otpChallenges = await pruneExpiredOtpChallenges();
 
   return {
     job: "prune-events",
     ok: true,
     durationMs: Date.now() - startedAt,
-    details: { partitionsDropped: stale.map((p) => p.relname), expiredTokensDeleted: tokens },
+    details: {
+      partitionsDropped: stale.map((p) => p.relname),
+      expiredTokensDeleted: tokens,
+      expiredOtpChallengesDeleted: otpChallenges,
+    },
   };
 }
 
@@ -272,12 +281,76 @@ export async function rollupAnalyticsJob(): Promise<JobResult> {
   };
 }
 
+/**
+ * Expire MARKET leads past their 48-hour window (docs/LEADS.md §2).
+ * The worker sweeps this every few minutes too; the cron is the backstop for
+ * a worker that is down.
+ */
+export async function expireMarketLeadsJob(): Promise<JobResult> {
+  const startedAt = Date.now();
+  const expired = await expireMarketLeads();
+  return {
+    job: "expire-market-leads",
+    ok: true,
+    durationMs: Date.now() - startedAt,
+    details: { expired },
+  };
+}
+
+/**
+ * Monthly credit grant (docs/LEADS.md §4). Schedule on the 1st; idempotent
+ * per (seller, month), so running it again is safe.
+ */
+export async function grantMonthlyCreditsJob(): Promise<JobResult> {
+  const startedAt = Date.now();
+  const periodKey = periodKeyFor(new Date());
+  const result = await grantMonthlyCredits(periodKey);
+  return {
+    job: "grant-monthly-credits",
+    ok: true,
+    durationMs: Date.now() - startedAt,
+    details: { periodKey, ...result },
+  };
+}
+
+/** Reconcile responseRate / lead counters from the leads table. Nightly. */
+export async function refreshLeadStatsJob(): Promise<JobResult> {
+  const startedAt = Date.now();
+  const result = await refreshLeadStats();
+  return {
+    job: "refresh-lead-stats",
+    ok: true,
+    durationMs: Date.now() - startedAt,
+    details: result,
+  };
+}
+
+/**
+ * Re-derive every seller's web-presence tier from their live subscription
+ * (decision D32). The write paths recompute on plan changes; this catches a
+ * subscription that simply lapsed, which no request ever touches.
+ */
+export async function recomputeWebPresenceJob(): Promise<JobResult> {
+  const startedAt = Date.now();
+  const result = await recomputeAllWebPresence();
+  return {
+    job: "recompute-web-presence",
+    ok: true,
+    durationMs: Date.now() - startedAt,
+    details: result,
+  };
+}
+
 export const JOBS = {
   "recompute-indexability": recomputeIndexabilityJob,
   "refresh-counters": refreshCountersJob,
   "create-partitions": createPartitionsJob,
   "prune-events": pruneEventsJob,
   "rollup-analytics": rollupAnalyticsJob,
+  "expire-market-leads": expireMarketLeadsJob,
+  "grant-monthly-credits": grantMonthlyCreditsJob,
+  "refresh-lead-stats": refreshLeadStatsJob,
+  "recompute-web-presence": recomputeWebPresenceJob,
 } as const;
 
 export type JobName = keyof typeof JOBS;

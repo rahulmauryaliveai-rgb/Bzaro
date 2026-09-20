@@ -75,3 +75,45 @@ describe("whatsAppHref", () => {
     expect(decodeURIComponent(href.split("?text=")[1]!)).toContain("LED Panel 40W");
   });
 });
+
+describe("buildMessage: requirement", () => {
+  it("lists every fact the seller needs to quote, one per line", () => {
+    const message = buildMessage({
+      kind: "requirement",
+      sellerName: "ABC Electronics",
+      productName: "LED Bulb 9W",
+      quantity: 500,
+      quantityUnit: "pieces",
+      city: "Mumbai",
+      timeline: "Within a week",
+      purpose: "Resale",
+      buyerName: "Rahul",
+      notes: "Cool white only",
+    });
+
+    const lines = message.split("\n");
+    expect(lines[0]).toContain("ABC Electronics");
+    expect(lines).toContain("• Product: LED Bulb 9W");
+    expect(lines).toContain("• Quantity: 500 pieces");
+    expect(lines).toContain("• City: Mumbai");
+    expect(lines).toContain("• Needed: Within a week");
+    expect(lines).toContain("• Purpose: Resale");
+    expect(lines).toContain("• Notes: Cool white only");
+    expect(lines.at(-1)).toBe("Please share your best price. — Rahul");
+  });
+
+  it("reads naturally without a name or notes", () => {
+    const message = buildMessage({
+      kind: "requirement",
+      sellerName: "ABC Electronics",
+      productName: "LED Bulb 9W",
+      quantity: 10,
+      quantityUnit: "boxes",
+      city: "Pune",
+      timeline: "Immediately",
+      purpose: "Business use",
+    });
+    expect(message).not.toContain("Notes:");
+    expect(message.split("\n").at(-1)).toBe("Please share your best price.");
+  });
+});

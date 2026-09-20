@@ -22,7 +22,9 @@ describe("isTransientConnectionError", () => {
   it("recognises a closed connection", () => {
     // The exact message behind the crash page on /search.
     expect(
-      isTransientConnectionError(new Error("Raw query failed. Message: `Server has closed the connection.`")),
+      isTransientConnectionError(
+        new Error("Raw query failed. Message: `Server has closed the connection.`"),
+      ),
     ).toBe(true);
 
     expect(isTransientConnectionError(new Error("Connection terminated unexpectedly"))).toBe(true);
@@ -73,7 +75,14 @@ describe("isTransientConnectionError", () => {
 
 describe("RETRYABLE_OPERATIONS", () => {
   it("covers the reads", () => {
-    for (const operation of ["findUnique", "findFirst", "findMany", "count", "aggregate", "groupBy"]) {
+    for (const operation of [
+      "findUnique",
+      "findFirst",
+      "findMany",
+      "count",
+      "aggregate",
+      "groupBy",
+    ]) {
       expect(RETRYABLE_OPERATIONS.has(operation), `${operation} should be retryable`).toBe(true);
     }
   });

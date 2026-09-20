@@ -31,6 +31,9 @@ export type Permission =
   | "enquiry:read"
   | "enquiry:respond"
   | "enquiry:export"
+  | "lead:read"
+  | "lead:accept"
+  | "lead:manage"
   | "website:update"
   | "analytics:read"
   // ── Platform ──
@@ -39,9 +42,14 @@ export type Permission =
   | "admin:seller:verify"
   | "admin:seller:suspend"
   | "admin:seller:delete"
+  /** Edit a seller's website settings on their behalf (template, D33). */
+  | "admin:seller:website"
   | "admin:content:moderate"
   | "admin:taxonomy:manage"
   | "admin:enquiry:read"
+  | "admin:lead:read"
+  | "admin:lead:refund"
+  | "admin:credit:adjust"
   | "admin:subscription:manage"
   | "admin:plan:manage"
   | "admin:user:read"
@@ -67,6 +75,9 @@ const SELLER_OWNER: Permission[] = [
   "enquiry:read",
   "enquiry:respond",
   "enquiry:export",
+  "lead:read",
+  "lead:accept",
+  "lead:manage",
   "website:update",
   "analytics:read",
 ];
@@ -87,6 +98,9 @@ const SELLER_STAFF: Permission[] = [
   "gallery:manage",
   "enquiry:read",
   "enquiry:respond",
+  "lead:read",
+  "lead:accept",
+  "lead:manage",
   "website:update",
   "analytics:read",
 ];
@@ -96,6 +110,7 @@ const SUPPORT: Permission[] = [
   "admin:access",
   "admin:seller:read",
   "admin:enquiry:read",
+  "admin:lead:read",
   "admin:user:read",
 ];
 
@@ -106,6 +121,7 @@ const MODERATOR: Permission[] = [
   "admin:seller:suspend",
   "admin:content:moderate",
   "admin:enquiry:read",
+  "admin:lead:read",
 ];
 
 const ADMIN: Permission[] = [
@@ -113,9 +129,13 @@ const ADMIN: Permission[] = [
   "admin:seller:read",
   "admin:seller:verify",
   "admin:seller:suspend",
+  "admin:seller:website",
   "admin:content:moderate",
   "admin:taxonomy:manage",
   "admin:enquiry:read",
+  "admin:lead:read",
+  "admin:lead:refund",
+  "admin:credit:adjust",
   "admin:subscription:manage",
   "admin:plan:manage",
   "admin:user:read",

@@ -36,7 +36,40 @@ export const cacheTags = {
   categoryTree: () => "category-tree",
   /** The location tree. */
   locationTree: () => "location-tree",
+
+  // ── Buyer discovery (ISR pages, Phase 5) ──
+  // Keyed by ids, not slugs, so a renamed category or city keeps its tag.
+  /** Category listing across every city: /category/[slug]. */
+  discoveryCategory: (categoryId: string) => `discovery:category:${categoryId}`,
+  /** City landing page: /[city]. */
+  discoveryCity: (locationId: string) => `discovery:city:${locationId}`,
+  /** City × category listing: /[city]/category/[slug]. */
+  discoveryCityCategory: (locationId: string, categoryId: string) =>
+    `discovery:city:${locationId}:category:${categoryId}`,
+  /** "Popular in <city>" block on the homepage. */
+  popularInCity: (locationId: string) => `discovery:popular:${locationId}`,
 } as const;
+
+/**
+ * Every discovery tag a seller can appear under. Called when a seller's
+ * status, categories, city or service areas change, or a product is
+ * published / unpublished — the listings are ISR pages and would otherwise
+ * show the change only after their hour-long revalidate window.
+ */
+export function discoveryTags(input: { categoryIds: string[]; locationIds: string[] }): string[] {
+  const tags = new Set<string>([cacheTags.home()]);
+  for (const categoryId of input.categoryIds) {
+    tags.add(cacheTags.discoveryCategory(categoryId));
+    for (const locationId of input.locationIds) {
+      tags.add(cacheTags.discoveryCityCategory(locationId, categoryId));
+    }
+  }
+  for (const locationId of input.locationIds) {
+    tags.add(cacheTags.discoveryCity(locationId));
+    tags.add(cacheTags.popularInCity(locationId));
+  }
+  return [...tags];
+}
 
 /**
  * Every tag affected when a seller's own profile changes. Products and services

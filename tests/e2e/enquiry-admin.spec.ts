@@ -14,7 +14,10 @@ const APEX = `http://${ROOT}`;
 
 async function html(request: APIRequestContext, url: string) {
   const response = await request.get(url, { maxRedirects: 0 });
-  return { status: response.status(), body: (await response.text()).replace(/<!--[\s\S]*?-->/g, "") };
+  return {
+    status: response.status(),
+    body: (await response.text()).replace(/<!--[\s\S]*?-->/g, ""),
+  };
 }
 
 test.describe("enquiry form", () => {
@@ -60,10 +63,9 @@ test.describe("WhatsApp click tracker", () => {
   test("is not an open redirect", async ({ request }) => {
     // There is no `to` parameter at all — the destination is looked up from the
     // seller record. Supplying one must change nothing.
-    const response = await request.get(
-      `${APEX}/api/wa?s=x&sig=y&to=https://evil.test`,
-      { maxRedirects: 0 },
-    );
+    const response = await request.get(`${APEX}/api/wa?s=x&sig=y&to=https://evil.test`, {
+      maxRedirects: 0,
+    });
 
     const location = response.headers()["location"] ?? "";
     expect(location).not.toContain("evil.test");

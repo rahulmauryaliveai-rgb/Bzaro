@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { revalidateTenant, revalidateIndexability } from "@/lib/cache/revalidate";
+import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { revokeSellerSessions } from "@/server/services/auth.service";
 import { mailer } from "@/lib/mail";
@@ -87,6 +88,7 @@ export async function getSellerForAdmin(id: string) {
     select: {
       id: true,
       slug: true,
+      webPresence: true,
       businessName: true,
       legalName: true,
       tagline: true,
@@ -109,7 +111,12 @@ export async function getSellerForAdmin(id: string) {
       deletedAt: true,
       location: { select: { name: true, path: true } },
       website: {
-        select: { indexable: true, indexBlockReason: true, publishedAt: true },
+        select: {
+          indexable: true,
+          indexBlockReason: true,
+          publishedAt: true,
+          template: { select: { key: true, name: true } },
+        },
       },
       documents: {
         select: {
@@ -167,6 +174,7 @@ export async function verifySeller(params: {
   // indexability already persisted.
   await recomputeIndexability(params.sellerId);
   revalidateTenant(seller.slug, "background");
+  await revalidateSellerDiscovery(params.sellerId);
 
   if (seller.email) {
     await mailer.send({
@@ -207,6 +215,7 @@ export async function rejectSeller(params: {
   });
 
   revalidateTenant(seller.slug, "background");
+  await revalidateSellerDiscovery(params.sellerId);
 
   if (seller.email) {
     await mailer.send({
@@ -280,6 +289,7 @@ export async function reinstateSeller(params: {
 
   await recomputeIndexability(params.sellerId);
   revalidateTenant(seller.slug, "background");
+  await revalidateSellerDiscovery(params.sellerId);
 }
 
 // ── Content moderation (decision D10) ────────────────────────────────────────
@@ -337,6 +347,7 @@ export async function moderateProduct(params: {
   // indexability has to be recomputed — not just the product cache busted.
   await recomputeIndexability(product.sellerId);
   revalidateTenant(product.seller.slug, "background");
+  await revalidateSellerDiscovery(product.sellerId);
 }
 
 // ── Platform overview ────────────────────────────────────────────────────────

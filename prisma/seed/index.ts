@@ -8,6 +8,8 @@ import { seedTaxonomy } from "./taxonomy";
 import { seedSellers } from "./sellers";
 import { seedCatalog } from "./catalog";
 import { seedIndexability } from "./indexability";
+import { seedSettings } from "./settings";
+import { seedLeadFixtures } from "./leads";
 
 /**
  * Development seed.
@@ -40,6 +42,9 @@ const pool = new Pool({ connectionString });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 async function main() {
+  console.log("→ seeding platform settings");
+  await seedSettings(prisma);
+
   console.log("→ seeding plans");
   const plans = await seedPlans(prisma);
 
@@ -51,6 +56,9 @@ async function main() {
 
   console.log("→ seeding sellers and fixture tenants");
   await seedSellers(prisma, { plans, templates, taxonomy });
+
+  console.log("→ seeding lead-matching fixtures");
+  await seedLeadFixtures(prisma, { plans, templates, taxonomy });
 
   console.log("→ seeding catalogue");
   await seedCatalog(prisma, taxonomy);

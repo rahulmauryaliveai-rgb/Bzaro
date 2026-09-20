@@ -22,6 +22,22 @@
     {
       "path": "/api/cron/create-partitions",
       "schedule": "0 5 25 * *"
+    },
+    {
+      "path": "/api/cron/expire-market-leads",
+      "schedule": "35 * * * *"
+    },
+    {
+      "path": "/api/cron/grant-monthly-credits",
+      "schedule": "15 0 1 * *"
+    },
+    {
+      "path": "/api/cron/refresh-lead-stats",
+      "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/recompute-web-presence",
+      "schedule": "50 3 * * *"
     }
   ]
 }

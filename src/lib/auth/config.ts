@@ -60,14 +60,10 @@ const isProduction = env.NODE_ENV === "production";
  * absent we fall back to NODE_ENV, so a misconfigured production deploy still
  * fails closed (secure) rather than open.
  */
-const isSecureOrigin = env.AUTH_URL
-  ? env.AUTH_URL.startsWith("https://")
-  : isProduction;
+const isSecureOrigin = env.AUTH_URL ? env.AUTH_URL.startsWith("https://") : isProduction;
 
 /** `__Host-` requires Secure, Path=/ and NO Domain — exactly our requirement. */
-const sessionCookieName = isSecureOrigin
-  ? "__Host-authjs.session-token"
-  : "authjs.session-token";
+const sessionCookieName = isSecureOrigin ? "__Host-authjs.session-token" : "authjs.session-token";
 
 const providers: NextAuthConfig["providers"] = [
   Credentials({

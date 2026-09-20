@@ -1,7 +1,6 @@
 import { hash } from "@node-rs/argon2";
 import type { PrismaClient } from "../../src/generated/prisma/client";
 import type { SellerStatus } from "../../src/generated/prisma/enums";
-import { defaultThemeTokens } from "../../src/lib/validation/theme";
 import type { SeededPlans } from "./plans";
 import type { SeededTemplates } from "./templates";
 import type { SeededTaxonomy } from "./taxonomy";
@@ -49,7 +48,7 @@ const FIXTURES: Fixture[] = [
     businessName: "ABC Electronics",
     status: "VERIFIED",
     email: "owner@abc-electronics.test",
-    templateKey: "classic",
+    templateKey: "electro",
     city: "mumbai",
     categorySlug: "led-bulbs",
     tagline: "LED lighting manufacturer since 2009",
@@ -68,7 +67,7 @@ const FIXTURES: Fixture[] = [
     businessName: "Sharma Steel Traders",
     status: "VERIFIED",
     email: "owner@sharma-steel.test",
-    templateKey: "modern",
+    templateKey: "autoparts",
     city: "pune",
     categorySlug: "tmt-bars",
     tagline: "Steel supplier",
@@ -83,7 +82,7 @@ const FIXTURES: Fixture[] = [
     businessName: "Patel Textiles",
     status: "PENDING_VERIFICATION",
     email: "owner@patel-textiles.test",
-    templateKey: "classic",
+    templateKey: "boutique",
     city: "surat",
     categorySlug: "cotton-fabric",
     description: "Cotton fabric wholesaler based in Surat, supplying mills across Gujarat.",
@@ -120,7 +119,7 @@ const FIXTURES: Fixture[] = [
     businessName: "Verma Plastics",
     status: "VERIFIED",
     email: "owner@verma-plastics.test",
-    templateKey: "classic",
+    templateKey: "minimal",
     city: "ahmedabad",
     categorySlug: "industrial-textiles",
     description:
@@ -189,6 +188,9 @@ export async function seedSellers(prisma: PrismaClient, deps: Deps) {
         locationId,
         establishedYear: 2009,
         employeeCount: "11-50",
+        businessType: "MANUFACTURER",
+        // Fixtures are fully onboarded; the multi-step flow is for new sellers.
+        onboardingStep: "COMPLETE",
         timezone: "Asia/Kolkata",
         // Counters are derived from real rows: seedCatalog reconciles them,
         // and sellers with no catalogue genuinely have zero. Seeding a
@@ -211,6 +213,7 @@ export async function seedSellers(prisma: PrismaClient, deps: Deps) {
       update: {
         status: fixture.status,
         description: fixture.description,
+        onboardingStep: "COMPLETE",
         productCount: 0,
         serviceCount: 0,
         logoUrl: fixture.branded ? `https://picsum.photos/seed/${fixture.slug}-logo/200/200` : null,
@@ -236,20 +239,24 @@ export async function seedSellers(prisma: PrismaClient, deps: Deps) {
       });
     }
 
-    const templateId = deps.templates[fixture.templateKey]?.id ?? deps.templates.classic!.id;
+    const template = deps.templates[fixture.templateKey] ?? deps.templates.classic!;
+    const templateId = template.id;
 
     await prisma.sellerWebsite.upsert({
       where: { sellerId: seller.id },
       create: {
         sellerId: seller.id,
         templateId,
-        themeTokens: defaultThemeTokens,
+        themeTokens: template.defaultTokens,
         indexable: fixture.indexable,
         indexBlockReason: fixture.indexable ? null : "Profile incomplete (seed fixture)",
         publishedAt: fixture.status === "VERIFIED" ? new Date() : null,
       },
       update: {
         templateId,
+        // Re-seeding applies the template's preset (D33) so fixture sites
+        // always demo their template's intended look.
+        themeTokens: template.defaultTokens,
         indexable: fixture.indexable,
         indexBlockReason: fixture.indexable ? null : "Profile incomplete (seed fixture)",
       },
@@ -264,24 +271,32 @@ export async function seedSellers(prisma: PrismaClient, deps: Deps) {
       });
     }
 
-    // Free plan subscription so PlanGuard has something to read in Phase 3.
+    // Every microsite fixture sits on Gold: decision D32 made the subdomain a
+    // paid tier, and these sellers exist to exercise the microsite. The
+    // catalogue-tier case is covered by the lead fixtures (delhi-led-house).
     const existing = await prisma.subscription.findFirst({
       where: { sellerId: seller.id },
       select: { id: true },
     });
 
-    if (!existing) {
-      const now = new Date();
+    const now = new Date();
+    if (existing) {
+      await prisma.subscription.update({
+        where: { id: existing.id },
+        data: { planId: deps.plans.gold!.id, status: "ACTIVE" },
+      });
+    } else {
       await prisma.subscription.create({
         data: {
           sellerId: seller.id,
-          planId: deps.plans.free!.id,
+          planId: deps.plans.gold!.id,
           status: "ACTIVE",
           currentPeriodStart: now,
           currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 3600 * 1000),
         },
       });
     }
+    await prisma.seller.update({ where: { id: seller.id }, data: { webPresence: "SUBDOMAIN" } });
 
     console.log(`   ${fixture.slug.padEnd(18)} ${fixture.note}`);
   }

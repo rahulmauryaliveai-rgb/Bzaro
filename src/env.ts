@@ -18,9 +18,15 @@ import { clientEnv } from "@/env.client";
 
 const nonEmpty = z.string().min(1);
 
-/** Required in production, optional (and allowed empty) elsewhere. */
+/**
+ * Required in production, optional (and allowed empty) elsewhere.
+ *
+ * `.optional()` rather than a union with `z.undefined()`: under Zod 4 only the
+ * former marks the object KEY as optional — the union still fails an absent
+ * variable with "expected nonoptional".
+ */
 const requiredInProd = (schema: z.ZodString) =>
-  process.env.NODE_ENV === "production" ? schema : z.union([schema, z.literal(""), z.undefined()]);
+  process.env.NODE_ENV === "production" ? schema : z.union([schema, z.literal("")]).optional();
 
 const serverSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -74,6 +80,34 @@ const serverSchema = z.object({
   // taking the whole site down over it would be worse.
   RESEND_API_KEY: z.string().optional(),
   MAIL_FROM: z.string().optional(),
+
+  // ── Buyer OTP + lead notifications ──
+  // Both providers follow the mail pattern: unset → console implementation.
+  // WHATSAPP_* are read only by the Cloud API adapter (later phase).
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  /**
+   * Keys OTP code hashes (HMAC) so a database dump alone cannot brute-force a
+   * six-digit code offline. Rotating it invalidates in-flight challenges,
+   * which expire within five minutes anyway.
+   */
+  OTP_PEPPER: requiredInProd(nonEmpty.min(32, "must be at least 32 characters")),
+  /** Signs the buyer identity cookie minted after OTP verification. */
+  BUYER_COOKIE_SECRET: requiredInProd(nonEmpty.min(32, "must be at least 32 characters")),
+  /**
+   * Fixed OTP code for automated tests. Honoured only outside production, or
+   * in a production build that also sets ALLOW_INSECURE_RATE_LIMIT (D26) —
+   * the one sanctioned "this deployment is a test rig" signal. Never set it
+   * on a real deployment.
+   */
+  OTP_TEST_CODE: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
+
+  // ── Lead worker (src/server/worker) ──
+  WORKER_POLL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
+  WORKER_EXPIRY_SWEEP_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
 
   // ── Internal ──
   /** Shared secret guarding /api/revalidate and cron handlers. */

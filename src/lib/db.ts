@@ -3,10 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { env } from "@/env";
-import {
-  RETRYABLE_OPERATIONS,
-  withConnectionRetry,
-} from "@/lib/db-retry";
+import { RETRYABLE_OPERATIONS, withConnectionRetry } from "@/lib/db-retry";
 
 /**
  * Prisma client singleton.

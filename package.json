@@ -23,7 +23,8 @@
     "verify": "npm run typecheck && npm run lint && npm run test",
     "prepare": "husky",
     "test:e2e": "playwright test",
-    "test:isolation": "playwright test tests/e2e/tenant-isolation.spec.ts"
+    "test:isolation": "playwright test tests/e2e/tenant-isolation.spec.ts",
+    "worker": "tsx --conditions=react-server src/server/worker/index.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

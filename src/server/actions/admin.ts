@@ -11,6 +11,7 @@ import {
   verifySeller,
 } from "@/server/services/admin.service";
 import { db } from "@/lib/db";
+import { applyTemplate } from "@/server/services/seller.service";
 import {
   indexEligibilityRulesSchema,
   INDEX_ELIGIBILITY_SETTING_KEY,
@@ -150,6 +151,35 @@ export async function moderateProductAction(formData: FormData): Promise<void> {
  * before it is written — a malformed row would otherwise silently fall back to
  * defaults and nobody would notice the setting had stopped applying.
  */
+/** Admin: switch a seller's website template (D33). */
+export async function adminSetTemplateAction(formData: FormData): Promise<void> {
+  const user = await requirePermission("admin:seller:website");
+  const parsed = z
+    .object({ sellerId: z.string().min(1), templateKey: z.string().min(1).max(40) })
+    .safeParse({ sellerId: formData.get("sellerId"), templateKey: formData.get("templateKey") });
+  if (!parsed.success) return;
+
+  const seller = await db.seller.findUnique({
+    where: { id: parsed.data.sellerId },
+    select: { slug: true, website: { select: { template: { select: { key: true } } } } },
+  });
+  if (!seller) return;
+
+  await applyTemplate(parsed.data.sellerId, seller.slug, parsed.data.templateKey);
+  await db.auditLog.create({
+    data: {
+      actorId: user.id,
+      sellerId: parsed.data.sellerId,
+      action: "website.template_changed",
+      entityType: "Seller",
+      entityId: parsed.data.sellerId,
+      before: { template: seller.website?.template.key ?? null },
+      after: { template: parsed.data.templateKey },
+    },
+  });
+  revalidatePath(`/admin/sellers/${parsed.data.sellerId}`);
+}
+
 export async function updateIndexEligibilityAction(formData: FormData): Promise<void> {
   const user = await requirePermission("admin:settings:manage");
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { revalidateTag, updateTag } from "next/cache";
-import { cacheTags, tenantTags } from "@/lib/cache/tags";
+import { cacheTags, discoveryTags, tenantTags } from "@/lib/cache/tags";
 
 /**
  * Cache invalidation.
@@ -95,4 +95,17 @@ export function revalidateHome(mode: RevalidateMode = "background"): void {
  */
 export function revalidateIndexability(slug: string, mode: RevalidateMode = "background"): void {
   apply([...tenantTags(slug), cacheTags.sitemap()], mode);
+}
+
+/**
+ * A seller became visible or invisible in the discovery listings: verified,
+ * suspended, changed category or city, published or unpublished a product.
+ * Background by default — these are public ISR pages, not the seller's own
+ * dashboard, and a minute of staleness is invisible to everyone.
+ */
+export function revalidateDiscovery(
+  input: { categoryIds: string[]; locationIds: string[] },
+  mode: RevalidateMode = "background",
+): void {
+  apply(discoveryTags(input), mode);
 }

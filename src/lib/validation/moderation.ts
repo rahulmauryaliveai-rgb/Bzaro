@@ -78,10 +78,7 @@ export function decideModeration(signals: ModerationSignals): ModerationDecision
  * wait for approval, then edit it into anything at all. Sellers who have earned
  * trust keep their approval through edits — that is what the trust is for.
  */
-export function editRequiresRereview(
-  signals: ModerationSignals,
-  currentStatus: string,
-): boolean {
+export function editRequiresRereview(signals: ModerationSignals, currentStatus: string): boolean {
   if (currentStatus !== "APPROVED") return false;
   return decideModeration(signals).status === "PENDING";
 }

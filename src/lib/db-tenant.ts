@@ -44,6 +44,10 @@ export const TENANT_MODELS = [
   "payment",
   "analyticsEvent",
   "analyticsDaily",
+  "lead",
+  "creditLedger",
+  "leadFlag",
+  "sellerServiceArea",
 ] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];

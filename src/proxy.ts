@@ -82,12 +82,36 @@ function isPrivateSurface(pathname: string): boolean {
  */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "0.0.0.0"]);
 
+/**
+ * Next.js renders a Server Action's `redirect()` target by fetching ITSELF
+ * over loopback, with the visitor's real host in `x-forwarded-host` and the
+ * visitor's cookies attached. Classifying that request by its loopback Host
+ * would be wrong twice over: in development the loopback redirect below
+ * bounces it to the root domain and `fetch` drops the cookie on the way, so
+ * the page renders with no session and every guard sends the user to /login;
+ * in production a loopback host is not the root host and would fall into the
+ * custom-domain branch and 404.
+ *
+ * So a loopback Host defers to `x-forwarded-host` when that names a real
+ * host. Only loopback requests are affected — nothing reaching the origin
+ * through nginx carries a loopback Host — so this cannot be used to spoof a
+ * tenant from outside.
+ */
+function resolveLoopbackHost(host: string, forwardedHeader: string | null): string {
+  if (!LOOPBACK_HOSTS.has(stripPort(host))) return host;
+  const forwarded = normalizeHost(forwardedHeader);
+  if (forwarded && !LOOPBACK_HOSTS.has(stripPort(forwarded))) return forwarded;
+  return host;
+}
+
 export function proxy(request: NextRequest) {
-  const host = normalizeHost(request.headers.get("host"));
   const url = request.nextUrl.clone();
+  const rawHost = normalizeHost(request.headers.get("host"));
 
   // No usable Host header. Serve the marketplace rather than guessing a tenant.
-  if (!host) return NextResponse.next();
+  if (!rawHost) return NextResponse.next();
+
+  const host = resolveLoopbackHost(rawHost, request.headers.get("x-forwarded-host"));
 
   // ── Zone 0: loopback in development → send them to the root domain ────────
   // Development only. In production a loopback Host is either a health probe
@@ -97,7 +121,6 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(target, 307);
   }
 
-  // ── Zone 1: apex and www → the public marketplace ──────────────────────────
   if (isRootHost(host)) {
     // The tenant path space is an internal rewrite target, not a public URL.
     // Requesting it directly on the apex is treated as not found.
