@@ -6,8 +6,7 @@
 #
 # Idempotent: re-running skips what is already done and never overwrites an
 # existing .env. Answers can be supplied as environment variables instead of
-# prompts: ROOT_DOMAIN, ACME_EMAIL, CLOUDFLARE_API_TOKEN, ADMIN_EMAIL,
-# ADMIN_PASSWORD, REPO_URL.
+# prompts: ROOT_DOMAIN, ACME_EMAIL, ADMIN_EMAIL, ADMIN_PASSWORD, REPO_URL.
 set -euo pipefail
 
 REPO_URL=${REPO_URL:-https://github.com/rahulmauryaliveai-rgb/Bzaro.git}
@@ -27,7 +26,6 @@ ask() { # ask VAR "prompt" [secret]
 echo "== Bzaro VPS setup =="
 ask ROOT_DOMAIN "Root domain (e.g. bzaro.in)"
 ask ACME_EMAIL "Email for TLS certificate notices"
-ask CLOUDFLARE_API_TOKEN "Cloudflare API token (Zone.DNS Edit on $ROOT_DOMAIN)" secret
 ask ADMIN_EMAIL "First administrator email"
 ask ADMIN_PASSWORD "First administrator password (12+ chars)" secret
 
@@ -73,7 +71,6 @@ if [[ ! -f deploy/.env ]]; then
   cat > deploy/.env <<EOF
 ROOT_DOMAIN=$ROOT_DOMAIN
 ACME_EMAIL=$ACME_EMAIL
-CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 SRH_TOKEN=$SRH_TOKEN
 EOF
@@ -102,8 +99,8 @@ if [[ ! -f .env ]]; then
 fi
 
 # ── Infrastructure containers ───────────────────────────────────────────────
-echo "→ starting postgres, redis and caddy (first run builds Caddy: ~2 min)"
-docker compose --env-file deploy/.env -f deploy/compose.yml up -d --build --quiet-pull
+echo "→ starting postgres, redis and caddy"
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d --quiet-pull
 for _ in $(seq 1 30); do
   docker exec bzaro-postgres pg_isready -U bzaro -d bzaro >/dev/null 2>&1 && break
   sleep 2
@@ -126,7 +123,7 @@ cat <<EOF
 
   https://$ROOT_DOMAIN                marketplace
   https://$ROOT_DOMAIN/login          sign in as $ADMIN_EMAIL → /admin
-  https://anything.$ROOT_DOMAIN       should answer with a valid certificate
+  https://<seller-slug>.$ROOT_DOMAIN   seller sites get their certificate on first visit
 
   pm2 status · pm2 logs bzaro-web · docker compose -f deploy/compose.yml logs caddy
   Redeploy after a push:  bash $APP/deploy/deploy.sh

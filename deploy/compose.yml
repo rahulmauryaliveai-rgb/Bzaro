@@ -61,18 +61,16 @@ services:
     ports:
       - "127.0.0.1:8079:80"
 
-  # TLS termination for the apex AND the wildcard (*.bzaro.in) via the
-  # Cloudflare DNS-01 challenge — the only way to get a wildcard certificate.
+  # TLS termination: certificates on demand per hostname (see Caddyfile).
   # Host networking so it can reach the pm2-managed app on localhost:3000.
   caddy:
-    build: ./caddy
+    image: caddy:2-alpine
     container_name: bzaro-caddy
     restart: unless-stopped
     network_mode: host
     environment:
       ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN in deploy/.env}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN in deploy/.env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

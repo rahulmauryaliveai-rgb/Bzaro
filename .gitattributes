@@ -2,4 +2,3 @@
 *.sh text eol=lf
 deploy/crontab text eol=lf
 deploy/Caddyfile text eol=lf
-deploy/**/Dockerfile text eol=lf

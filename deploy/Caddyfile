@@ -1,29 +1,27 @@
-# Bzaro edge: one certificate for the apex, one wildcard for every seller
-# subdomain, both obtained through Cloudflare DNS-01 so a subdomain that has
-# never been visited already has valid TLS the moment its Seller row exists.
+# Bzaro edge (deploy/compose.yml → stock caddy:2 image, host network).
+#
+# Certificates are issued ON DEMAND: the apex and www at startup, and every
+# seller subdomain the first time a browser asks for it, via the HTTP-01
+# challenge on port 80. No DNS-provider API is needed — the `*` A record at
+# the registrar is enough. Before issuing, Caddy asks the app whether the
+# hostname belongs to a seller (src/app/api/tls/ask), so strangers cannot
+# burn the ACME rate limit with made-up subdomains.
+#
+# Cost of this design: a never-visited subdomain answers its very first
+# request ~2–5 s late while the certificate is obtained; every request after
+# that is instant. Switching to a true wildcard later only needs a DNS
+# provider module (docs/DEPLOYMENT.md §3) — the app does not change.
 #
 # Variables come from deploy/.env via compose.yml.
 
 {
 	email {$ACME_EMAIL}
-}
-
-(tls_cloudflare) {
-	tls {
-		dns cloudflare {$CLOUDFLARE_API_TOKEN}
-		resolvers 1.1.1.1 1.0.0.1
+	on_demand_tls {
+		ask http://127.0.0.1:3000/api/tls/ask
 	}
 }
 
-# www is an alias of the apex; the app treats both as the marketplace, but a
-# single canonical host is better for SEO.
-www.{$ROOT_DOMAIN} {
-	import tls_cloudflare
-	redir https://{$ROOT_DOMAIN}{uri} permanent
-}
-
-{$ROOT_DOMAIN}, *.{$ROOT_DOMAIN} {
-	import tls_cloudflare
+(app) {
 	encode zstd gzip
 
 	# Seller media uploaded through the app lives on the host disk
@@ -42,9 +40,28 @@ www.{$ROOT_DOMAIN} {
 		}
 	}
 
-	# Next.js sets its own security headers; do not cache HTML here (§7).
+	# Next.js sets its own security headers; do not cache HTML here.
 	log {
 		output stderr
 		format console
 	}
+}
+
+# www is an alias of the apex; the app treats both as the marketplace, but a
+# single canonical host is better for SEO.
+www.{$ROOT_DOMAIN} {
+	redir https://{$ROOT_DOMAIN}{uri} permanent
+}
+
+# The marketplace: certificate obtained at startup.
+{$ROOT_DOMAIN} {
+	import app
+}
+
+# Every seller website: certificate obtained at first request, gated by /api/tls/ask.
+*.{$ROOT_DOMAIN} {
+	tls {
+		on_demand
+	}
+	import app
 }
