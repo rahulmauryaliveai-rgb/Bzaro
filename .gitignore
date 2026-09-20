@@ -56,3 +56,7 @@ next-env.d.ts
 
 # Local-only Playwright override (browser channel); see tests/e2e
 playwright.local.config.ts
+
+# Showcase seed output (prisma/seed/showcase.ts)
+demo-credentials.txt
+.demo-credentials.tmp

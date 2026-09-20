@@ -180,3 +180,25 @@ After editing `.env`: `pm2 restart all --update-env`.
 | `Connection terminated unexpectedly`      | `docker ps` — `bzaro-postgres` restarted; app reconnects, or `pm2 restart bzaro-web`                                                                                       |
 | Uploads say "not available"               | `MEDIA_LOCAL_UPLOADS="1"` missing from `.env`                                                                                                                              |
 | Build killed / out of memory              | upgrade to KVM 2, or add swap: `fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`                                                  |
+
+---
+
+## 9. Showcase (demo) sellers for presentations
+
+Production seeds no demo data. For demos, add six fully populated showcase
+sellers — Gold plan, verified, different templates/categories/cities, each
+with products, services, a gallery, and a few open buyer requirements that
+the lead worker turns into leads:
+
+```bash
+cd /srv/bzaro/app && DEMO_CREDENTIALS_FILE=/root/bzaro-demo-credentials.txt npm run db:seed:showcase
+```
+
+Logins are `demo-<slug>@bzaro.in` with random passwords written to that file
+(created once; re-runs never rotate them). Their storefronts are non-indexable
+and their phone numbers are in the reserved `99999` range. Remove everything
+in one go before real sellers should see a clean marketplace:
+
+```bash
+cd /srv/bzaro/app && npm run db:seed:showcase -- --remove
+```

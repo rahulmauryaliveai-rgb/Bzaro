@@ -21,11 +21,11 @@ import type { SeededTaxonomy } from "./taxonomy";
  * for a development fixture and avoids committing binaries.
  */
 
-function image(seed: string, w = 800, h = 600): string {
+export function image(seed: string, w = 800, h = 600): string {
   return `https://picsum.photos/seed/${seed}/${w}/${h}`;
 }
 
-type ProductFixture = {
+export type ProductFixture = {
   slug: string;
   name: string;
   shortDescription: string;
@@ -43,7 +43,7 @@ type ProductFixture = {
   featured?: boolean;
 };
 
-const ABC_PRODUCTS: ProductFixture[] = [
+export const ABC_PRODUCTS: ProductFixture[] = [
   {
     slug: "led-panel-40w",
     name: "LED Panel Light 40W",
@@ -175,7 +175,7 @@ const ABC_PRODUCTS: ProductFixture[] = [
   },
 ];
 
-const VERMA_PRODUCTS: ProductFixture[] = [
+export const VERMA_PRODUCTS: ProductFixture[] = [
   {
     slug: "ldpe-packaging-film",
     name: "LDPE Packaging Film",
@@ -218,7 +218,7 @@ const VERMA_PRODUCTS: ProductFixture[] = [
   },
 ];
 
-type ServiceFixture = {
+export type ServiceFixture = {
   slug: string;
   name: string;
   shortDescription: string;
@@ -231,7 +231,7 @@ type ServiceFixture = {
   featured?: boolean;
 };
 
-const ABC_SERVICES: ServiceFixture[] = [
+export const ABC_SERVICES: ServiceFixture[] = [
   {
     slug: "lighting-design-consultation",
     name: "Lighting Design & Consultation",
@@ -277,7 +277,7 @@ const ABC_SERVICES: ServiceFixture[] = [
   },
 ];
 
-const VERMA_SERVICES: ServiceFixture[] = [
+export const VERMA_SERVICES: ServiceFixture[] = [
   {
     slug: "custom-extrusion",
     name: "Custom Film Extrusion",
@@ -306,12 +306,7 @@ export async function seedCatalog(prisma: PrismaClient, taxonomy: SeededTaxonomy
 
   const bySlug = new Map(sellers.map((s) => [s.slug, s.id]));
 
-  const plan: Array<{
-    sellerSlug: string;
-    products: ProductFixture[];
-    services: ServiceFixture[];
-    galleryCount: number;
-  }> = [
+  const plan: CatalogEntry[] = [
     {
       sellerSlug: "abc-electronics",
       products: ABC_PRODUCTS,
@@ -345,7 +340,25 @@ export async function seedCatalog(prisma: PrismaClient, taxonomy: SeededTaxonomy
   for (const entry of plan) {
     const sellerId = bySlug.get(entry.sellerSlug);
     if (!sellerId) continue;
+    await seedSellerCatalog(prisma, taxonomy, sellerId, entry);
+  }
+}
 
+export type CatalogEntry = {
+  sellerSlug: string;
+  products: ProductFixture[];
+  services: ServiceFixture[];
+  galleryCount: number;
+};
+
+/** Write one seller's products, services and gallery, then reconcile its counters. */
+export async function seedSellerCatalog(
+  prisma: PrismaClient,
+  taxonomy: SeededTaxonomy,
+  sellerId: string,
+  entry: CatalogEntry,
+) {
+  {
     // Products
     for (const [index, fixture] of entry.products.entries()) {
       const categoryId = taxonomy.categories[fixture.categorySlug];
