@@ -45,10 +45,9 @@ describe("upload limits", () => {
     // appear on a target that renders untrusted buyer-facing content inline.
     for (const [target, limits] of Object.entries(UPLOAD_LIMITS)) {
       for (const format of limits.formats) {
-        expect(
-          ["jpg", "jpeg", "png", "webp", "svg"],
-          `${target} allows ${format}`,
-        ).toContain(format);
+        expect(["jpg", "jpeg", "png", "webp", "svg"], `${target} allows ${format}`).toContain(
+          format,
+        );
       }
     }
   });

@@ -34,9 +34,11 @@ const NAV: NavItem[] = [
   { href: "/dashboard/services", label: "Services" },
   { href: "/dashboard/gallery", label: "Gallery" },
   { href: "/dashboard/enquiries", label: "Enquiries" },
+  { href: "/dashboard/leads", label: "Leads" },
+  { href: "/dashboard/credits", label: "Credits" },
   { href: "/dashboard/website", label: "Website" },
+  { href: "/dashboard/billing", label: "Plan & billing" },
   { href: "/dashboard/analytics", label: "Analytics", soon: true },
-  { href: "/dashboard/subscription", label: "Subscription", soon: true },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 
@@ -63,9 +65,7 @@ export function DashboardNav() {
         // Exact match for the overview, prefix match for the rest — otherwise
         // "/dashboard" would highlight on every page beneath it.
         const active =
-          item.href === "/dashboard"
-            ? pathname === "/dashboard"
-            : pathname.startsWith(item.href);
+          item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href);
 
         return (
           <Link
@@ -73,9 +73,7 @@ export function DashboardNav() {
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={`rounded px-2 py-1.5 ${
-              active
-                ? "bg-neutral-900 font-medium text-white"
-                : "hover:bg-neutral-200"
+              active ? "bg-neutral-900 font-medium text-white" : "hover:bg-neutral-200"
             }`}
           >
             {item.label}

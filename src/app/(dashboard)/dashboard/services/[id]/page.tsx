@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { getCategoryOptions, getServiceForEdit } from "@/server/services/catalog.service";
 import { ServiceForm } from "@/components/dashboard/ServiceForm";
 import { DeleteCatalogItem } from "@/components/dashboard/DeleteCatalogItem";
 import { minorToMajorString } from "@/lib/utils/money";
-import { tenantUrl } from "@/lib/utils/url";
+import { sellerSiteUrl } from "@/lib/utils/url";
 
 export const metadata: Metadata = {
   title: "Edit service",
@@ -43,12 +43,12 @@ export default async function EditServicePage({
 
         {live ? (
           <a
-            href={`${tenantUrl(scope.sellerSlug)}services/${service.slug}`}
+            href={sellerSiteUrl(scopeSurface(scope), `/services/${service.slug}`)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-teal-700 underline underline-offset-2"
           >
-            View on your website ↗
+            {scope.webPresence === "CATALOGUE" ? "View on Bzaro ↗" : "View on your website ↗"}
           </a>
         ) : null}
       </header>

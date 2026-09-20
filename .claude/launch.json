@@ -2,10 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "marketplace",
+      "name": "bzaro",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
+
+      "//": "autoPort is false because port 3000 is not incidental here. NEXT_PUBLIC_ROOT_DOMAIN is 'lvh.me:3000', and isRootHost() in src/lib/utils/url.ts compares the Host header against it by exact equality — so on any other port the apex stops being recognised and every tenant subdomain fails to resolve. AUTH_URL carries the port too, and since D25 that string decides whether session cookies are marked Secure.",
+      "autoPort": false,
+
       "url": "http://lvh.me:3000"
     }
   ]

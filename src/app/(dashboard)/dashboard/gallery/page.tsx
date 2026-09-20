@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { listGalleryItems } from "@/server/services/gallery.service";
 import { MAX_GALLERY_ITEMS } from "@/lib/validation/gallery";
 import { GalleryAddForm } from "@/components/dashboard/GalleryAddForm";
 import { GalleryItemCard } from "@/components/dashboard/GalleryItemCard";
-import { tenantUrl } from "@/lib/utils/url";
+import { sellerSiteUrl } from "@/lib/utils/url";
 
 export const metadata: Metadata = {
   title: "Gallery",
@@ -26,7 +26,7 @@ export default async function GalleryPage() {
         <p className="mt-1 text-sm text-neutral-600">
           Photographs of your work, premises or team.{" "}
           <a
-            href={`${tenantUrl(scope.sellerSlug)}gallery`}
+            href={sellerSiteUrl(scopeSurface(scope), "/gallery")}
             target="_blank"
             rel="noopener noreferrer"
             className="text-teal-700 underline underline-offset-2"
@@ -75,8 +75,8 @@ export default async function GalleryPage() {
           <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center">
             <h3 className="font-medium">No photographs yet</h3>
             <p className="mx-auto mt-1 max-w-md text-sm text-neutral-600">
-              A gallery is often what persuades a buyer you are a real business. Photographs of
-              your workshop, your team or finished work all do more than a stock image.
+              A gallery is often what persuades a buyer you are a real business. Photographs of your
+              workshop, your team or finished work all do more than a stock image.
             </p>
           </div>
         ) : (

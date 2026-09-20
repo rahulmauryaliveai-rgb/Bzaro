@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { forSeller } from "@/lib/db-tenant";
 import { revalidateProduct, revalidateService } from "@/lib/cache/revalidate";
+import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { decideModeration, editRequiresRereview } from "@/lib/validation/moderation";
 import type { ModerationSignals } from "@/lib/validation/moderation";
@@ -489,6 +490,9 @@ async function afterCatalogWrite(
 
   if (kind === "product") revalidateProduct(sellerSlug, id);
   else revalidateService(sellerSlug, id);
+
+  // Listings show product counts and latest products per city × category.
+  await revalidateSellerDiscovery(sellerId);
 }
 
 /** Counts for the catalogue pages and the dashboard overview. */
@@ -526,10 +530,12 @@ export async function getCatalogCounts(sellerId: string) {
  * during registration they are describing the business in broad strokes.
  */
 export async function getCategoryOptions() {
+  // Ordered by materialised path so the flat <select> reads as a tree —
+  // each subcategory directly under its group (D34: ~400 rows).
   return db.category.findMany({
     where: { isActive: true, depth: { lte: 2 } },
     select: { id: true, name: true, depth: true },
-    orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
-    take: 500,
+    orderBy: [{ path: "asc" }],
+    take: 1000,
   });
 }

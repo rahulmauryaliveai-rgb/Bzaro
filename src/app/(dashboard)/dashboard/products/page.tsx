@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { getCatalogCounts, listProducts } from "@/server/services/catalog.service";
 import { CatalogList } from "@/components/dashboard/CatalogList";
-import { tenantUrl } from "@/lib/utils/url";
 
 export const metadata: Metadata = {
   title: "Products",
@@ -53,8 +52,8 @@ export default async function ProductsPage() {
 
       {counts.awaitingReview > 0 ? (
         <p className="mb-6 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Some listings are waiting to be reviewed before they appear publicly. This normally
-          takes less than a working day, and only applies until your first listing is approved.
+          Some listings are waiting to be reviewed before they appear publicly. This normally takes
+          less than a working day, and only applies until your first listing is approved.
         </p>
       ) : null}
 
@@ -62,8 +61,8 @@ export default async function ProductsPage() {
         <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center">
           <h2 className="font-medium">Add your first product</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-neutral-600">
-            Products are what buyers search for. You can start with just a name and fill in
-            prices, photographs and specifications later.
+            Products are what buyers search for. You can start with just a name and fill in prices,
+            photographs and specifications later.
           </p>
           <Link
             href="/dashboard/products/new"
@@ -75,7 +74,7 @@ export default async function ProductsPage() {
       ) : (
         <CatalogList
           kind="product"
-          tenantUrl={tenantUrl(scope.sellerSlug)}
+          seller={scopeSurface(scope)}
           rows={rows.map((row) => ({
             ...row,
             imageUrl: row.images[0]?.url ?? null,

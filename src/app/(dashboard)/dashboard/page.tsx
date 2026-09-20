@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { forSeller } from "@/lib/db-tenant";
 import { getIndexEligibilityRules } from "@/server/services/indexability.service";
 import { getDashboardSnapshot } from "@/server/services/seller.service";
 import { evaluateEligibility } from "@/lib/validation/index-eligibility";
 import { EligibilityChecklist } from "@/components/dashboard/EligibilityChecklist";
-import { tenantUrl } from "@/lib/utils/url";
+import { ProfileCompletionBar } from "@/components/dashboard/ProfileCompletionBar";
+import { getProfileCompletion, stepPath } from "@/server/services/onboarding.service";
+import { sellerSiteUrl } from "@/lib/utils/url";
 
 /**
  * Dashboard overview.
@@ -33,15 +35,22 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
 
   const tdb = forSeller(scope.sellerId);
 
-  const [seller, rules, products, services, enquiries, newEnquiries, flagged] = await Promise.all([
-    getDashboardSnapshot(scope.sellerId),
-    getIndexEligibilityRules(),
-    tdb.product.count({ where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" } }),
-    tdb.service.count({ where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" } }),
-    tdb.enquiry.count({ where: { isSpam: false } }),
-    tdb.enquiry.count({ where: { status: "NEW", isSpam: false } }),
-    tdb.product.count({ where: { moderationStatus: "FLAGGED", deletedAt: null } }),
-  ]);
+  const [seller, rules, products, services, enquiries, newEnquiries, flagged, newLeads, profile] =
+    await Promise.all([
+      getDashboardSnapshot(scope.sellerId),
+      getIndexEligibilityRules(),
+      tdb.product.count({
+        where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
+      }),
+      tdb.service.count({
+        where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
+      }),
+      tdb.enquiry.count({ where: { isSpam: false } }),
+      tdb.enquiry.count({ where: { status: "NEW", isSpam: false } }),
+      tdb.product.count({ where: { moderationStatus: "FLAGGED", deletedAt: null } }),
+      tdb.lead.count({ where: { status: "NEW" } }),
+      getProfileCompletion(scope.sellerId),
+    ]);
 
   if (!seller) throw new Error("Seller not found for an authorised scope");
 
@@ -76,12 +85,10 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
     <div className="space-y-8">
       {welcome ? (
         <div className="rounded-lg border border-teal-600 bg-teal-50 p-5">
-          <h2 className="font-medium text-teal-900">
-            {seller.businessName} is registered
-          </h2>
+          <h2 className="font-medium text-teal-900">{seller.businessName} is registered</h2>
           <p className="mt-1 text-sm text-teal-800">
-            Your web address is reserved. Next: fill in your profile so your site has
-            something to show.
+            Your web address is reserved. Next: fill in your profile so your site has something to
+            show.
           </p>
           <Link
             href="/dashboard/profile"
@@ -96,12 +103,12 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">{seller.businessName}</h1>
         <p className="mt-1 text-sm text-neutral-600">
           <a
-            href={tenantUrl(scope.sellerSlug)}
+            href={sellerSiteUrl(scopeSurface(scope))}
             target="_blank"
             rel="noopener noreferrer"
             className="text-teal-700 underline underline-offset-2"
           >
-            {scope.sellerSlug}
+            {sellerSiteUrl(scopeSurface(scope)).replace(/^https?:\/\//, "")}
           </a>
         </p>
       </header>
@@ -110,13 +117,21 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
         Verification status comes before the checklist: while pending, the site
         is not publicly reachable at all, which makes every other item moot.
       */}
+      {profile ? (
+        <ProfileCompletionBar
+          completion={profile.completion}
+          onboardingStep={profile.onboardingStep}
+          resumeHref={stepPath(profile.onboardingStep)}
+        />
+      ) : null}
+
       {isPending ? (
         <section className="rounded-lg border border-neutral-300 bg-white p-5">
           <h2 className="font-medium">Verification in progress</h2>
           <p className="mt-1 text-sm text-neutral-600">
             Your website address is reserved but not publicly reachable until we verify your
-            business — usually within a working day. You can fill in everything now so it
-            goes live complete.
+            business — usually within a working day. You can fill in everything now so it goes live
+            complete.
           </p>
         </section>
       ) : (
@@ -133,6 +148,7 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
           href="/dashboard/enquiries"
           highlight={newEnquiries > 0}
         />
+        <Stat label="New leads" value={newLeads} href="/dashboard/leads" highlight={newLeads > 0} />
       </dl>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-5">

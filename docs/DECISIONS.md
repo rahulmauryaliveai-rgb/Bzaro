@@ -8,7 +8,7 @@ us revisit it.
 
 | #                                                   | Decision                                              | Status                              | Phase |
 | --------------------------------------------------- | ----------------------------------------------------- | ----------------------------------- | ----- |
-| [D1](#d1--microsite-is-canonical)                   | Microsite is canonical for seller content             | Accepted                            | 7     |
+| [D1](#d1--microsite-is-canonical)                   | Microsite is canonical for seller content             | Revised by D32                      | 7     |
 | [D2](#d2--configurable-index-eligibility)           | Configurable index eligibility, noindex by default    | Accepted                            | 0     |
 | [D3](#d3--custom-domains-deferred-designed-for-now) | Custom domains deferred to Phase 10, designed for now | Accepted                            | 10    |
 | [D4](#d4--postgresql-full-text-search-first)        | PostgreSQL FTS first, behind a provider interface     | Accepted                            | 5     |
@@ -25,6 +25,13 @@ us revisit it.
 | [D21](#d21--per-surface-root-layouts)               | Per-surface root layouts                              | Accepted                            | 0     |
 | [D22](#d22--analytics-partitioned-from-day-one)     | AnalyticsEvent partitioned from day one               | Accepted                            | 0     |
 | [D23](#d23--prisma-7-with-a-driver-adapter)         | Prisma 7 with an explicit `pg` driver adapter         | Accepted                            | 0     |
+| [D28](#d28--buyers-are-phone-first-identities-not-users) | Buyers are phone-first identities, not users          | Accepted                            | L1    |
+| [D29](#d29--market-fan-out-is-a-database-polled-outbox-not-a-queue) | Market fan-out is a DB-polled outbox, not a queue     | Accepted                            | L3    |
+| [D30](#d30--a-guarded-root-level-city-segment-for-discovery-pages) | Guarded root-level `[city]` segment for discovery  | Accepted                            | L5    |
+| [D31](#d31--the-proxy-resolves-a-loopback-host-through-x-forwarded-host) | Proxy resolves loopback Host via `x-forwarded-host`  | Accepted                            | L6    |
+| [D32](#d32--web-presence-is-a-plan-tier)            | Web presence is a plan tier: catalogue → subdomain → custom domain | Accepted               | L7    |
+| [D33](#d33--storefront-templates-are-compositions-of-shared-sections) | Storefront templates are compositions of shared sections | Accepted           | L8    |
+| [D34](#d34--indiamart-style-category-tree-chosen-at-registration) | IndiaMART-style category tree, chosen at registration | Accepted               | L8    |
 
 ---
 
@@ -120,6 +127,9 @@ partially separate sites. Accepted deliberately, and the reason D2 exists.
 **Revisit if** Search Console shows subdomains failing to rank after 6 months of
 indexed, complete sites.
 
+**Revised by D32.** "Microsite" now means "the seller's highest available
+surface". A seller whose plan has no website is canonical on the marketplace.
+
 ## D2 — Configurable index eligibility
 
 **Decision.** A microsite serves `noindex, follow` until it clears a
@@ -185,6 +195,14 @@ products, premium templates, analytics, and later promoted listings.
 **Schema hedge.** `Plan.leadCreditsPerMonth`, `Subscription.leadCreditsUsed` and
 `Enquiry.unlockedAt` exist now and are unused. Switching to metered leads later
 is a feature flag plus masking logic — never a migration.
+
+**Revised by D28 (2026-09-17).** The hedge paid off half-way. Enquiries and
+DIRECT leads — a buyer contacting a seller they chose — remain free and
+unmetered on every plan. MARKET leads — the platform forwarding that buyer's
+requirement to other matched sellers — cost one credit to accept, granted
+monthly per plan via `Plan.leadCreditsPerMonth` (Free 0, Basic 10, Gold 40).
+`Subscription.leadCreditsUsed` is superseded by the `CreditLedger` and is no
+longer written. See docs/LEADS.md.
 
 ## D6 — India first, Razorpay
 
@@ -515,3 +533,255 @@ Cloudinary should degrade to something usable rather than to a broken button.
 A pasted link is stored with an empty `publicId`, which is how the two origins
 stay distinguishable: a row with a public id is ours and can be deleted from the
 CDN, a row without one is hosted somewhere we do not control.
+
+---
+
+## D28 — Buyers are phone-first identities, not users
+
+**Decision.** A buyer is a verified phone number (`Buyer.phone`, E.164), created
+the moment an OTP is confirmed. No password, no email, no Auth.js session.
+A signed, host-only cookie (`bz_buyer`) carrying only the buyer id lets a
+returning buyer skip the OTP for thirty days. `Buyer.userId` is an optional
+link for the day a buyer wants a real account.
+
+**Why.** The buyer's entire job is "tell this supplier what I want and open
+WhatsApp". Every field between the click and the wa.me link is a buyer who
+leaves. A phone number is the one thing the seller needs and the one thing
+the buyer will type; asking for anything more before the lead exists is
+optimising for our data model over the conversion. It is also the identity
+IndiaMART trained this market to expect.
+
+**Why not the User table.** `User` is the Auth.js account with roles, sessions
+and a permission matrix. A buyer needs none of it, and mixing the two makes
+every seller-dashboard query that starts from `User` carry a "but not buyers"
+filter forever. The `BUYER` role stays in the enum for a buyer who does
+register.
+
+**OTP storage.** `tokens.ts` stores plain SHA-256 because its tokens are 256
+bits of CSPRNG output. A six-digit code is a million candidates, so a plain
+hash in a dump *is* the code. `OtpChallenge.codeHash` is therefore an HMAC
+keyed by `OTP_PEPPER`, which lives only in the server environment. Three
+attempts per code, five-minute expiry, single use, plus per-phone and per-IP
+rate limits in front.
+
+**Cost.** The buyer cookie is host-only, exactly like the session cookie and
+for the same reason (any seller's stored XSS on a tenant subdomain must not
+read it). So a buyer verified on the marketplace is *not* recognised on a
+microsite and will see the OTP again there. Accepted: the code takes thirty
+seconds, and the alternative is a cookie every tenant can read.
+
+**Revisit at** the first buyer feature that needs state beyond "I want X" —
+saved suppliers, a requirement history page. That is when `Buyer.userId`
+starts being populated.
+
+---
+
+## D29 — Market fan-out is a database-polled outbox, not a queue
+
+**Decision.** The request that creates a `Requirement` writes it with
+`fanoutStatus = PENDING` and returns. A separate PM2 process (`bzaro-worker`)
+polls with `SELECT … FOR UPDATE SKIP LOCKED`, runs the matcher, inserts the
+MARKET leads and their `LeadDelivery` rows, and drains those through the
+`LeadNotifier`. Partial indexes on the PENDING rows keep the poll cheap at any
+table size.
+
+**Why not BullMQ.** The VPS has Redis, but the application reaches it only
+through SRH's HTTP shim (`ratelimit.ts` speaks Upstash's REST protocol).
+BullMQ needs a raw TCP client, which means a new dependency, a new password
+in the environment, a second Redis access path to secure, and — because
+BullMQ's jobs are not in the same database as the rows they act on — a
+two-phase-commit problem the moment a job runs before its transaction
+commits. The outbox pattern has none of that: the fan-out is a row in the
+same transaction as the requirement, so it is exactly-once by construction.
+
+**Why not inline.** Matching touches every seller in a category and writes
+up to ten leads with deliveries. That is fine at 200 ms; it is not fine on the
+critical path of a buyer waiting for a wa.me link, and it must not fail the
+DIRECT lead if the matcher throws.
+
+**Cost.** Latency of one poll interval (seconds) before MARKET leads appear,
+which nobody is waiting for. A second process to run and monitor — the same
+`pm2` unit, one more line in `ecosystem.config.js`.
+
+**Revisit at** ~10 requirements per second sustained, where polling overhead
+starts to matter and `LISTEN/NOTIFY` (still no new infrastructure) is the
+next step before a real queue.
+
+---
+
+## D30 — A guarded root-level `[city]` segment for discovery pages
+
+**Decision.** Buyer discovery pages live at `/<city>` and
+`/<city>/category/<path>` — the URL shape buyers type and search engines rank
+("led bulb suppliers mumbai"). The `[city]` segment sits at the root of the
+marketplace route group.
+
+**Why this does not reopen D20.** D20 rejected `app/[tenant]` because an
+unknown path would resolve to a *tenant site* — content that should never be
+served on the apex. `[city]` is checked against the `Location` table
+(`type = CITY, isActive`) on every request and anything else is a plain 404.
+The worst case is the same 404 an unmatched path already produced. Static
+routes (`/search`, `/sellers`, `/category`, `/post-requirement`, …) take
+precedence over the dynamic segment, exactly as before.
+
+**Cost.** Every new top-level static route must be added *as a route*; a typo
+in a link now 404s through the city page instead of the framework's own
+not-found, which is the same page. City slugs are therefore reserved words at
+the apex — a category or page can never be called `mumbai`.
+
+**Rendering.** Both pages are ISR (`revalidate = 3600`) and every read behind
+them is tagged (`discovery:*`). `revalidateSellerDiscovery` purges those tags
+from every seller-status, profile and catalogue write, so a newly verified
+seller appears within seconds instead of after the next build — the fix for
+SESSION_HANDOFF gotcha #1, which also applies to the homepage now that it is
+ISR rather than fully static.
+
+**Revisit at** the first collision between a city slug and a wanted top-level
+route.
+
+---
+
+## D31 — The proxy resolves a loopback Host through `x-forwarded-host`
+
+**Finding.** When a Server Action calls `redirect()`, Next.js renders the
+target page by **fetching itself over loopback**: `Host: localhost`, the
+visitor's real host in `x-forwarded-host`, the visitor's cookies attached. Our
+proxy classified that request by its loopback Host. In development that hit
+the "loopback → root domain" 307, and `fetch` drops the `Cookie` header when
+it follows a redirect to another host — so the page rendered with no session,
+`requireUser` bounced to `/login`, and the login page (which does see the
+cookie) sent the user on to `/dashboard`, losing the destination. In
+production a loopback Host is not the root host and would have fallen into
+the custom-domain branch and 404ed. Every action that redirects to a guarded
+page was affected: product created, business registered, onboarding steps.
+
+**Decision.** A loopback Host defers to `x-forwarded-host` when that names a
+real host (`resolveLoopbackHost` in `src/proxy.ts`). Plain loopback requests
+with no forwarded host keep the development redirect.
+
+**Why it is safe.** Only requests whose Host is loopback are affected, and
+nothing reaching the origin through nginx carries a loopback Host — nginx
+sets `Host` from the visitor's request. So `x-forwarded-host` cannot be used
+from outside to impersonate a tenant.
+
+**How it was found.** Logging `headers()` inside `getSessionUser` showed a
+render with `x-action-redirect` set and no `cookie`; logging the proxy's
+loopback branch showed the self-fetch arriving with the cookie and a real
+`x-forwarded-host`. `tests/e2e/seller-onboarding-journey.spec.ts` now drives
+two action redirects in a real browser and would catch a regression.
+
+---
+
+## D32 — Web presence is a plan tier
+
+**Decision.** What a seller gets on the web is a property of their plan, not
+a right of registration:
+
+| `Plan.webPresence` | Seeded plans | Surface | Canonical for the seller's content |
+|---|---|---|---|
+| `CATALOGUE` | Free, Basic | listing + catalogue page `bzaro.in/seller/{slug}` | the marketplace pages |
+| `SUBDOMAIN` | Gold | website at `{slug}.bzaro.in` | the subdomain (D1) |
+| `CUSTOM_DOMAIN` | — (Pro, when D3 ships) | website on the seller's own domain | the custom domain |
+
+The tier is denormalised onto `Seller.webPresence` (recomputed on every
+subscription write by `recomputeWebPresence`, swept nightly by
+`recompute-web-presence`) because it is read on every microsite request and
+every canonical URL. One helper, `sellerSiteUrl()` in `src/lib/utils/url.ts`,
+is the canonical rule; marketplace pages, microsite metadata, sitemaps,
+JSON-LD and dashboard links all go through it.
+
+**Routing.** A live seller on the catalogue tier whose subdomain is requested
+gets a **301 to the marketplace equivalent, path preserved**
+(`marketplacePathFor`: `/products/x` → `/product/{slug}/x`, everything else →
+`/seller/{slug}`). Never a 404: the seller may have printed the subdomain on
+visiting cards, and the redirect hands the ranking to the page that now
+represents them. Status still wins over tier — a suspended seller is 403
+whatever they pay for.
+
+**Downgrade.** Same mechanism. Gold → Basic makes the subdomain redirect;
+nothing is deleted, so an upgrade restores the site exactly. A `PAST_DUE`
+subscription keeps its tier until `gracePeriodEndsAt`.
+
+**Existing sellers** were not grandfathered: the migration derives the tier
+from the live subscription, and the seed puts microsite fixtures on Gold.
+
+**Billing.** There is no payment gateway. Sellers pick a plan at
+`/dashboard/billing`, see the UPI / WhatsApp instructions from the `billing`
+setting, and "notify the team" (an audit row). An admin assigns the plan from
+the seller's admin page (`changeSellerPlan`: cancels the live subscription,
+starts a new 30-day period, recomputes the tier, purges the tenant cache).
+When Razorpay lands it replaces only that admin step.
+
+**Cost.** Two surfaces to keep in sync per seller; the risk is a page that
+still builds a subdomain URL by hand. `tenantUrl()` is therefore for internal
+use (the resolver, the redirect target) — anything user-facing uses
+`sellerSiteUrl()`. `Plan.allowCustomDomain` was folded into the enum.
+
+**Revisit if** free sellers on the catalogue tier convert to Gold at a rate
+that suggests the subdomain should be the free hook instead (the original
+D1 bet), or when custom domains ship and the Pro plan is created.
+
+---
+
+## D33 — Storefront templates are compositions of shared sections
+
+**Decision.** Six storefront templates (`electro`, `medico`, `autoparts`,
+`minimal`, `boutique`, `fresh`) join Classic and Modern. Each is a
+*composition* — `src/components/site/templates/storefronts.tsx` picks a
+header variant, a footer variant, a hero cut and an ordered list of
+sections — over one shared section library
+(`src/components/site/storefront/`). The look is completed by the template's
+preset theme tokens (colours, font pair, radius) seeded in
+`prisma/seed/templates.ts`. Inner pages share the page bodies with Classic
+and Modern, so the registry contract ("switching template loses nothing")
+still holds for every template.
+
+**Why compositions, not eight hand-built sites.** The reference themes
+(Ochaka, XStore) differ in chrome, colour and section order far more than in
+section *content*: every one has a category rail, a product grid, promo
+tiles, a USP strip, a story block and an enquiry band. Building those once
+means a fix to the product tile lands in six templates, and a seventh
+template is an afternoon.
+
+**What sellers control.** The template (onboarding step 4 `/register/theme`,
+the dashboard Website page, or an admin on the seller's page —
+`applyTemplate` applies the preset and purges the tenant cache) and the
+validated tokens. Never markup (D7 unchanged).
+
+**Font pairs** are now real: the site layout loads the allowlisted faces via
+`next/font` and sets `--site-font-body` / `--site-font-heading`; `.site-root`
+in globals.css applies them, with headings and `.site-display` taking the
+heading face.
+
+**Contact.** Storefront chrome opens the contact-intent modal, never a raw
+`wa.me` link — the seller's number is released only after a requirement
+exists (docs/LEADS.md §1). Classic and Modern were brought in line.
+
+**Cost.** Home data grew (12 products, categories with counts and a
+representative image, counts) — one cached call, tagged like before. Preview
+images in `public/templates/` are screenshots of the `abc-electronics`
+fixture and must be regenerated when a template changes (the Playwright
+snippet lives in SESSION_HANDOFF.md).
+
+---
+
+## D34 — IndiaMART-style category tree, chosen at registration
+
+**Decision.** The taxonomy is `prisma/seed/data/categories.ts`: 51 groups,
+412 nodes, modelled on IndiaMART's top-level categories and their principal
+subcategories; two levels for most trades, three where the seeded catalogue
+already used them. Slugs are globally unique. Sellers choose a **main
+category** (group → subcategory → optional specialisation, or search by trade
+name) and up to four **other categories** with the same cascade
+(`src/components/onboarding/CategoryPicker.tsx`). The picker posts the same
+`primaryCategoryId` / `secondaryCategoryIds` the schema already validated.
+
+**Why.** A flat list of four groups was both too small to describe a real
+seller and — with subcategories rendered under the wrong parent — actively
+misleading; the old checkbox list also crashed on click (a React event read
+inside a state updater). Lead matching (D28) keys on the category, so a
+seller who cannot find their trade gets no market leads.
+
+**Cost.** The catalogue forms' flat `<select>` now holds ~400 rows, ordered
+by materialised path so it reads as a tree; a cascading picker there is a
+follow-up. Re-seeding upserts by path, so extending the tree is additive.

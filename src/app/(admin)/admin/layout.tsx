@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { BrandLogo } from "@/components/shared/BrandLogo";
+import { SignOutButton } from "@/components/shared/SignOutButton";
 import Link from "next/link";
 import { IBM_Plex_Sans } from "next/font/google";
 import { requireAdmin } from "@/lib/auth/guards";
@@ -33,6 +35,8 @@ const NAV = [
   { href: "/admin/categories", label: "Categories", permission: "admin:taxonomy:manage" },
   { href: "/admin/locations", label: "Locations", permission: "admin:taxonomy:manage" },
   { href: "/admin/enquiries", label: "Enquiries", permission: "admin:enquiry:read" },
+  { href: "/admin/leads", label: "Leads", permission: "admin:lead:read" },
+  { href: "/admin/leads/flags", label: "Lead flags", permission: "admin:lead:refund" },
   { href: "/admin/subscriptions", label: "Subscriptions", permission: "admin:subscription:manage" },
   { href: "/admin/plans", label: "Plans", permission: "admin:plan:manage" },
   { href: "/admin/audit-log", label: "Audit log", permission: "admin:audit:read" },
@@ -48,8 +52,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <body className="min-h-full bg-neutral-900 text-neutral-100">
         <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8">
           <aside className="w-56 shrink-0">
+            <div className="mb-6">
+              <BrandLogo height={30} />
+            </div>
             <p className="text-xs tracking-wide text-neutral-500 uppercase">Admin</p>
-            <p className="mb-6 truncate text-sm font-medium">{user.role}</p>
+            <p className="truncate text-sm font-medium">{user.role}</p>
+            <p className="mb-4 truncate text-xs text-neutral-500">{user.email}</p>
+            <div className="mb-6 border-b border-neutral-800 pb-4">
+              <SignOutButton tone="dark" />
+            </div>
             <nav className="flex flex-col gap-1 text-sm">
               {visible.map((item) => (
                 <Link

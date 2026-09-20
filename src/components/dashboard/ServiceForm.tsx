@@ -218,7 +218,8 @@ export function ServiceForm({
             Or paste an image link
           </summary>
           <input
-            type="url"
+            type="text"
+            inputMode="url"
             name="imageUrl"
             value={imageUrl}
             onChange={(event) => setImageUrl(event.currentTarget.value)}

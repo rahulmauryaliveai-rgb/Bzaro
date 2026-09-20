@@ -52,8 +52,8 @@ export const uploadsAvailable =
   env.NODE_ENV !== "production" ||
   Boolean(
     clientEnv.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME &&
-      env.CLOUDINARY_API_KEY &&
-      env.CLOUDINARY_API_SECRET,
+    env.CLOUDINARY_API_KEY &&
+    env.CLOUDINARY_API_SECRET,
   );
 
 declare global {

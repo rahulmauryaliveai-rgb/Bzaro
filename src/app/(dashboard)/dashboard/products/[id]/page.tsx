@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { getCategoryOptions, getProductForEdit } from "@/server/services/catalog.service";
 import { ProductForm } from "@/components/dashboard/ProductForm";
 import { DeleteCatalogItem } from "@/components/dashboard/DeleteCatalogItem";
 import { specificationsSchema } from "@/lib/validation/catalog";
 import { minorToMajorString } from "@/lib/utils/money";
-import { tenantUrl } from "@/lib/utils/url";
+import { sellerSiteUrl } from "@/lib/utils/url";
 
 export const metadata: Metadata = {
   title: "Edit product",
@@ -51,12 +51,12 @@ export default async function EditProductPage({
 
         {live ? (
           <a
-            href={`${tenantUrl(scope.sellerSlug)}products/${product.slug}`}
+            href={sellerSiteUrl(scopeSurface(scope), `/products/${product.slug}`)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-teal-700 underline underline-offset-2"
           >
-            View on your website ↗
+            {scope.webPresence === "CATALOGUE" ? "View on Bzaro ↗" : "View on your website ↗"}
           </a>
         ) : null}
       </header>

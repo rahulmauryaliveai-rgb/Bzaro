@@ -53,3 +53,6 @@ next-env.d.ts
 
 # Local media provider output (development only; see src/lib/media/local.ts)
 /public/uploads/
+
+# Local-only Playwright override (browser channel); see tests/e2e
+playwright.local.config.ts

@@ -60,11 +60,7 @@ export async function changePasswordAction(
     return { fieldErrors };
   }
 
-  const result = await changePassword(
-    user.id,
-    parsed.data.currentPassword,
-    parsed.data.password,
-  );
+  const result = await changePassword(user.id, parsed.data.currentPassword, parsed.data.password);
 
   if (!result.ok) {
     return result.reason === "wrong_password"

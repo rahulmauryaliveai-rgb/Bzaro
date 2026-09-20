@@ -3,11 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireSeller } from "@/lib/auth/guards";
-import {
-  deleteCatalogItemSchema,
-  productSchema,
-  serviceSchema,
-} from "@/lib/validation/catalog";
+import { deleteCatalogItemSchema, productSchema, serviceSchema } from "@/lib/validation/catalog";
 import {
   createProduct,
   createService,
@@ -305,12 +301,7 @@ export async function deleteCatalogItemAction(
     return { fieldErrors: fieldErrorsFrom(parsed.error.issues) };
   }
 
-  const deleted = await deleteCatalogItem(
-    scope.sellerId,
-    scope.sellerSlug,
-    kind,
-    parsed.data.id,
-  );
+  const deleted = await deleteCatalogItem(scope.sellerId, scope.sellerSlug, kind, parsed.data.id);
 
   if (!deleted) {
     return { error: "That item no longer exists." };

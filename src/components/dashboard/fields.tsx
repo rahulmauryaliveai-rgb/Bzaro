@@ -13,7 +13,15 @@ import type { ReactNode } from "react";
  * with a problem looks the same wherever it appears.
  */
 
-export function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+export function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <fieldset className="rounded-lg border border-neutral-200 bg-white p-5">
       <legend className="px-2 text-sm font-semibold tracking-wide text-neutral-500 uppercase">

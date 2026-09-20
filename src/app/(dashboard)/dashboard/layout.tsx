@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { BrandLogo } from "@/components/shared/BrandLogo";
 import { IBM_Plex_Sans } from "next/font/google";
-import { requireSeller } from "@/lib/auth/guards";
-import { tenantUrl } from "@/lib/utils/url";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
+import { sellerSiteUrl } from "@/lib/utils/url";
 import { DashboardNav } from "@/components/dashboard/DashboardNav";
+import { SignOutButton } from "@/components/shared/SignOutButton";
 import "../../globals.css";
 
 /**
@@ -43,20 +45,26 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8">
           <aside className="w-56 shrink-0">
             <div className="mb-6">
+              <BrandLogo height={30} />
+            </div>
+            <div className="mb-6">
               <p className="text-xs tracking-wide text-neutral-500 uppercase">Signed in as</p>
               <p className="truncate font-medium">{scope.sellerSlug}</p>
               <a
-                href={tenantUrl(scope.sellerSlug)}
+                href={sellerSiteUrl(scopeSurface(scope))}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-teal-700 underline underline-offset-2"
               >
-                View site ↗
+                {scope.webPresence === "CATALOGUE" ? "View catalogue page ↗" : "View site ↗"}
               </a>
             </div>
             {/* Client component: it needs the current path to mark the active
                 page, which a server layout cannot read. */}
             <DashboardNav />
+            <div className="mt-6 border-t border-neutral-200 pt-4">
+              <SignOutButton />
+            </div>
           </aside>
 
           <main className="min-w-0 flex-1">{children}</main>

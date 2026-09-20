@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { setCatalogStatusAction } from "@/server/actions/catalog";
 import { formatPrice } from "@/lib/utils/money";
+import { sellerSiteUrl, type SellerSurface } from "@/lib/utils/url";
 import { SiteImage } from "@/components/site/sections/SiteImage";
 
 /**
@@ -34,7 +35,13 @@ export type CatalogRow = {
   imageAlt?: string | null;
 };
 
-function Badge({ tone, children }: { tone: "live" | "draft" | "review" | "archived"; children: React.ReactNode }) {
+function Badge({
+  tone,
+  children,
+}: {
+  tone: "live" | "draft" | "review" | "archived";
+  children: React.ReactNode;
+}) {
   const classes = {
     live: "bg-teal-50 text-teal-800",
     draft: "bg-neutral-100 text-neutral-700",
@@ -63,12 +70,12 @@ function statusBadge(row: CatalogRow) {
 export function CatalogList({
   kind,
   rows,
-  tenantUrl,
+  seller,
 }: {
   kind: "product" | "service";
   rows: CatalogRow[];
-  /** Base URL of the seller's own site, for the "view" link. */
-  tenantUrl: string;
+  /** Slug + web-presence tier: the "view" link goes to the site or, on the catalogue tier, to Bzaro (D32). */
+  seller: SellerSurface;
 }) {
   const basePath = kind === "product" ? "/dashboard/products" : "/dashboard/services";
   const publicPath = kind === "product" ? "products" : "services";
@@ -119,7 +126,7 @@ export function CatalogList({
             <div className="flex shrink-0 items-center gap-2">
               {live ? (
                 <a
-                  href={`${tenantUrl}${publicPath}/${row.slug}`}
+                  href={sellerSiteUrl(seller, `/${publicPath}/${row.slug}`)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-teal-700 underline underline-offset-2"

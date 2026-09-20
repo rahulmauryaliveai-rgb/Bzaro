@@ -94,7 +94,8 @@ export function GalleryAddForm({ remaining }: { remaining: number }) {
                 Or paste an image link
               </summary>
               <input
-                type="url"
+                type="text"
+                inputMode="url"
                 name="imageUrl"
                 value={slot.url}
                 onChange={(event) =>

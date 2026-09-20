@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { VerifyPhoneForm } from "@/components/dashboard/VerifyPhoneForm";
 import { requireSeller, getSessionUser } from "@/lib/auth/guards";
 import { getAccountSettings } from "@/server/services/seller.service";
 import { ChangePasswordForm } from "@/components/dashboard/AccountForms";
@@ -85,11 +86,13 @@ export default async function AccountSettingsPage() {
           explanation next to the field it concerns.
         */}
         {!account?.phoneVerified ? (
-          <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Your phone is not verified, which keeps your website out of search results.
-            Phone verification by SMS is coming shortly; until then, contact support to have
-            it verified manually.
-          </p>
+          <>
+            <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Your phone is not verified, which keeps your website out of search results. Verify it
+              with a one-time code below.
+            </p>
+            <VerifyPhoneForm defaultPhone={account?.phone ?? ""} />
+          </>
         ) : null}
       </section>
 
@@ -128,8 +131,8 @@ export default async function AccountSettingsPage() {
         </div>
 
         <p className="mt-3 text-xs text-neutral-500">
-          Sign out everywhere ends every session on every device immediately. Use it if you
-          think someone else has access to your account.
+          Sign out everywhere ends every session on every device immediately. Use it if you think
+          someone else has access to your account.
         </p>
       </section>
     </div>

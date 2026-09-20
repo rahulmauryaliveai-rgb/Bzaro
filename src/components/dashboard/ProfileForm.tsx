@@ -3,6 +3,14 @@
 import { useActionState, useState } from "react";
 import { updateProfileAction, type SellerActionState } from "@/server/actions/seller";
 import { ImageUpload } from "@/components/dashboard/ImageUpload";
+import { Select } from "@/components/dashboard/fields";
+import {
+  BUSINESS_TYPES,
+  BUSINESS_TYPE_LABELS,
+  CERTIFICATIONS,
+  EMPLOYEE_BANDS,
+  TURNOVER_BANDS,
+} from "@/lib/validation/onboarding";
 
 /**
  * Business profile editor.
@@ -34,6 +42,10 @@ type Profile = {
   locationId: string | null;
   establishedYear: number | null;
   employeeCount: string | null;
+  businessType: string | null;
+  annualTurnover: string | null;
+  certifications: string[];
+  servesLocationIds: string[];
   gstin: string | null;
   socialLinks: Record<string, string>;
 };
@@ -210,7 +222,8 @@ export function ProfileForm({
           </summary>
           <div className="mt-2 space-y-2">
             <input
-              type="url"
+              type="text"
+              inputMode="url"
               name="logoUrl"
               value={logoUrl}
               onChange={(event) => setLogoUrl(event.currentTarget.value)}
@@ -219,7 +232,8 @@ export function ProfileForm({
               className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
             />
             <input
-              type="url"
+              type="text"
+              inputMode="url"
               name="coverImageUrl"
               value={coverUrl}
               onChange={(event) => setCoverUrl(event.currentTarget.value)}
@@ -239,12 +253,32 @@ export function ProfileForm({
           defaultValue={profile.establishedYear?.toString() ?? ""}
           error={state.fieldErrors?.establishedYear}
         />
-        <Field
+        <Select
+          label="Business type"
+          name="businessType"
+          defaultValue={profile.businessType ?? ""}
+          placeholder="Choose…"
+          options={BUSINESS_TYPES.map((type) => ({
+            value: type,
+            label: BUSINESS_TYPE_LABELS[type],
+          }))}
+          error={state.fieldErrors?.businessType}
+        />
+        <Select
           label="Team size"
           name="employeeCount"
           defaultValue={profile.employeeCount ?? ""}
-          hint="e.g. 11-50"
+          placeholder="Choose…"
+          options={EMPLOYEE_BANDS.map((band) => ({ value: band, label: band }))}
           error={state.fieldErrors?.employeeCount}
+        />
+        <Select
+          label="Annual turnover"
+          name="annualTurnover"
+          defaultValue={profile.annualTurnover ?? ""}
+          placeholder="Choose…"
+          options={TURNOVER_BANDS.map((band) => ({ value: band, label: band }))}
+          error={state.fieldErrors?.annualTurnover}
         />
         <Field
           label="GSTIN"
@@ -253,6 +287,51 @@ export function ProfileForm({
           hint="15 characters. Shown publicly as a trust signal."
           error={state.fieldErrors?.gstin}
         />
+      </Section>
+
+      <Section title="Certifications" hint="Shown on your listing and your website.">
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          {CERTIFICATIONS.map((certification) => (
+            <label key={certification} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="certifications"
+                value={certification}
+                defaultChecked={profile.certifications.includes(certification)}
+              />
+              <span>{certification}</span>
+            </label>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Cities you serve"
+        hint="Besides your own city. Buyers there see you in listings and their requirements can reach you."
+      >
+        <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border border-neutral-200 p-3">
+          {locations
+            .filter((location) => location.id !== profile.locationId)
+            .map((location) => (
+              <label key={location.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="servesLocationIds"
+                  value={location.id}
+                  defaultChecked={profile.servesLocationIds.includes(location.id)}
+                />
+                <span>
+                  {location.name}
+                  {location.parent ? (
+                    <span className="text-neutral-500">, {location.parent.name}</span>
+                  ) : null}
+                </span>
+              </label>
+            ))}
+        </div>
+        {state.fieldErrors?.servesLocationIds ? (
+          <p className="text-xs text-red-600">{state.fieldErrors.servesLocationIds}</p>
+        ) : null}
       </Section>
 
       <Section title="Social links">
@@ -342,12 +421,21 @@ function DescriptionField({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <fieldset className="rounded-lg border border-neutral-200 bg-white p-5">
       <legend className="px-2 text-sm font-semibold tracking-wide text-neutral-500 uppercase">
         {title}
       </legend>
+      {hint ? <p className="mb-4 text-xs text-neutral-500">{hint}</p> : null}
       <div className="space-y-4">{children}</div>
     </fieldset>
   );

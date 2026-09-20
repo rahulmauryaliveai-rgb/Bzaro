@@ -50,9 +50,7 @@ test.describe("business onboarding", () => {
     expect(response.status()).not.toBe(200);
   });
 
-  test("redirects an anonymous visitor to login, carrying the destination", async ({
-    request,
-  }) => {
+  test("redirects an anonymous visitor to login, carrying the destination", async ({ request }) => {
     const response = await get(request, "/register/business");
     const location = response.headers()["location"] ?? "";
 

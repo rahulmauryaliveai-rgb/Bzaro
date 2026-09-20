@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { checkCatalogSlug, slugify, uniqueSlug } from "@/lib/utils/slug";
 import { minorToMajorString, parseMoneyToMinor } from "@/lib/utils/money";
-import { productSchema, serviceSchema, specificationsSchema, tagsSchema } from "@/lib/validation/catalog";
+import {
+  productSchema,
+  serviceSchema,
+  specificationsSchema,
+  tagsSchema,
+} from "@/lib/validation/catalog";
 import { decideModeration, editRequiresRereview } from "@/lib/validation/moderation";
 
 /**
@@ -131,7 +136,9 @@ describe("productSchema", () => {
   });
 
   it("caps the description", () => {
-    expect(productSchema.safeParse({ ...VALID, description: "x".repeat(5001) }).success).toBe(false);
+    expect(productSchema.safeParse({ ...VALID, description: "x".repeat(5001) }).success).toBe(
+      false,
+    );
   });
 
   it("requires images to be full URLs", () => {
@@ -164,7 +171,9 @@ describe("productSchema", () => {
 
 describe("serviceSchema", () => {
   it("accepts a minimal service", () => {
-    expect(serviceSchema.safeParse({ name: "Installation", slug: "installation" }).success).toBe(true);
+    expect(serviceSchema.safeParse({ name: "Installation", slug: "installation" }).success).toBe(
+      true,
+    );
   });
 
   it("constrains the pricing model to known values", () => {

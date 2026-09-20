@@ -181,12 +181,7 @@ export async function moveGalleryAction(formData: FormData): Promise<void> {
 
   if (!parsed.success) return;
 
-  await moveGalleryItem(
-    scope.sellerId,
-    scope.sellerSlug,
-    parsed.data.id,
-    parsed.data.direction,
-  );
+  await moveGalleryItem(scope.sellerId, scope.sellerSlug, parsed.data.id, parsed.data.direction);
 
   revalidatePath("/dashboard/gallery");
 }

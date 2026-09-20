@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { getCatalogCounts, listServices } from "@/server/services/catalog.service";
 import { CatalogList } from "@/components/dashboard/CatalogList";
-import { tenantUrl } from "@/lib/utils/url";
 
 export const metadata: Metadata = {
   title: "Services",
@@ -51,8 +50,8 @@ export default async function ServicesPage() {
         <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center">
           <h2 className="font-medium">Add your first service</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-neutral-600">
-            If you do work rather than sell stock — installation, fabrication, consulting — list
-            it here. Two published services are enough to get your website into search results.
+            If you do work rather than sell stock — installation, fabrication, consulting — list it
+            here. Two published services are enough to get your website into search results.
           </p>
           <Link
             href="/dashboard/services/new"
@@ -64,7 +63,7 @@ export default async function ServicesPage() {
       ) : (
         <CatalogList
           kind="service"
-          tenantUrl={tenantUrl(scope.sellerSlug)}
+          seller={scopeSurface(scope)}
           rows={rows.map((row) => ({ ...row, imageUrl: row.imageUrl, imageAlt: row.name }))}
         />
       )}

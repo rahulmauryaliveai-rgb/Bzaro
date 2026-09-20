@@ -274,8 +274,20 @@ export function ProductForm({
 
       <Section title="Identification" hint="All optional — helpful for buyers comparing suppliers.">
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Brand" name="brand" maxLength={100} defaultValue={values.brand ?? ""} error={errors.brand} />
-          <Field label="SKU" name="sku" maxLength={60} defaultValue={values.sku ?? ""} error={errors.sku} />
+          <Field
+            label="Brand"
+            name="brand"
+            maxLength={100}
+            defaultValue={values.brand ?? ""}
+            error={errors.brand}
+          />
+          <Field
+            label="SKU"
+            name="sku"
+            maxLength={60}
+            defaultValue={values.sku ?? ""}
+            error={errors.sku}
+          />
           <Field
             label="Model number"
             name="modelNumber"
@@ -396,7 +408,8 @@ export function ProductForm({
                     Or paste an image link
                   </summary>
                   <input
-                    type="url"
+                    type="text"
+                    inputMode="url"
                     name="imageUrl"
                     value={image.url}
                     placeholder="https://…"

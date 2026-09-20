@@ -143,7 +143,11 @@ test.describe("a seller manages their gallery", () => {
     }
 
     const rows = [
-      { url: `https://picsum.photos/seed/e2e-${STAMP}-a/800/600`, title: "Workshop", alt: "Our workshop floor" },
+      {
+        url: `https://picsum.photos/seed/e2e-${STAMP}-a/800/600`,
+        title: "Workshop",
+        alt: "Our workshop floor",
+      },
       // Deliberately no alt text, so the next test has something to report.
       { url: `https://picsum.photos/seed/e2e-${STAMP}-b/800/600`, title: "Team", alt: "" },
     ];
