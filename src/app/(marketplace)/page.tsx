@@ -1,21 +1,59 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { getHomepageContent } from "@/server/services/marketplace.service";
-import { getPopularCities, getRootCategories } from "@/server/services/taxonomy.service";
-import { SearchBar } from "@/components/marketplace/SearchBar";
+import { getAllCities, getPopularCities } from "@/server/services/taxonomy.service";
+import {
+  getCategoryGrid,
+  getPlatformStats,
+  getPopularInCity,
+  getTopCity,
+} from "@/server/services/discovery.service";
+import { CityPicker } from "@/components/marketplace/CityPicker";
+import {
+  CategoryGrid,
+  CityChips,
+  PopularInCity,
+  PostRequirementCta,
+} from "@/components/marketplace/Discovery";
+import {
+  Faq,
+  HomeHero,
+  HowItWorks,
+  SectionHeading,
+  SellerCta,
+  StatsBand,
+  TrustStrip,
+  type HeroImage,
+} from "@/components/marketplace/Home";
 import { ProductResultCard, SellerResultCard } from "@/components/marketplace/ResultCards";
+import { toProductHit, toSellerHit } from "@/components/marketplace/hits";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { marketplaceUrl } from "@/lib/utils/url";
 import { clientEnv } from "@/env.client";
 
 /**
- * Marketplace homepage.
+ * Marketplace homepage — the buyer's front door.
  *
- * Search first, then routes into the taxonomy. B2B buyers arrive with a
- * specific part or material in mind far more often than they arrive to browse,
- * so the search box gets the prime position and the category grid is the
- * fallback for people who do not yet know the right term.
+ * ── ISR, not static ──────────────────────────────────────────────────────────
+ * Rendered at most once an hour, and purged early by `revalidateSellerDiscovery`
+ * whenever a seller is verified, changes city or category, or publishes a
+ * product. Before this the page was prerendered once at build and a new seller
+ * did not appear until the next deploy (SESSION_HANDOFF gotcha #1).
+ *
+ * Nothing here may read cookies or headers: the city picker is a client
+ * component that navigates to the per-city page, which is itself ISR.
+ *
+ * ── Order of sections ────────────────────────────────────────────────────────
+ * The page is a conversion funnel, top to bottom:
+ *
+ *   hero (search + city, post requirement)  → the two actions that create leads
+ *   trust strip                             → why a buyer should bother
+ *   category tiles                          → browse entry for the undecided
+ *   popular in <top city>                   → proof there is supply here
+ *   post requirement band                   → catch the buyer who found nothing
+ *   how it works → latest products → suppliers → stats → seller CTA → FAQ → cities
  */
+
+export const revalidate = 3600;
 
 const platform = clientEnv.NEXT_PUBLIC_PLATFORM_NAME;
 
@@ -27,19 +65,29 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const [content, categories, cities] = await Promise.all([
+  const [content, categories, popularCities, allCities, topCity, stats] = await Promise.all([
     getHomepageContent(),
-    getRootCategories(),
+    getCategoryGrid(),
     getPopularCities(12),
+    getAllCities(),
+    getTopCity(),
+    getPlatformStats(),
   ]);
+  const popular = topCity ? await getPopularInCity(topCity.id) : null;
+
+  const heroImages: HeroImage[] = content.products
+    .filter((product) => product.images[0]?.url)
+    .slice(0, 4)
+    .map((product) => ({
+      url: product.images[0]!.url,
+      alt: product.images[0]!.alt ?? product.name,
+      href: `/product/${product.seller.slug}/${product.slug}`,
+    }));
+
+  const cityOptions = allCities.map((city) => ({ path: city.path, name: city.name }));
 
   return (
     <>
-      {/*
-        WebSite + SearchAction tells search engines the site has its own search,
-        which can surface a sitelinks search box. It is only honest to declare it
-        now that /search actually exists.
-      */}
       <JsonLd
         data={{
           "@context": "https://schema.org",
@@ -52,167 +100,82 @@ export default async function HomePage() {
               "@type": "EntryPoint",
               urlTemplate: marketplaceUrl("/search?q={search_term_string}"),
             },
-            "query-input": "required name=search_term_string",
+            "query-input": "required search_term_string",
           },
         }}
       />
 
-      <section className="border-b border-neutral-200 bg-neutral-50">
-        <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-            Find verified suppliers
-          </h1>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-neutral-600">
-            Compare products from{" "}
-            <span className="font-medium text-neutral-900 tabular-nums">{content.sellerCount}</span>{" "}
-            businesses and contact them directly.
-          </p>
+      <HomeHero
+        stats={stats}
+        cities={cityOptions}
+        images={heroImages}
+        popularCategories={categories}
+      />
 
-          <div className="mx-auto mt-8 max-w-2xl">
-            <SearchBar />
+      <TrustStrip />
+
+      <div className="mx-auto max-w-7xl space-y-20 px-4 py-16">
+        <CategoryGrid
+          categories={categories}
+          description="Every category is backed by verified suppliers with live product listings."
+        />
+
+        {topCity && popular ? (
+          <div>
+            <div className="mb-6 flex justify-end">
+              <CityPicker
+                current={null}
+                cities={allCities.map((c) => ({ slug: c.slug, name: c.name }))}
+                className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm shadow-sm"
+              />
+            </div>
+            <PopularInCity city={topCity} popular={popular} />
           </div>
-
-          {categories.length > 0 ? (
-            <p className="mt-4 text-sm text-neutral-500">
-              Popular:{" "}
-              {categories.slice(0, 4).map((category, index) => (
-                <span key={category.id}>
-                  {index > 0 ? ", " : ""}
-                  <Link
-                    href={`/category${category.path}`}
-                    className="underline underline-offset-2 hover:text-neutral-900"
-                  >
-                    {category.name}
-                  </Link>
-                </span>
-              ))}
-            </p>
-          ) : null}
-        </div>
-      </section>
-
-      <div className="mx-auto max-w-6xl px-4 py-12">
-        {categories.length > 0 ? (
-          <section>
-            <h2 className="mb-5 text-xl font-semibold tracking-tight">Browse by category</h2>
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {categories.map((category) => (
-                <li key={category.id}>
-                  <Link
-                    href={`/category${category.path}`}
-                    className="block rounded-lg border border-neutral-200 p-4 transition-shadow hover:shadow-md"
-                  >
-                    <p className="font-medium">{category.name}</p>
-                    <p className="mt-0.5 text-sm text-neutral-500 tabular-nums">
-                      {category.productCount} product{category.productCount === 1 ? "" : "s"}
-                    </p>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
         ) : null}
 
-        {content.products.length > 0 ? (
-          <section className="mt-14">
-            <div className="mb-5 flex items-baseline justify-between gap-4">
-              <h2 className="text-xl font-semibold tracking-tight">Latest products</h2>
-              <Link
-                href="/products"
-                className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900"
-              >
-                View all
-              </Link>
-            </div>
+        <PostRequirementCta />
 
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <HowItWorks />
+
+        {content.products.length > 0 ? (
+          <section>
+            <SectionHeading
+              eyebrow="Fresh listings"
+              title="Latest products"
+              description="Newly published by verified suppliers. Prices are indicative — ask for a quote."
+              action={{ href: "/products", label: "View all products" }}
+            />
+            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
               {content.products.map((product) => (
-                <ProductResultCard
-                  key={product.id}
-                  hit={{
-                    id: product.id,
-                    slug: product.slug,
-                    name: product.name,
-                    shortDescription: product.shortDescription,
-                    brand: product.brand,
-                    priceMinor: product.priceMinor,
-                    priceMaxMinor: product.priceMaxMinor,
-                    currency: product.currency,
-                    unit: product.unit,
-                    priceOnRequest: product.priceOnRequest,
-                    imageUrl: product.images[0]?.url ?? null,
-                    imageAlt: product.images[0]?.alt ?? null,
-                    isFeatured: product.isFeatured,
-                    createdAt: product.createdAt,
-                    sellerSlug: product.seller.slug,
-                    sellerName: product.seller.businessName,
-                    sellerVerified: product.seller.verifiedAt !== null,
-                    sellerCity: product.seller.location?.name ?? null,
-                    sellerState: product.seller.location?.parent?.name ?? null,
-                    categoryName: product.category?.name ?? null,
-                    categoryPath: product.category?.path ?? null,
-                  }}
-                />
+                <ProductResultCard key={product.id} hit={toProductHit(product)} />
               ))}
             </div>
           </section>
         ) : null}
 
         {content.sellers.length > 0 ? (
-          <section className="mt-14">
-            <div className="mb-5 flex items-baseline justify-between gap-4">
-              <h2 className="text-xl font-semibold tracking-tight">Suppliers</h2>
-              <Link
-                href="/sellers"
-                className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900"
-              >
-                View directory
-              </Link>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
+          <section>
+            <SectionHeading
+              eyebrow="Trusted suppliers"
+              title="Top-rated businesses on Bzaro"
+              description="Verified businesses with the strongest catalogues and buyer ratings."
+              action={{ href: "/sellers", label: "Supplier directory" }}
+            />
+            <div className="mt-8 grid gap-4 lg:grid-cols-2">
               {content.sellers.map((seller) => (
-                <SellerResultCard
-                  key={seller.id}
-                  hit={{
-                    id: seller.id,
-                    slug: seller.slug,
-                    businessName: seller.businessName,
-                    tagline: seller.tagline,
-                    description: null,
-                    logoUrl: seller.logoUrl,
-                    city: seller.location?.name ?? null,
-                    state: seller.location?.parent?.name ?? null,
-                    productCount: seller.productCount,
-                    serviceCount: seller.serviceCount,
-                    ratingAvg: seller.ratingAvg,
-                    ratingCount: seller.ratingCount,
-                    isVerified: seller.verifiedAt !== null,
-                    establishedYear: seller.establishedYear,
-                  }}
-                />
+                <SellerResultCard key={seller.id} hit={toSellerHit(seller)} />
               ))}
             </div>
           </section>
         ) : null}
 
-        {cities.length > 0 ? (
-          <section className="mt-14 border-t border-neutral-200 pt-10">
-            <h2 className="mb-4 text-xl font-semibold tracking-tight">Browse by city</h2>
-            <ul className="flex flex-wrap gap-2">
-              {cities.map((city) => (
-                <li key={city.id}>
-                  <Link
-                    href={`/location${city.path}`}
-                    className="inline-block rounded-full border border-neutral-300 px-3.5 py-1.5 text-sm hover:bg-neutral-50"
-                  >
-                    {city.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <StatsBand stats={stats} />
+
+        <SellerCta />
+
+        <Faq />
+
+        <CityChips cities={popularCities} />
       </div>
     </>
   );

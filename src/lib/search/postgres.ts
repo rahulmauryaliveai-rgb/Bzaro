@@ -290,13 +290,14 @@ class PostgresSearchProvider implements SearchProvider {
     const conditions: Prisma.Sql[] = [LIVE_SELLER];
 
     if (input.query) {
-      // Sellers are searched by business name far more than by description, so
-      // a trigram match on the name is both cheaper and more accurate here than
-      // a full tsvector would be.
+      // Business name first (trigram, typo-tolerant), then the tsvector over
+      // name + tagline + description so "LED lighting manufacturer" finds a
+      // seller whose name is "ABC Electronics".
       conditions.push(
         Prisma.sql`(
           s."businessName" ILIKE ${`%${input.query}%`}
           OR word_similarity(${input.query}, s."businessName") > ${FUZZY_THRESHOLD}
+          OR s."searchVector" @@ ${tsquery(input.query)}
         )`,
       );
     }
@@ -319,7 +320,7 @@ class PostgresSearchProvider implements SearchProvider {
     const offset = (input.page - 1) * input.perPage;
 
     const order = input.query
-      ? Prisma.sql`word_similarity(${input.query}, s."businessName") DESC, s."ratingAvg" DESC`
+      ? Prisma.sql`word_similarity(${input.query}, s."businessName") DESC, ts_rank(s."searchVector", ${tsquery(input.query)}) DESC, s."ratingAvg" DESC`
       : input.sort === "newest"
         ? Prisma.sql`s."createdAt" DESC`
         : Prisma.sql`s."ratingAvg" DESC, s."productCount" DESC`;

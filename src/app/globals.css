@@ -4,6 +4,39 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Brand palette — sampled from the Bzaro logo (docs/BRAND.md).
+ *   blue  #0b4a99  the "B", the wordmark            → brand-700
+ *   green #1ea44f  the "z" and the swoosh           → accent-600
+ *   navy  #08447a  the tagline                      → brand-900
+ * Static tokens (not `inline`), so `bg-brand-700`, `text-accent-600`,
+ * `from-brand-900` etc. are real utilities.
+ */
+@theme {
+  --color-brand-50: #eef4fc;
+  --color-brand-100: #dbe7f8;
+  --color-brand-200: #b6cdf0;
+  --color-brand-300: #84abe4;
+  --color-brand-400: #4d84d3;
+  --color-brand-500: #2565bd;
+  --color-brand-600: #1556ab;
+  --color-brand-700: #0b4a99;
+  --color-brand-800: #0a3f82;
+  --color-brand-900: #08447a;
+  --color-brand-950: #062a4f;
+  --color-accent-50: #eefaf2;
+  --color-accent-100: #d8f3e2;
+  --color-accent-200: #b3e6c6;
+  --color-accent-300: #7fd39f;
+  --color-accent-400: #47bb73;
+  --color-accent-500: #27ad5c;
+  --color-accent-600: #1ea44f;
+  --color-accent-700: #178440;
+  --color-accent-800: #146835;
+  --color-accent-900: #10552d;
+  --color-saffron-500: #f59e0b;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -55,7 +88,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: #0b4a99;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -66,7 +99,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: #2565bd;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -115,6 +148,19 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * Seller microsites (D7): the layout sets --site-font-body / --site-font-heading
+ * from the theme's allowlisted font pair. Headings and anything marked
+ * `.site-display` take the heading face, so an editorial theme can pair a
+ * serif display with a sans body without templates touching font-family.
+ */
+.site-root {
+  font-family: var(--site-font-body, var(--font-sans));
+}
+.site-root :is(h1, h2, h3, .site-display) {
+  font-family: var(--site-font-heading, var(--font-sans));
 }
 
 @layer base {

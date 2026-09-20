@@ -23,7 +23,7 @@ export function ProductResultCard({ hit }: { hit: ProductHit }) {
   const locality = [hit.sellerCity, hit.sellerState].filter(Boolean).join(", ");
 
   return (
-    <article className="group flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white transition-shadow hover:shadow-md">
+    <article className="group hover:border-brand-300 hover:shadow-brand-900/5 flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg">
       <Link href={`/product/${hit.sellerSlug}/${hit.slug}`} className="flex flex-1 flex-col">
         <div className="aspect-4/3 w-full overflow-hidden bg-neutral-100">
           {hit.imageUrl ? (
@@ -33,7 +33,7 @@ export function ProductResultCard({ hit }: { hit: ProductHit }) {
               alt={hit.imageAlt ?? hit.name}
               loading="lazy"
               decoding="async"
-              className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
             <div className="flex h-full items-center justify-center text-xs text-neutral-400">
@@ -47,13 +47,15 @@ export function ProductResultCard({ hit }: { hit: ProductHit }) {
             <p className="text-xs tracking-wide text-neutral-500 uppercase">{hit.brand}</p>
           ) : null}
 
-          <h3 className="leading-snug font-medium text-balance text-neutral-900">{hit.name}</h3>
+          <h3 className="group-hover:text-brand-700 leading-snug font-medium text-balance text-neutral-900">
+            {hit.name}
+          </h3>
 
           {hit.shortDescription ? (
             <p className="line-clamp-2 text-sm text-neutral-600">{hit.shortDescription}</p>
           ) : null}
 
-          <p className="mt-auto pt-3 text-sm font-semibold text-neutral-900 tabular-nums">
+          <p className="text-brand-800 mt-auto pt-3 text-sm font-semibold tabular-nums">
             {formatPrice({
               minor: hit.priceMinor,
               maxMinor: hit.priceMaxMinor,
@@ -83,8 +85,8 @@ export function SellerResultCard({ hit }: { hit: SellerHit }) {
   const locality = [hit.city, hit.state].filter(Boolean).join(", ");
 
   return (
-    <article className="flex gap-4 rounded-lg border border-neutral-200 bg-white p-5 transition-shadow hover:shadow-md">
-      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-neutral-100">
+    <article className="hover:border-brand-300 hover:shadow-brand-900/5 flex gap-4 rounded-2xl border border-neutral-200 bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="bg-brand-50 h-14 w-14 shrink-0 overflow-hidden rounded-xl">
         {hit.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -95,7 +97,7 @@ export function SellerResultCard({ hit }: { hit: SellerHit }) {
             className="h-full w-full object-contain"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-lg font-semibold text-neutral-400">
+          <div className="text-brand-400 flex h-full items-center justify-center text-lg font-semibold">
             {hit.businessName.charAt(0)}
           </div>
         )}
@@ -153,7 +155,7 @@ export function SellerResultCard({ hit }: { hit: SellerHit }) {
 function VerifiedBadge() {
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-800"
+      className="bg-accent-50 text-accent-800 inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
       title="Verified by the platform"
     >
       <span aria-hidden="true">✓</span>
