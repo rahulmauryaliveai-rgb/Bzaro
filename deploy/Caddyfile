@@ -47,21 +47,20 @@
 	}
 }
 
-# www is an alias of the apex; the app treats both as the marketplace, but a
-# single canonical host is better for SEO.
-www.{$ROOT_DOMAIN} {
-	redir https://{$ROOT_DOMAIN}{uri} permanent
-}
-
 # The marketplace: certificate obtained at startup.
 {$ROOT_DOMAIN} {
 	import app
 }
 
 # Every seller website: certificate obtained at first request, gated by /api/tls/ask.
+# www lives here too (a separate site block would be skipped by Caddy as
+# "covered by the wildcard" and never get a certificate): it is issued on demand
+# like any subdomain, then redirected to the apex — one canonical host for SEO.
 *.{$ROOT_DOMAIN} {
 	tls {
 		on_demand
 	}
+	@www host www.{$ROOT_DOMAIN}
+	redir @www https://{$ROOT_DOMAIN}{uri} permanent
 	import app
 }
