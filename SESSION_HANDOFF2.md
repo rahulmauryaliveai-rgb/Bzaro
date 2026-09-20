@@ -215,3 +215,12 @@ leads/credits), `owner@delhi-led-house.test` (Basic → catalogue page only),
 - `prisma/seed/production.ts` (`npm run db:seed:prod`): settings, plans, templates, taxonomy, partition, one admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` — no demo data.
 - `MEDIA_LOCAL_UPLOADS=1` (src/env.ts, src/lib/media/index.ts) permits the local-disk upload provider in production on the VPS.
 - Guide: `docs/HOSTINGER.md`. Requires the domain's DNS on Cloudflare (free) for the wildcard certificate; OTP/WhatsApp and email still need provider keys before buyers can complete contact flows.
+
+## 6. LIVE on Hostinger VPS (2026-09-20)
+
+- VPS `srv1975168` (KVM 2, Ubuntu 24.04, IP 187.127.179.245). SSH as root with key `~/.ssh/bzaro_vps` (added via hPanel). DNS is on **Cloudflare, proxied** (apex, www, `*`).
+- Stack: `/srv/bzaro/app` (root-owned clone of `main`), Docker `bzaro-postgres` / `bzaro-redis` / `bzaro-redis-http` / `bzaro-caddy`, pm2 `bzaro-web` + `bzaro-worker` (pm2-root on boot), `/etc/cron.d/bzaro`. Env: `/srv/bzaro/app/.env` and `deploy/.env` (generated secrets). Old Sept-12 deployment (nginx/certbot/native postgres/demo seed) stopped, disabled and backed up in `/root/bzaro-old/` (db dump, env, nginx conf, app-old).
+- Admin: `rahulmauryaliveai@gmail.com` (initial password given to the user in chat; local copy `~/.ssh/bzaro-admin-initial.txt` — delete once changed). Production DB has ONLY reference data + this admin.
+- TLS: Caddy on-demand per hostname, gated by `/api/tls/ask`. Two deploy fixes found live: www must be matched inside the wildcard block; Next must start WITHOUT `-H` (else tenant rewrite is proxied over TLS → 500). `deploy.sh` now force-recreates Caddy (single-file bind mount keeps old inode).
+- Redeploy: push to `main`, then `ssh root@187.127.179.245 'bash /srv/bzaro/app/deploy/deploy.sh'`.
+- Still unconfigured: WhatsApp Cloud API (buyer OTP/lead alerts → logs), Resend email, Cloudinary (local uploads in use), Google sign-in. Note: Cloudflare proxy is on; origin cert is Let's Encrypt so "Full (strict)" is fine.
