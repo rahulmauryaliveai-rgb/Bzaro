@@ -1,6 +1,13 @@
 import { requirePermission } from "@/lib/auth/guards";
 import { getIndexEligibilityRules } from "@/server/services/indexability.service";
 import { updateIndexEligibilityAction } from "@/server/actions/admin";
+import { updateBillingSettingsAction } from "@/server/actions/billing";
+import { getSetting } from "@/lib/settings";
+import {
+  BILLING_SETTINGS_KEY,
+  DEFAULT_BILLING_SETTINGS,
+  billingSettingsSchema,
+} from "@/lib/validation/billing-settings";
 
 /**
  * Platform settings — currently the index-eligibility rules (decision D2).
@@ -17,7 +24,10 @@ import { updateIndexEligibilityAction } from "@/server/actions/admin";
  */
 export default async function AdminSettingsPage() {
   await requirePermission("admin:settings:manage");
-  const rules = await getIndexEligibilityRules();
+  const [rules, billing] = await Promise.all([
+    getIndexEligibilityRules(),
+    getSetting(BILLING_SETTINGS_KEY, billingSettingsSchema, DEFAULT_BILLING_SETTINGS),
+  ]);
 
   return (
     <div className="max-w-2xl">
@@ -140,7 +150,68 @@ export default async function AdminSettingsPage() {
           Applies to new evaluations immediately. Existing sellers are re-scored by the nightly job.
         </p>
       </form>
+
+      <h2 className="mt-14 text-xl font-semibold tracking-tight">Billing</h2>
+      <p className="mt-1 text-sm text-neutral-400">
+        Shown to sellers on the upgrade page until online payments exist (decision D32). Plans
+        themselves are assigned from each seller&rsquo;s admin page.
+      </p>
+      <form action={updateBillingSettingsAction} className="mt-6 space-y-4">
+        <fieldset className="space-y-4 rounded-lg border border-neutral-700 bg-neutral-800 p-5">
+          <legend className="px-2 text-sm font-semibold tracking-wide text-neutral-400 uppercase">
+            How sellers pay
+          </legend>
+          <TextField
+            name="supportWhatsapp"
+            label="Support WhatsApp number (digits only, with country code — 919876543210)"
+            defaultValue={billing.supportWhatsapp ?? ""}
+          />
+          <TextField
+            name="supportEmail"
+            label="Support email"
+            defaultValue={billing.supportEmail ?? ""}
+          />
+          <TextField name="upiId" label="UPI id" defaultValue={billing.upiId ?? ""} />
+          <label className="block text-sm">
+            <span className="text-neutral-300">Instructions</span>
+            <textarea
+              name="instructions"
+              rows={4}
+              defaultValue={billing.instructions ?? ""}
+              className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-neutral-100"
+            />
+          </label>
+        </fieldset>
+        <button
+          type="submit"
+          className="rounded-md bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-200"
+        >
+          Save billing settings
+        </button>
+      </form>
     </div>
+  );
+}
+
+function TextField({
+  name,
+  label,
+  defaultValue,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="text-neutral-300">{label}</span>
+      <input
+        type="text"
+        name={name}
+        defaultValue={defaultValue}
+        className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-neutral-100"
+      />
+    </label>
   );
 }
 

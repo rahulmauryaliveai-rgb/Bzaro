@@ -1,5 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { tenantUrlFor } from "@/lib/utils/url";
+import { sellerSiteUrl } from "@/lib/utils/url";
 import { themeTokensSchema, type ThemeTokens } from "@/lib/validation/theme";
 
 /**
@@ -43,6 +43,9 @@ export type SellerPublic = {
   establishedYear: number | null;
   employeeCount: string | null;
   gstin: string | null;
+  /** GSTIN checked by the platform — a trust signal templates may show. */
+  gstinVerified: boolean;
+  certifications: string[];
   businessHours: BusinessHours | null;
   timezone: string;
   locale: string;
@@ -76,11 +79,19 @@ export type TenantWebsite = {
   isPublished: boolean;
 };
 
+export type TenantCategory = { slug: string; name: string; count: number; imageUrl: string | null };
+
 export type TenantContext = {
   seller: SellerPublic;
   website: TenantWebsite;
   theme: ThemeTokens;
   nav: TenantNavItem[];
+  /**
+   * The seller's product categories, for storefront headers and footers.
+   * Empty until `loadPageContext` fills it — the resolver does not query
+   * products.
+   */
+  categories: TenantCategory[];
   urls: {
     /** Absolute base URL of this tenant's site. */
     base: string;
@@ -93,6 +104,12 @@ export type TenantContext = {
 export type TenantResolution =
   | { kind: "found"; tenant: TenantContext }
   | { kind: "redirect"; toSlug: string }
+  /**
+   * The seller is live but their plan does not include a website (D32). The
+   * layout 301s to the marketplace catalogue page, path preserved, so links
+   * printed while they were on a higher tier keep working.
+   */
+  | { kind: "downgraded"; slug: string }
   | { kind: "suspended"; businessName: string }
   | { kind: "gone" }
   | { kind: "not_found" };
@@ -120,6 +137,8 @@ type SellerRow = {
   establishedYear: number | null;
   employeeCount: string | null;
   gstin: string | null;
+  gstinVerifiedAt: Date | null;
+  certifications: string[];
   businessHours: Prisma.JsonValue;
   timezone: string;
   locale: string;
@@ -129,6 +148,7 @@ type SellerRow = {
   productCount: number;
   serviceCount: number;
   verifiedAt: Date | null;
+  webPresence: "CATALOGUE" | "SUBDOMAIN" | "CUSTOM_DOMAIN";
   location: { id: string; name: string; slug: string; type: string; path: string } | null;
   website: {
     id: string;
@@ -169,8 +189,9 @@ export function toTenantContext(row: SellerRow): TenantContext {
    * Normalising here rather than at each call site means the mistake cannot be
    * reintroduced by the next person who concatenates onto it.
    */
-  const base = tenantUrlFor({
+  const base = sellerSiteUrl({
     slug: row.slug,
+    webPresence: row.webPresence,
     customDomain: row.website?.customDomain,
     customDomainStatus: row.website?.customDomainStatus,
   }).replace(/\/+$/, "");
@@ -207,6 +228,8 @@ export function toTenantContext(row: SellerRow): TenantContext {
     establishedYear: row.establishedYear,
     employeeCount: row.employeeCount,
     gstin: row.gstin,
+    gstinVerified: row.gstinVerifiedAt !== null,
+    certifications: row.certifications,
     businessHours: (row.businessHours as BusinessHours | null) ?? null,
     timezone: row.timezone,
     locale: row.locale,
@@ -232,6 +255,7 @@ export function toTenantContext(row: SellerRow): TenantContext {
     },
     theme,
     nav: buildNav(seller),
+    categories: [],
     urls: { base, canonical: base },
   };
 }
@@ -281,6 +305,10 @@ export type ContentCounts = { products: number; services: number; gallery: numbe
  * shared across requests, so mutating it would leak one request's counts into
  * every other reader.
  */
-export function withLiveCounts(context: TenantContext, counts: ContentCounts): TenantContext {
-  return { ...context, nav: buildNav(context.seller, counts) };
+export function withLiveCounts(
+  context: TenantContext,
+  counts: ContentCounts,
+  categories: TenantCategory[] = context.categories,
+): TenantContext {
+  return { ...context, nav: buildNav(context.seller, counts), categories };
 }

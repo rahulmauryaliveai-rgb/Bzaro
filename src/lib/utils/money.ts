@@ -108,10 +108,7 @@ export function parseMoneyToMinor(
 }
 
 /** Inverse of `parseMoneyToMinor`, for pre-filling an edit form. */
-export function minorToMajorString(
-  minor: number | null | undefined,
-  currency = "INR",
-): string {
+export function minorToMajorString(minor: number | null | undefined, currency = "INR"): string {
   if (minor === null || minor === undefined) return "";
 
   const divisor = divisorFor(currency);

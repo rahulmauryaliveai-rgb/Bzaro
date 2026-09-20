@@ -3,11 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMarketplaceSeller, getSellerProducts } from "@/server/services/marketplace.service";
 import { MarketplaceBreadcrumbs } from "@/components/marketplace/ResultsPagination";
-import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
+import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
-import { marketplaceUrl, tenantUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
 
 /**
  * Seller profile on the marketplace.
@@ -37,7 +37,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description:
       seller.description?.slice(0, 160) ??
       `${seller.businessName}: products, services and contact details.`,
-    alternates: { canonical: tenantUrl(seller.slug) },
+    // Decision D32: canonical is the seller's highest surface — this page for
+    // a catalogue-tier seller, their subdomain or domain otherwise.
+    alternates: { canonical: sellerSiteUrl(seller) },
     openGraph: {
       type: "website",
       title: seller.businessName,
@@ -116,12 +118,17 @@ export default async function MarketplaceSellerPage({ params }: Props) {
       </header>
 
       <div className="mt-6 flex flex-wrap gap-3">
-        {seller.whatsapp ? (
-          <WhatsAppButton
-            phone={seller.whatsapp}
-            context={{ kind: "seller", sellerName: seller.businessName }}
-          />
-        ) : null}
+        <ContactIntent
+          className="contents"
+          seller={{
+            id: seller.id,
+            businessName: seller.businessName,
+            whatsapp: seller.whatsapp,
+            primaryCategoryId:
+              seller.categories.find((c) => c.isPrimary)?.categoryId ??
+              seller.categories[0]?.categoryId,
+          }}
+        />
         {seller.phone ? (
           <a
             href={`tel:${seller.phone}`}
@@ -130,12 +137,14 @@ export default async function MarketplaceSellerPage({ params }: Props) {
             Call {seller.phone}
           </a>
         ) : null}
-        <a
-          href={tenantUrl(seller.slug)}
-          className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
-        >
-          Visit website ↗
-        </a>
+        {seller.webPresence !== "CATALOGUE" ? (
+          <a
+            href={sellerSiteUrl(seller)}
+            className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            Visit website ↗
+          </a>
+        ) : null}
       </div>
 
       {seller.description ? (
@@ -176,12 +185,14 @@ export default async function MarketplaceSellerPage({ params }: Props) {
         <section className="mt-12">
           <div className="mb-5 flex items-baseline justify-between gap-4">
             <h2 className="text-lg font-semibold">Products</h2>
-            <a
-              href={tenantUrl(seller.slug, "/products")}
-              className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900"
-            >
-              View full catalogue ↗
-            </a>
+            {seller.webPresence !== "CATALOGUE" ? (
+              <a
+                href={sellerSiteUrl(seller, "/products")}
+                className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900"
+              >
+                View full catalogue ↗
+              </a>
+            ) : null}
           </div>
 
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">

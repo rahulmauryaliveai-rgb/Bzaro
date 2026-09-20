@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { canonical, marketplaceUrl, tenantUrl, tenantUrlFor } from "@/lib/utils/url";
+import {
+  canonical,
+  marketplacePathFor,
+  marketplaceUrl,
+  sellerSiteUrl,
+  tenantUrl,
+  tenantUrlFor,
+} from "@/lib/utils/url";
 
 /**
  * Tenant URL construction.
@@ -89,5 +96,74 @@ describe("marketplaceUrl", () => {
   it("builds apex URLs", () => {
     expect(marketplaceUrl("/search")).toBe("http://lvh.me:3000/search");
     expect(marketplaceUrl()).toBe("http://lvh.me:3000/");
+  });
+});
+
+/**
+ * Decision D32: the seller's highest available surface is canonical.
+ * `sellerSiteUrl` is the one rule every canonical, sitemap entry, JSON-LD url
+ * and dashboard link goes through, so its table is pinned here.
+ */
+describe("marketplacePathFor", () => {
+  it("maps microsite paths onto their marketplace equivalents", () => {
+    expect(marketplacePathFor("abc")).toBe("/seller/abc");
+    expect(marketplacePathFor("abc", "/")).toBe("/seller/abc");
+    expect(marketplacePathFor("abc", "/products/led-bulb")).toBe("/product/abc/led-bulb");
+    expect(marketplacePathFor("abc", "/products/led-bulb/")).toBe("/product/abc/led-bulb");
+    expect(marketplacePathFor("abc", "/services/install")).toBe("/service/abc/install");
+  });
+
+  it("sends pages with no marketplace twin to the catalogue page", () => {
+    for (const path of ["/about", "/contact", "/gallery", "/products", "/services", "/nope/x/y"]) {
+      expect(marketplacePathFor("abc", path)).toBe("/seller/abc");
+    }
+  });
+
+  it("drops query strings and fragments", () => {
+    expect(marketplacePathFor("abc", "/products/bulb?utm=1#specs")).toBe("/product/abc/bulb");
+  });
+});
+
+describe("sellerSiteUrl", () => {
+  it("catalogue tier → the marketplace page", () => {
+    expect(sellerSiteUrl({ slug: "abc", webPresence: "CATALOGUE" })).toBe(
+      "http://lvh.me:3000/seller/abc",
+    );
+    expect(sellerSiteUrl({ slug: "abc", webPresence: "CATALOGUE" }, "/products/bulb")).toBe(
+      "http://lvh.me:3000/product/abc/bulb",
+    );
+  });
+
+  it("subdomain tier → the subdomain, ignoring any custom domain on file", () => {
+    expect(
+      sellerSiteUrl(
+        {
+          slug: "abc",
+          webPresence: "SUBDOMAIN",
+          customDomain: "abc.com",
+          customDomainStatus: "ACTIVE",
+        },
+        "/products/bulb",
+      ),
+    ).toBe("http://abc.lvh.me:3000/products/bulb");
+  });
+
+  it("custom-domain tier → the verified domain, else the subdomain", () => {
+    expect(
+      sellerSiteUrl({
+        slug: "abc",
+        webPresence: "CUSTOM_DOMAIN",
+        customDomain: "abc.com",
+        customDomainStatus: "ACTIVE",
+      }),
+    ).toBe("https://abc.com/");
+    expect(
+      sellerSiteUrl({
+        slug: "abc",
+        webPresence: "CUSTOM_DOMAIN",
+        customDomain: "abc.com",
+        customDomainStatus: "PENDING_DNS",
+      }),
+    ).toBe("http://abc.lvh.me:3000/");
   });
 });

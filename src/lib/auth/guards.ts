@@ -4,7 +4,8 @@ import { redirect, forbidden, unauthorized } from "next/navigation";
 import { auth } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { can, isPlatformStaff, type Permission } from "@/lib/auth/permissions";
-import type { UserRole } from "@/generated/prisma/enums";
+import type { UserRole, WebPresence } from "@/generated/prisma/enums";
+import type { SellerSurface } from "@/lib/utils/url";
 
 /**
  * Authorization guards.
@@ -96,9 +97,16 @@ export async function requireAdmin(): Promise<SessionUser> {
 export type TenantScope = {
   sellerId: string;
   sellerSlug: string;
+  /** Web-presence tier (D32), so dashboard links point at the right surface. */
+  webPresence: WebPresence;
   userId: string;
   role: UserRole;
 };
+
+/** The scope as the URL helpers see it (D32). */
+export function scopeSurface(scope: TenantScope): SellerSurface {
+  return { slug: scope.sellerSlug, webPresence: scope.webPresence };
+}
 
 /**
  * Prove the current user may act on `sellerId`.
@@ -114,7 +122,9 @@ export async function requireSellerAccess(sellerId: string): Promise<TenantScope
     where: { userId_sellerId: { userId: user.id, sellerId } },
     select: {
       role: true,
-      seller: { select: { id: true, slug: true, status: true, deletedAt: true } },
+      seller: {
+        select: { id: true, slug: true, status: true, deletedAt: true, webPresence: true },
+      },
     },
   });
 
@@ -128,6 +138,7 @@ export async function requireSellerAccess(sellerId: string): Promise<TenantScope
   return {
     sellerId: membership.seller.id,
     sellerSlug: membership.seller.slug,
+    webPresence: membership.seller.webPresence,
     userId: user.id,
     role: membership.role,
   };
@@ -160,7 +171,7 @@ export const getActiveSeller = cache(async (): Promise<TenantScope | null> => {
     orderBy: { createdAt: "asc" },
     select: {
       role: true,
-      seller: { select: { id: true, slug: true, status: true } },
+      seller: { select: { id: true, slug: true, status: true, webPresence: true } },
     },
   });
 
@@ -169,15 +180,31 @@ export const getActiveSeller = cache(async (): Promise<TenantScope | null> => {
   return {
     sellerId: membership.seller.id,
     sellerSlug: membership.seller.slug,
+    webPresence: membership.seller.webPresence,
     userId: user.id,
     role: membership.role,
   };
 });
 
+/**
+ * Where a signed-in user belongs when nothing more specific was asked for:
+ * staff to the admin, everyone else to the seller dashboard (which sends a
+ * user with no business to onboarding).
+ */
+export function homeFor(role: UserRole | null | undefined): string {
+  return isPlatformStaff(role) ? "/admin" : "/dashboard";
+}
+
 /** Require that the current user owns a seller; send them to onboarding if not. */
 export async function requireSeller(): Promise<TenantScope> {
-  await requireUser("/dashboard");
+  const user = await requireUser("/dashboard");
   const scope = await getActiveSeller();
-  if (!scope) redirect("/register/business");
+  if (!scope) {
+    // An admin landing on /dashboard (the login default) has no business to
+    // register — sending them to seller onboarding read as "logged in as a
+    // new seller". Their home is the admin.
+    if (isPlatformStaff(user.role)) redirect("/admin");
+    redirect("/register/business");
+  }
   return scope;
 }

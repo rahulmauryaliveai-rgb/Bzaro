@@ -42,6 +42,8 @@ function seller(overrides: Partial<SellerPublic> = {}): SellerPublic {
     establishedYear: 2009,
     employeeCount: "11-50",
     gstin: null,
+    gstinVerified: false,
+    certifications: [],
     businessHours: null,
     timezone: "Asia/Kolkata",
     locale: "en",

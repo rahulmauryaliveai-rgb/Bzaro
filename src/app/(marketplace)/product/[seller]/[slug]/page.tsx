@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { getMarketplaceProduct, getSellerProducts } from "@/server/services/marketplace.service";
 import { MarketplaceBreadcrumbs } from "@/components/marketplace/ResultsPagination";
-import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
+import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, productJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
-import { marketplaceUrl, tenantUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
 
 /**
  * Marketplace product page.
@@ -45,9 +45,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       product.shortDescription ??
       product.description?.slice(0, 160) ??
       `${product.name} from ${product.seller.businessName}.`,
-    // The microsite is canonical. This page is indexable-but-deferential:
-    // crawlers may follow it, and consolidate its signals onto the subdomain.
-    alternates: { canonical: tenantUrl(product.seller.slug, `/products/${product.slug}`) },
+    // Decision D32: the seller's highest surface is canonical. For a seller
+    // with a website this page is indexable-but-deferential and consolidates
+    // onto the subdomain; for a catalogue-tier seller it IS the canonical.
+    alternates: { canonical: sellerSiteUrl(product.seller, `/products/${product.slug}`) },
     openGraph: {
       type: "website",
       title: product.name,
@@ -67,7 +68,8 @@ export default async function MarketplaceProductPage({ params }: Props) {
   const specs = specificationsSchema.safeParse(product.specifications);
   const specifications = specs.success ? specs.data : [];
 
-  const micrositeUrl = tenantUrl(product.seller.slug, `/products/${product.slug}`);
+  const hasWebsite = product.seller.webPresence !== "CATALOGUE";
+  const micrositeUrl = sellerSiteUrl(product.seller, `/products/${product.slug}`);
   const locality = [product.seller.location?.name, product.seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
@@ -167,17 +169,11 @@ export default async function MarketplaceProductPage({ params }: Props) {
           ) : null}
 
           <div className="mt-7 flex flex-wrap gap-3">
-            {product.seller.whatsapp ? (
-              <WhatsAppButton
-                phone={product.seller.whatsapp}
-                context={{
-                  kind: "product",
-                  productName: product.name,
-                  sellerName: product.seller.businessName,
-                  url: micrositeUrl,
-                }}
-              />
-            ) : null}
+            <ContactIntent
+              className="contents"
+              seller={product.seller}
+              product={{ id: product.id, name: product.name }}
+            />
             {product.seller.phone ? (
               <a
                 href={`tel:${product.seller.phone}`}
@@ -197,12 +193,14 @@ export default async function MarketplaceProductPage({ params }: Props) {
               {product.seller.businessName}
             </Link>
             {locality ? <p className="text-sm text-neutral-600">{locality}</p> : null}
-            <a
-              href={micrositeUrl}
-              className="mt-2 inline-block text-sm text-teal-700 underline underline-offset-2"
-            >
-              Visit their website ↗
-            </a>
+            {hasWebsite ? (
+              <a
+                href={micrositeUrl}
+                className="text-brand-700 mt-2 inline-block text-sm underline underline-offset-2"
+              >
+                Visit their website ↗
+              </a>
+            ) : null}
           </div>
         </div>
       </div>

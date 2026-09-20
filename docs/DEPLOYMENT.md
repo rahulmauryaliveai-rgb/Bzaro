@@ -141,6 +141,10 @@ as `undefined` in a request handler weeks later.
 | `RESEND_API_KEY`                    | all   | Optional; falls back to console logging      |
 | `MAIL_FROM`                         | all   | e.g. `no-reply@bzaro.in`              |
 | `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | all   | Optional until uploads ship                  |
+| `OTP_PEPPER`                        | all   | **Required in production.** ≥32 chars, keys OTP hashes (docs/LEADS.md) |
+| `BUYER_COOKIE_SECRET`               | all   | **Required in production.** ≥32 chars, distinct from `OTP_PEPPER` |
+| `WHATSAPP_ACCESS_TOKEN`             | all   | Optional; OTP + lead alerts fall back to console logging |
+| `WHATSAPP_PHONE_NUMBER_ID`          | all   | Optional; as above                           |
 
 > **`NEXT_PUBLIC_ROOT_DOMAIN` includes the port in development and excludes it
 > in production.** This asymmetry is the single most common source of "works
@@ -192,6 +196,10 @@ Defined in `vercel.json`; handlers in `src/server/jobs/`.
 | `refresh-counters`       | daily 03:40  | Reconcile denormalised counts (R7)       |
 | `prune-events`           | daily 04:10  | Drop partitions >90 days, expired tokens |
 | `create-partitions`      | 25th monthly | Provision two months ahead (D22)         |
+| `expire-market-leads`    | hourly       | Backstop for the worker's expiry sweep   |
+| `grant-monthly-credits`  | 1st monthly  | Plan credits (docs/LEADS.md §4)          |
+| `refresh-lead-stats`     | daily 04:30  | Reconcile responseRate / lead counters   |
+| `recompute-web-presence` | daily 03:50  | Re-derive `Seller.webPresence` from live subscriptions (D32) |
 
 Trigger manually:
 
@@ -202,6 +210,29 @@ curl -H "Authorization: Bearer $REVALIDATE_SECRET" \
 
 The response body is the job's observability — it reports what actually
 changed, not just that it ran.
+
+### The lead worker (D29)
+
+Market fan-out and WhatsApp delivery run in a second long-lived process, not
+in the request and not in cron. It shares the app's environment file.
+
+```bash
+cd /srv/bzaro/app
+pm2 start npm --name bzaro-worker -- run worker
+pm2 save
+```
+
+`npm run worker` is `tsx --conditions=react-server src/server/worker/index.ts`;
+the condition resolves the `server-only` marker so the shared service layer
+loads outside Next.js. It polls every `WORKER_POLL_MS` (2 s) and sweeps
+expiry every `WORKER_EXPIRY_SWEEP_MS` (5 min). Several instances may run —
+every claim is `FOR UPDATE SKIP LOCKED`. Logs: `pm2 logs bzaro-worker`.
+
+If the worker is down, DIRECT leads still land in the dashboard (they are
+written in the request); MARKET leads and WhatsApp alerts queue up in
+`Requirement.fanoutStatus = PENDING` / `LeadDelivery.status = PENDING` and
+drain when it returns. A row that fails three times is marked `FAILED` with
+the error in `fanoutError`.
 
 ---
 
@@ -233,6 +264,7 @@ report it as data loss.
 - [ ] Upstash configured — the app throws on first rate-limited action without it
 - [ ] `AUTH_SECRET` is not the development value
 - [ ] `IP_HASH_SALT` set, and a rotation reminder scheduled
+- [ ] `OTP_PEPPER` and `BUYER_COOKIE_SECRET` set — the app refuses to boot in production without them
 - [ ] PITR backups on, and **a restore actually rehearsed** (see RUNBOOK.md)
 - [ ] `npm run test:isolation` green against staging
 - [ ] `/api/health` returns 200 from the deployed app

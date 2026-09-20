@@ -2,11 +2,10 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { forbidden, notFound, permanentRedirect } from "next/navigation";
 import { TENANT_PATH_HEADER } from "@/proxy";
-import { IBM_Plex_Sans } from "next/font/google";
+import { DM_Sans, IBM_Plex_Sans, Inter, Lora, Manrope, Source_Sans_3 } from "next/font/google";
 import { resolveTenant } from "@/lib/tenant/resolve";
-import { themeToCssVars } from "@/lib/validation/theme";
-import { tenantUrl } from "@/lib/utils/url";
-import { clientEnv } from "@/env.client";
+import { themeToCssVars, type ThemeTokens } from "@/lib/validation/theme";
+import { marketplacePathFor, marketplaceUrl, tenantUrl } from "@/lib/utils/url";
 import "../../../globals.css";
 
 /**
@@ -28,6 +27,29 @@ const sans = IBM_Plex_Sans({
   weight: ["400", "500", "600", "700"],
   display: "swap",
 });
+
+/**
+ * The font allowlist behind `themeTokens.fontPair` (D7). Every face is
+ * declared here so the CSS variables exist on every microsite; the browser
+ * only downloads the one the theme actually uses. A pair is body + heading —
+ * "lora" is the editorial combination the boutique-style templates default to.
+ */
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
+const source = Source_Sans_3({ variable: "--font-source", subsets: ["latin"], display: "swap" });
+const lora = Lora({ variable: "--font-lora", subsets: ["latin"], display: "swap" });
+const manrope = Manrope({ variable: "--font-manrope", subsets: ["latin"], display: "swap" });
+const dmSans = DM_Sans({ variable: "--font-dm-sans", subsets: ["latin"], display: "swap" });
+
+const FONT_STACKS: Record<ThemeTokens["fontPair"], { body: string; heading: string }> = {
+  inter: { body: "var(--font-inter)", heading: "var(--font-inter)" },
+  plex: { body: "var(--font-sans)", heading: "var(--font-sans)" },
+  source: { body: "var(--font-source)", heading: "var(--font-source)" },
+  lora: { body: "var(--font-inter)", heading: "var(--font-lora)" },
+  manrope: { body: "var(--font-manrope)", heading: "var(--font-manrope)" },
+  "dm-sans": { body: "var(--font-dm-sans)", heading: "var(--font-dm-sans)" },
+};
+
+const FONT_CLASSES = [inter, source, lora, manrope, dmSans].map((font) => font.variable).join(" ");
 
 type Props = {
   children: React.ReactNode;
@@ -108,6 +130,14 @@ export default async function SiteLayout({ children, params }: Props) {
       permanentRedirect(tenantUrl(result.toSlug, path));
     }
 
+    case "downgraded": {
+      // The seller's plan no longer includes a website (decision D32). A 301
+      // to the marketplace equivalent keeps the links they printed on visiting
+      // cards alive and hands the ranking to the page that now represents them.
+      const path = (await headers()).get(TENANT_PATH_HEADER) ?? "/";
+      permanentRedirect(marketplaceUrl(marketplacePathFor(result.slug, path)));
+    }
+
     case "suspended":
       // Must be `forbidden()`, not a rendered notice. A React Server Component
       // cannot set a status code, so returning JSX here served the suspension
@@ -126,16 +156,24 @@ export default async function SiteLayout({ children, params }: Props) {
   }
 
   const { seller, theme } = result.tenant;
+  const fonts = FONT_STACKS[theme.fontPair];
 
   return (
     <html
       lang={seller.locale}
-      className={`${sans.variable} h-full antialiased`}
+      className={`${sans.variable} ${FONT_CLASSES} site-root h-full antialiased`}
       // Validated design tokens only. `themeTokensSchema` constrains every
       // value to a hex colour or a fixed enum member, and React escapes style
       // values — so seller input can never become raw CSS. This is why theme
-      // tokens are never concatenated into a <style> block.
-      style={themeToCssVars(theme)}
+      // tokens are never concatenated into a <style> block. The font values
+      // come from FONT_STACKS above, keyed by an enum — never from the row.
+      style={
+        {
+          ...themeToCssVars(theme),
+          "--site-font-body": fonts.body,
+          "--site-font-heading": fonts.heading,
+        } as React.CSSProperties
+      }
     >
       <body
         className="flex min-h-full flex-col"
@@ -144,21 +182,9 @@ export default async function SiteLayout({ children, params }: Props) {
           color: "var(--site-foreground)",
         }}
       >
+        {/* The template's own footer carries the "Powered by" line (SiteFooter
+            and the storefront footers both honour theme.showPlatformBranding). */}
         {children}
-
-        {theme.showPlatformBranding && (
-          <footer className="border-t py-6" style={{ borderColor: "var(--site-border)" }}>
-            <div className="mx-auto max-w-5xl px-4 text-sm opacity-70">
-              {seller.businessName} · powered by{" "}
-              <a
-                href={`${clientEnv.NEXT_PUBLIC_PROTOCOL}://${clientEnv.NEXT_PUBLIC_ROOT_DOMAIN}`}
-                className="underline underline-offset-2"
-              >
-                {clientEnv.NEXT_PUBLIC_PLATFORM_NAME}
-              </a>
-            </div>
-          </footer>
-        )}
       </body>
     </html>
   );

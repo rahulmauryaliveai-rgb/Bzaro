@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { getTenant } from "@/lib/tenant/resolve";
 import { withLiveCounts, type TenantContext } from "@/lib/tenant/context";
-import { getContentCounts } from "@/server/services/site-content.service";
+import { getContentCounts, getSiteCategories } from "@/server/services/site-content.service";
 
 /**
  * Resolve a microsite page's tenant, with navigation reflecting live content.
@@ -20,6 +20,9 @@ export const loadPageContext = cache(async (param: string): Promise<TenantContex
   const context = await getTenant(param);
   if (!context) return null;
 
-  const counts = await getContentCounts(context.seller.id, context.seller.slug);
-  return withLiveCounts(context, counts);
+  const [counts, categories] = await Promise.all([
+    getContentCounts(context.seller.id, context.seller.slug),
+    getSiteCategories(context.seller.id, context.seller.slug),
+  ]);
+  return withLiveCounts(context, counts, categories);
 });

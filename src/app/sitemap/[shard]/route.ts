@@ -5,10 +5,11 @@ import {
   listIndexableServices,
   listSitemapCategories,
   listSitemapLocations,
+  listSitemapDiscovery,
   SITEMAP_PAGE_SIZE,
 } from "@/server/services/sitemap.service";
 import { renderSitemap, xmlResponse, type SitemapEntry } from "@/lib/seo/sitemap";
-import { marketplaceUrl, tenantUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
 
 /**
  * Sharded apex sitemaps, referenced by the index at /sitemap.xml.
@@ -86,13 +87,27 @@ export async function GET(_request: Request, { params }: Props) {
       );
     }
 
+    case "discovery": {
+      const entries = await listSitemapDiscovery();
+      return xmlResponse(
+        renderSitemap(
+          entries.map((entry) => ({
+            url: marketplaceUrl(entry.path),
+            changeFrequency: "daily" as const,
+            priority: 0.8,
+          })),
+        ),
+      );
+    }
+
     case "sellers": {
       const sellers = await listIndexableSellers(offset);
       return xmlResponse(
         renderSitemap(
           sellers.map((seller) => ({
-            // Canonical location: the seller's own subdomain.
-            url: tenantUrl(seller.slug),
+            // Canonical location per D32: subdomain, or the marketplace page
+            // for a catalogue-tier seller.
+            url: sellerSiteUrl(seller),
             lastModified: seller.updatedAt,
             changeFrequency: "weekly" as const,
             priority: 0.9,
@@ -108,7 +123,7 @@ export async function GET(_request: Request, { params }: Props) {
       ]);
 
       const entries: SitemapEntry[] = products.map((product) => ({
-        url: tenantUrl(product.seller.slug, `/products/${product.slug}`),
+        url: sellerSiteUrl(product.seller, `/products/${product.slug}`),
         lastModified: product.updatedAt,
         changeFrequency: "monthly" as const,
         priority: 0.8,
@@ -119,7 +134,7 @@ export async function GET(_request: Request, { params }: Props) {
       // index.
       for (const service of services) {
         entries.push({
-          url: tenantUrl(service.seller.slug, `/services/${service.slug}`),
+          url: sellerSiteUrl(service.seller, `/services/${service.slug}`),
           lastModified: service.updatedAt,
           changeFrequency: "monthly",
           priority: 0.8,

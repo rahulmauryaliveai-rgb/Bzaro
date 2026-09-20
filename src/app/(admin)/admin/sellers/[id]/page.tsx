@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/guards";
 import { can } from "@/lib/auth/permissions";
 import { getSellerForAdmin } from "@/server/services/admin.service";
+import { getSellerCreditsForAdmin } from "@/server/services/admin-leads.service";
+import { AdjustCreditsForm } from "@/components/admin/AdjustCreditsForm";
 import {
   reinstateSellerAction,
   rejectSellerAction,
@@ -10,7 +12,11 @@ import {
   verifySellerAction,
 } from "@/server/actions/admin";
 import { StatusBadge } from "@/app/(admin)/admin/sellers/page";
-import { tenantUrl } from "@/lib/utils/url";
+import { sellerSiteUrl } from "@/lib/utils/url";
+import { changePlanAction } from "@/server/actions/billing";
+import { adminSetTemplateAction } from "@/server/actions/admin";
+import { listActiveTemplates } from "@/server/services/seller.service";
+import { getActivePlan, listPublicPlans } from "@/server/services/plan.service";
 
 /**
  * Seller detail — the verification workstation (decision D8).
@@ -34,8 +40,18 @@ export default async function AdminSellerDetailPage({ params }: Props) {
   const seller = await getSellerForAdmin(id);
   if (!seller) notFound();
 
+  const [credits, subscription, plans, templates] = await Promise.all([
+    getSellerCreditsForAdmin(seller.id),
+    getActivePlan(seller.id),
+    listPublicPlans(),
+    listActiveTemplates(),
+  ]);
+
   const canVerify = can(user.role, "admin:seller:verify");
   const canSuspend = can(user.role, "admin:seller:suspend");
+  const canAdjust = can(user.role, "admin:credit:adjust");
+  const canChangePlan = can(user.role, "admin:subscription:manage");
+  const canEditWebsite = can(user.role, "admin:seller:website");
 
   const owner = seller.members.find((m) => m.role === "SELLER_OWNER")?.user;
 
@@ -55,12 +71,12 @@ export default async function AdminSellerDetailPage({ params }: Props) {
 
       <div className="mt-6 flex flex-wrap gap-3 text-sm">
         <a
-          href={tenantUrl(seller.slug)}
+          href={sellerSiteUrl(seller)}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
         >
-          View site ↗
+          {seller.webPresence === "CATALOGUE" ? "View catalogue page ↗" : "View site ↗"}
         </a>
         <Link
           href={`/seller/${seller.slug}`}
@@ -205,6 +221,143 @@ export default async function AdminSellerDetailPage({ params }: Props) {
               Reinstate as verified
             </button>
           </form>
+        </Section>
+      ) : null}
+
+      <Section title="Plan & web presence">
+        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-neutral-500">Plan</dt>
+            <dd className="font-medium">{subscription?.plan.name ?? "Free"}</dd>
+          </div>
+          <div>
+            <dt className="text-neutral-500">Period ends</dt>
+            <dd className="tabular-nums">
+              {subscription ? subscription.currentPeriodEnd.toLocaleDateString("en-IN") : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-neutral-500">Web presence (D32)</dt>
+            <dd className="font-mono text-xs">{seller.webPresence}</dd>
+          </div>
+        </dl>
+        {canChangePlan ? (
+          <form action={changePlanAction} className="mt-4 flex flex-wrap items-end gap-3 text-sm">
+            <input type="hidden" name="sellerId" value={seller.id} />
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-neutral-500">Move to plan</span>
+              <select
+                name="planId"
+                defaultValue={subscription?.plan.id ?? ""}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5"
+              >
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} · {plan.webPresence.toLowerCase().replace("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-md bg-white px-3 py-1.5 font-medium text-neutral-900 hover:bg-neutral-200"
+            >
+              Change plan
+            </button>
+            <span className="text-xs text-neutral-500">
+              Starts a new 30-day period today; the subdomain follows the tier immediately.
+            </span>
+          </form>
+        ) : null}
+      </Section>
+
+      <Section title="Website template">
+        <p className="text-sm">
+          Current: <span className="font-medium">{seller.website?.template?.name ?? "—"}</span>
+        </p>
+        {canEditWebsite ? (
+          <form
+            action={adminSetTemplateAction}
+            className="mt-3 flex flex-wrap items-end gap-3 text-sm"
+          >
+            <input type="hidden" name="sellerId" value={seller.id} />
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-neutral-500">Switch to</span>
+              <select
+                name="templateKey"
+                defaultValue={seller.website?.template?.key ?? ""}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5"
+              >
+                {templates.map((template) => (
+                  <option key={template.key} value={template.key}>
+                    {template.name}
+                    {template.isPremium ? " (premium)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-md bg-white px-3 py-1.5 font-medium text-neutral-900 hover:bg-neutral-200"
+            >
+              Apply template
+            </button>
+            <span className="text-xs text-neutral-500">
+              Applies the template&apos;s preset colours; the seller can retune them.
+            </span>
+          </form>
+        ) : null}
+      </Section>
+
+      {credits ? (
+        <Section title="Lead credits">
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+            <div>
+              <dt className="text-neutral-500">Balance</dt>
+              <dd className="text-lg font-semibold tabular-nums">{credits.creditBalance}</dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">Plan</dt>
+              <dd>
+                {credits.plan?.name ?? "—"}
+                {credits.plan ? (
+                  <span className="text-neutral-500">
+                    {" "}
+                    · {credits.plan.leadCreditsPerMonth ?? 0}/mo
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">Market leads</dt>
+              <dd className="tabular-nums">
+                {credits.leadsAccepted} / {credits.leadsReceived} accepted
+              </dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">Response rate</dt>
+              <dd className="tabular-nums">
+                {credits.responseRate === null ? "—" : `${Math.round(credits.responseRate * 100)}%`}
+              </dd>
+            </div>
+          </dl>
+          {canAdjust ? <AdjustCreditsForm sellerId={seller.id} /> : null}
+          {credits.entries.length > 0 ? (
+            <ul className="mt-4 space-y-1 text-xs text-neutral-400">
+              {credits.entries.map((entry) => (
+                <li key={entry.id} className="flex justify-between gap-4">
+                  <span>
+                    {entry.createdAt.toLocaleDateString("en-IN")} · {entry.reason.toLowerCase()}
+                    {entry.periodKey ? ` ${entry.periodKey}` : ""}
+                    {entry.note ? ` · ${entry.note}` : ""}
+                  </span>
+                  <span className="tabular-nums">
+                    {entry.delta > 0 ? `+${entry.delta}` : entry.delta} → {entry.balanceAfter}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Section>
       ) : null}
     </div>

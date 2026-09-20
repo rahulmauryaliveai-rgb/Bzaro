@@ -58,6 +58,8 @@ const publicSellerSelect = {
   establishedYear: true,
   employeeCount: true,
   gstin: true,
+  gstinVerifiedAt: true,
+  certifications: true,
   businessHours: true,
   timezone: true,
   locale: true,
@@ -67,6 +69,7 @@ const publicSellerSelect = {
   productCount: true,
   serviceCount: true,
   verifiedAt: true,
+  webPresence: true,
   location: {
     select: { id: true, name: true, slug: true, type: true, path: true },
   },
@@ -168,6 +171,12 @@ export const resolveTenant = cache(async (param: string): Promise<TenantResoluti
 
   switch (seller.status) {
     case "VERIFIED":
+      // Status first, then tier: a suspended seller is 403 whatever they pay
+      // for. A live seller whose plan has no website gets a 301 to the
+      // marketplace catalogue page rather than a 404 (decision D32).
+      if (seller.webPresence === "CATALOGUE") {
+        return { kind: "downgraded", slug: seller.slug };
+      }
       return { kind: "found", tenant: toTenantContext(seller) };
 
     case "SUSPENDED":

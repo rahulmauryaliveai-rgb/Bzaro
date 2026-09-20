@@ -126,10 +126,9 @@ test.describe("tenant lifecycle states map to the right status", () => {
       const response = await raw(request, tenantUrl("verma-plastic-industries", path));
 
       expect(response.status(), `${path} should redirect`).toBe(308);
-      expect(
-        response.headers()["location"],
-        `${path} should survive the redirect`,
-      ).toBe(tenantUrl("verma-plastics", path));
+      expect(response.headers()["location"], `${path} should survive the redirect`).toBe(
+        tenantUrl("verma-plastics", path),
+      );
     }
   });
 

@@ -333,7 +333,7 @@ provisioning work, not a routing rewrite.
 
 ```
 1. Seller enters abcelectronics.com in the dashboard
-      │  requires a plan with allowCustomDomain
+      │  requires a plan whose webPresence is CUSTOM_DOMAIN (D32)
       ▼
 2. Platform stores customDomain, sets status PENDING_DNS,
    generates domainVerifyToken

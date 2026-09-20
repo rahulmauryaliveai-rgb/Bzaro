@@ -25,7 +25,8 @@ export default async function OgImage({ params }: { params: Promise<{ tenant: st
   const { tenant } = await params;
   const result = await resolveTenant(tenant);
 
-  const businessName = result.kind === "found"
+  const businessName =
+    result.kind === "found"
       ? result.tenant.seller.businessName
       : clientEnv.NEXT_PUBLIC_PLATFORM_NAME;
   const tagline = result.kind === "found" ? result.tenant.seller.tagline : null;

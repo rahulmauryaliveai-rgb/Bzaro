@@ -36,7 +36,7 @@ export function listIndexableSellers(offset = 0, limit = SITEMAP_PAGE_SIZE) {
         orderBy: { createdAt: "asc" },
         skip: offset,
         take: limit,
-        select: { slug: true, updatedAt: true },
+        select: { slug: true, updatedAt: true, webPresence: true },
       }),
     ["sitemap-sellers", String(offset), String(limit)],
     { tags: [cacheTags.sitemap()], revalidate: SITEMAP_REVALIDATE },
@@ -74,7 +74,11 @@ export function listIndexableProducts(offset = 0, limit = SITEMAP_PAGE_SIZE) {
         orderBy: { createdAt: "asc" },
         skip: offset,
         take: limit,
-        select: { slug: true, updatedAt: true, seller: { select: { slug: true } } },
+        select: {
+          slug: true,
+          updatedAt: true,
+          seller: { select: { slug: true, webPresence: true } },
+        },
       }),
     ["sitemap-products", String(offset), String(limit)],
     { tags: [cacheTags.sitemap()], revalidate: SITEMAP_REVALIDATE },
@@ -110,7 +114,11 @@ export function listIndexableServices(offset = 0, limit = SITEMAP_PAGE_SIZE) {
         orderBy: { createdAt: "asc" },
         skip: offset,
         take: limit,
-        select: { slug: true, updatedAt: true, seller: { select: { slug: true } } },
+        select: {
+          slug: true,
+          updatedAt: true,
+          seller: { select: { slug: true, webPresence: true } },
+        },
       }),
     ["sitemap-services", String(offset), String(limit)],
     { tags: [cacheTags.sitemap()], revalidate: SITEMAP_REVALIDATE },
@@ -148,6 +156,56 @@ export function listSitemapLocations() {
       }),
     ["sitemap-locations"],
     { tags: [cacheTags.locationTree()], revalidate: SITEMAP_REVALIDATE },
+  )();
+}
+
+/**
+ * Buyer discovery pages: /<city> and /<city>/category/<path>, for every
+ * city × category pair that has at least one live seller. Thin pairs are left
+ * out for the same reason empty categories are.
+ */
+export function listSitemapDiscovery() {
+  return unstable_cache(
+    async () => {
+      // Derived from live sellers, not Location.sellerCount: that counter is
+      // reconciled nightly and a new city would otherwise wait a day.
+      const liveCities = await db.seller.findMany({
+        where: { status: "VERIFIED", deletedAt: null, locationId: { not: null } },
+        distinct: ["locationId"],
+        select: { locationId: true },
+      });
+      const cities = await db.location.findMany({
+        where: {
+          id: { in: liveCities.flatMap((row) => (row.locationId ? [row.locationId] : [])) },
+          type: "CITY",
+          isActive: true,
+        },
+        orderBy: { slug: "asc" },
+        select: { id: true, slug: true },
+      });
+      const pairs = await db.sellerCategory.findMany({
+        where: { seller: { status: "VERIFIED", deletedAt: null, locationId: { not: null } } },
+        select: {
+          category: { select: { path: true, isActive: true } },
+          seller: { select: { locationId: true } },
+        },
+        take: SITEMAP_PAGE_SIZE,
+      });
+      const cityById = new Map(cities.map((city) => [city.id, city.slug]));
+      const seen = new Set<string>();
+      const entries: { path: string }[] = cities.map((city) => ({ path: `/${city.slug}` }));
+      for (const pair of pairs) {
+        const citySlug = pair.seller.locationId ? cityById.get(pair.seller.locationId) : null;
+        if (!citySlug || !pair.category.isActive) continue;
+        const path = `/${citySlug}/category${pair.category.path}`;
+        if (seen.has(path)) continue;
+        seen.add(path);
+        entries.push({ path });
+      }
+      return entries.slice(0, SITEMAP_PAGE_SIZE);
+    },
+    ["sitemap-discovery"],
+    { tags: [cacheTags.locationTree(), cacheTags.home()], revalidate: SITEMAP_REVALIDATE },
   )();
 }
 

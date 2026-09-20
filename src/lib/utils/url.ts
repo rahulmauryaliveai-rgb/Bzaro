@@ -102,6 +102,57 @@ export function tenantUrlFor(
   return tenantUrl(tenant.slug, path);
 }
 
+/** Mirrors the Prisma `WebPresence` enum without importing the client here. */
+export type WebPresenceTier = "CATALOGUE" | "SUBDOMAIN" | "CUSTOM_DOMAIN";
+
+export type SellerSurface = {
+  slug: string;
+  webPresence: WebPresenceTier;
+  customDomain?: string | null;
+  customDomainStatus?: string | null;
+};
+
+/**
+ * Translate a microsite path to its marketplace equivalent.
+ *
+ *   /                    → /seller/{slug}
+ *   /products/{p}        → /product/{slug}/{p}
+ *   /services/{s}        → /service/{slug}/{s}
+ *   anything else        → /seller/{slug}   (about, contact, gallery, listings)
+ *
+ * Used both to build canonical URLs for catalogue-tier sellers and to 301 a
+ * downgraded seller's subdomain without dropping deep links (D32).
+ */
+export function marketplacePathFor(slug: string, sitePath = "/"): string {
+  const path = normalizePath(sitePath).split(/[?#]/)[0] ?? "/";
+  const product = path.match(/^\/products\/([^/]+)\/?$/);
+  if (product) return `/product/${slug}/${product[1]}`;
+  const service = path.match(/^\/services\/([^/]+)\/?$/);
+  if (service) return `/service/${slug}/${service[1]}`;
+  return `/seller/${slug}`;
+}
+
+/**
+ * The seller's public home for a microsite path — decision D32.
+ *
+ * Catalogue tier    → the marketplace page (the seller has no site)
+ * Subdomain tier    → {slug}.bzaro.in
+ * Custom-domain tier→ the verified custom domain, else the subdomain
+ *
+ * This is THE canonical rule. Marketplace pages, microsite metadata, sitemaps,
+ * JSON-LD and dashboard "view your site" links must all go through it, so the
+ * canonical target and the served URL can never disagree.
+ */
+export function sellerSiteUrl(seller: SellerSurface, sitePath = "/"): string {
+  if (seller.webPresence === "CATALOGUE") {
+    return marketplaceUrl(marketplacePathFor(seller.slug, sitePath));
+  }
+  if (seller.webPresence === "CUSTOM_DOMAIN") {
+    return tenantUrlFor(seller, sitePath);
+  }
+  return tenantUrl(seller.slug, sitePath);
+}
+
 function normalizePath(path: string): string {
   if (!path || path === "/") return "/";
   return path.startsWith("/") ? path : `/${path}`;

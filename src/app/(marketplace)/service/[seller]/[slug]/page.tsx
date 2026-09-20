@@ -8,7 +8,7 @@ import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, serviceJsonLd } from "@/lib/seo/jsonld";
 import { formatMoney } from "@/lib/utils/money";
-import { marketplaceUrl, tenantUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
 
 /** Canonical points at the microsite, same rationale as the product page (D1). */
 
@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       service.shortDescription ??
       service.description?.slice(0, 160) ??
       `${service.name} from ${service.seller.businessName}.`,
-    alternates: { canonical: tenantUrl(service.seller.slug, `/services/${service.slug}`) },
+    alternates: { canonical: sellerSiteUrl(service.seller, `/services/${service.slug}`) },
   };
 }
 
@@ -42,7 +42,8 @@ export default async function MarketplaceServicePage({ params }: Props) {
   const parsed = deliverablesSchema.safeParse(service.deliverables);
   const deliverables = parsed.success ? parsed.data : [];
 
-  const micrositeUrl = tenantUrl(service.seller.slug, `/services/${service.slug}`);
+  const hasWebsite = service.seller.webPresence !== "CATALOGUE";
+  const micrositeUrl = sellerSiteUrl(service.seller, `/services/${service.slug}`);
   const locality = [service.seller.location?.name, service.seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
@@ -63,7 +64,7 @@ export default async function MarketplaceServicePage({ params }: Props) {
             service,
             url: micrositeUrl,
             sellerName: service.seller.businessName,
-            baseUrl: tenantUrl(service.seller.slug),
+            baseUrl: sellerSiteUrl(service.seller),
           }),
           breadcrumbJsonLd(trail, marketplaceUrl()),
         ]}
@@ -160,12 +161,14 @@ export default async function MarketplaceServicePage({ params }: Props) {
           {service.seller.businessName}
         </Link>
         {locality ? <p className="text-sm text-neutral-600">{locality}</p> : null}
-        <a
-          href={micrositeUrl}
-          className="mt-2 inline-block text-sm text-teal-700 underline underline-offset-2"
-        >
-          Visit their website ↗
-        </a>
+        {hasWebsite ? (
+          <a
+            href={micrositeUrl}
+            className="text-brand-700 mt-2 inline-block text-sm underline underline-offset-2"
+          >
+            Visit their website ↗
+          </a>
+        ) : null}
       </div>
     </div>
   );

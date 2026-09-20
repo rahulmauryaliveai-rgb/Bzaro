@@ -99,6 +99,7 @@ export async function GET() {
     { url: marketplaceUrl("/sitemap/core.xml") },
     { url: marketplaceUrl("/sitemap/categories.xml") },
     { url: marketplaceUrl("/sitemap/locations.xml") },
+    { url: marketplaceUrl("/sitemap/discovery.xml") },
   ];
 
   // Shard by page size. At 10k sellers this is one or two files; the sharding
