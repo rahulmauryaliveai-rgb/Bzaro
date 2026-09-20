@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
+import { PhoneOtpFields } from "@/components/onboarding/PhoneOtpFields";
 import {
   loginAction,
   registerAction,
@@ -134,17 +135,17 @@ export function LoginForm({ next }: { next?: string }) {
 
 export function RegisterForm() {
   const [state, action, pending] = useActionState(registerAction, INITIAL);
+  const [sameWhatsapp, setSameWhatsapp] = useState(true);
 
   if (state.ok) {
     return (
       <div className="space-y-3">
         <FormSuccess state={state} />
         <p className="text-sm text-neutral-600">
-          Once confirmed, you can{" "}
-          <Link href="/login" className="underline underline-offset-2">
-            sign in
+          <Link href="/login?next=/register/business" className="underline underline-offset-2">
+            Sign in
           </Link>{" "}
-          and register your business.
+          to register your business.
         </p>
       </div>
     );
@@ -155,6 +156,34 @@ export function RegisterForm() {
       <FormError state={state} />
 
       <Field label="Your name" name="name" autoComplete="name" error={state.fieldErrors?.name} />
+
+      <PhoneOtpFields
+        required={false}
+        errors={{ phone: state.fieldErrors?.phone, otpCode: state.fieldErrors?.otpCode }}
+      />
+
+      <div>
+        <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            checked={sameWhatsapp}
+            onChange={(event) => setSameWhatsapp(event.currentTarget.checked)}
+          />
+          WhatsApp is the same number
+        </label>
+        {!sameWhatsapp ? (
+          <div className="mt-2">
+            <Field
+              label="WhatsApp number"
+              name="whatsapp"
+              type="tel"
+              autoComplete="tel"
+              error={state.fieldErrors?.whatsapp}
+            />
+          </div>
+        ) : null}
+      </div>
+
       <Field
         label="Email"
         name="email"

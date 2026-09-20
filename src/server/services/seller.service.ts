@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { checkSlug } from "@/lib/tenant/reserved";
 import { revalidateTenant } from "@/lib/cache/revalidate";
+import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { defaultThemeTokens, themeTokensSchema } from "@/lib/validation/theme";
 import { SLUG_CHANGE_COOLDOWN_DAYS } from "@/lib/validation/seller";
@@ -9,7 +10,8 @@ import { DEFAULT_TEMPLATE_KEY, isKnownTemplate } from "@/components/site/templat
 import { mailer } from "@/lib/mail";
 import { sellerWelcomeEmail } from "@/lib/mail/templates";
 import { marketplaceUrl, tenantUrl } from "@/lib/utils/url";
-import type { BusinessRegistrationInput, SellerProfileInput } from "@/lib/validation/seller";
+import type { SellerProfileInput } from "@/lib/validation/seller";
+import type { BusinessStepInput } from "@/lib/validation/onboarding";
 
 /**
  * Seller lifecycle: registration, profile, website settings.
@@ -22,9 +24,7 @@ import type { BusinessRegistrationInput, SellerProfileInput } from "@/lib/valida
  * something, instead of tomorrow.
  */
 
-export type SlugAvailability =
-  | { available: true }
-  | { available: false; reason: string };
+export type SlugAvailability = { available: true } | { available: false; reason: string };
 
 /**
  * Is a subdomain free?
@@ -79,8 +79,10 @@ export type CreateSellerResult =
  */
 export async function createSeller(params: {
   userId: string;
-  input: BusinessRegistrationInput;
+  input: BusinessStepInput;
   userEmail: string;
+  /** From User.whatsapp (step 1). Falls back to the business phone. */
+  userWhatsapp?: string | null;
 }): Promise<CreateSellerResult> {
   const availability = await checkSlugAvailability(params.input.slug);
   if (!availability.available) {
@@ -107,15 +109,13 @@ export async function createSeller(params: {
   const [template, freePlan] = await Promise.all([
     db.websiteTemplate.findFirst({
       where: { key: DEFAULT_TEMPLATE_KEY },
-      select: { id: true },
+      select: { id: true, defaultTokens: true },
     }),
-    db.plan.findUnique({ where: { key: "free" }, select: { id: true } }),
+    db.plan.findUnique({ where: { key: "free" }, select: { id: true, webPresence: true } }),
   ]);
 
   if (!template) {
-    throw new Error(
-      `Default website template "${DEFAULT_TEMPLATE_KEY}" is missing. Run the seed.`,
-    );
+    throw new Error(`Default website template "${DEFAULT_TEMPLATE_KEY}" is missing. Run the seed.`);
   }
 
   const now = new Date();
@@ -125,12 +125,17 @@ export async function createSeller(params: {
       data: {
         slug: params.input.slug,
         businessName: params.input.businessName,
+        businessType: params.input.businessType,
         phone: params.input.phone,
-        whatsapp: params.input.phone,
+        whatsapp: params.userWhatsapp ?? params.input.phone,
         email: params.userEmail,
+        addressLine1: params.input.addressLine1,
+        postalCode: params.input.postalCode,
         locationId: params.input.locationId,
         status: "PENDING_VERIFICATION",
         timezone: "Asia/Kolkata",
+        // Step 2 done; the trust step comes next.
+        onboardingStep: "TRUST",
       },
       select: { id: true, slug: true },
     });
@@ -139,7 +144,7 @@ export async function createSeller(params: {
       data: {
         sellerId: created.id,
         templateId: template.id,
-        themeTokens: defaultThemeTokens,
+        themeTokens: themeTokensSchema.parse(template.defaultTokens ?? defaultThemeTokens),
         // Not published and not indexable. The seller publishes when ready, and
         // the D2 gate decides indexability from there.
         indexable: false,
@@ -152,12 +157,25 @@ export async function createSeller(params: {
     });
 
     await tx.sellerCategory.createMany({
-      data: params.input.categoryIds.map((categoryId, index) => ({
-        sellerId: created.id,
-        categoryId,
-        isPrimary: index === 0,
-      })),
+      data: [
+        { sellerId: created.id, categoryId: params.input.primaryCategoryId, isPrimary: true },
+        ...params.input.secondaryCategoryIds.map((categoryId) => ({
+          sellerId: created.id,
+          categoryId,
+          isPrimary: false,
+        })),
+      ],
     });
+
+    if (params.input.servesLocationIds.length > 0) {
+      await tx.sellerServiceArea.createMany({
+        data: params.input.servesLocationIds.map((locationId) => ({
+          sellerId: created.id,
+          locationId,
+        })),
+        skipDuplicates: true,
+      });
+    }
 
     if (freePlan) {
       await tx.subscription.create({
@@ -169,10 +187,18 @@ export async function createSeller(params: {
           currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 3600 * 1000),
         },
       });
+      // D32: the denormalised tier follows the plan from the first write.
+      await tx.seller.update({
+        where: { id: created.id },
+        data: { webPresence: freePlan.webPresence },
+      });
     }
 
-    await tx.user.update({
-      where: { id: params.userId },
+    // Promote a buyer to owner. Never touch a staff role: an admin who
+    // registered a business while signed in was silently demoted to seller,
+    // and every later admin login landed on that seller's dashboard.
+    await tx.user.updateMany({
+      where: { id: params.userId, role: { in: ["BUYER", "SELLER_STAFF"] } },
       data: { role: "SELLER_OWNER" },
     });
 
@@ -224,9 +250,13 @@ export function getSellerProfile(sellerId: string) {
       locationId: true,
       establishedYear: true,
       employeeCount: true,
+      businessType: true,
+      annualTurnover: true,
+      certifications: true,
       gstin: true,
       socialLinks: true,
       profileScore: true,
+      serviceAreas: { select: { locationId: true } },
       slugHistory: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
       website: {
         select: {
@@ -280,8 +310,18 @@ export async function updateSellerProfile(
       locationId: emptyToNull(input.locationId),
       establishedYear: input.establishedYear ?? null,
       employeeCount: emptyToNull(input.employeeCount),
+      businessType: input.businessType ? input.businessType : null,
+      annualTurnover: emptyToNull(input.annualTurnover),
+      certifications: input.certifications,
       gstin: emptyToNull(input.gstin),
       socialLinks,
+      // Replace the service-area set wholesale; the home city is implied.
+      serviceAreas: {
+        deleteMany: {},
+        create: input.servesLocationIds
+          .filter((locationId) => locationId !== input.locationId)
+          .map((locationId) => ({ locationId })),
+      },
     },
   });
 
@@ -290,6 +330,8 @@ export async function updateSellerProfile(
   // serve one request with stale robots headers.
   await recomputeIndexability(sellerId);
   revalidateTenant(slug);
+  // A city or category change moves the seller between listings.
+  await revalidateSellerDiscovery(sellerId);
 }
 
 /** Save website settings. Theme tokens are validated, never trusted. */
@@ -303,9 +345,7 @@ export async function updateWebsiteSettings(
     metaDescription?: string;
   },
 ): Promise<void> {
-  const templateKey = isKnownTemplate(input.templateKey)
-    ? input.templateKey
-    : DEFAULT_TEMPLATE_KEY;
+  const templateKey = isKnownTemplate(input.templateKey) ? input.templateKey : DEFAULT_TEMPLATE_KEY;
 
   const template = await db.websiteTemplate.findFirst({
     where: { key: templateKey },
@@ -329,6 +369,58 @@ export async function updateWebsiteSettings(
   });
 
   revalidateTenant(slug);
+}
+
+/**
+ * Apply a website template (D33): the template's preset tokens replace the
+ * site's tokens, so the seller sees the look they picked rather than the
+ * previous template's colours under a new layout. `showPlatformBranding` is
+ * a plan entitlement, not a look, and is carried over. Used by onboarding,
+ * the dashboard picker and the admin page.
+ */
+export async function applyTemplate(
+  sellerId: string,
+  slug: string,
+  templateKey: string,
+): Promise<void> {
+  const key = isKnownTemplate(templateKey) ? templateKey : DEFAULT_TEMPLATE_KEY;
+  const [template, website] = await Promise.all([
+    db.websiteTemplate.findFirst({
+      where: { key, isActive: true },
+      select: { id: true, defaultTokens: true },
+    }),
+    db.sellerWebsite.findUnique({ where: { sellerId }, select: { themeTokens: true } }),
+  ]);
+  if (!template) throw new Error(`Template "${key}" is not registered.`);
+
+  const current = themeTokensSchema.safeParse(website?.themeTokens);
+  const preset = themeTokensSchema.parse(template.defaultTokens ?? defaultThemeTokens);
+  const tokens = {
+    ...preset,
+    showPlatformBranding: current.success ? current.data.showPlatformBranding : true,
+  };
+
+  await db.sellerWebsite.update({
+    where: { sellerId },
+    data: { templateId: template.id, themeTokens: tokens },
+  });
+  revalidateTenant(slug);
+}
+
+/** Templates a seller may choose from, in display order. */
+export function listActiveTemplates() {
+  return db.websiteTemplate.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
+    select: {
+      key: true,
+      name: true,
+      description: true,
+      previewImage: true,
+      isPremium: true,
+      defaultTokens: true,
+    },
+  });
 }
 
 /**
@@ -358,9 +450,7 @@ export async function unpublishWebsite(sellerId: string, slug: string): Promise<
   revalidateTenant(slug);
 }
 
-export type SlugChangeResult =
-  | { ok: true; slug: string }
-  | { ok: false; reason: string };
+export type SlugChangeResult = { ok: true; slug: string } | { ok: false; reason: string };
 
 /**
  * Change a seller's subdomain (decision D11).
@@ -420,12 +510,12 @@ export async function changeSlug(
 
 /** Categories and locations for the onboarding and profile pickers. */
 export async function getOnboardingOptions() {
-  const [categories, locations] = await Promise.all([
+  const [categoryRows, locations] = await Promise.all([
     db.category.findMany({
-      where: { isActive: true, depth: { lte: 1 } },
-      select: { id: true, name: true, depth: true, path: true },
+      where: { isActive: true, depth: { lte: 2 } },
+      select: { id: true, name: true, depth: true, parentId: true },
       orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
-      take: 200,
+      take: 1000,
     }),
     db.location.findMany({
       where: { isActive: true, type: "CITY" },
@@ -435,7 +525,22 @@ export async function getOnboardingOptions() {
     }),
   ]);
 
-  return { categories, locations };
+  // Nest into group → subcategory → specialisation for the picker (D34).
+  type Node = { id: string; name: string; children?: Node[] };
+  const byId = new Map<string, Node>();
+  const roots: Node[] = [];
+  for (const row of categoryRows) {
+    const node: Node = { id: row.id, name: row.name };
+    byId.set(row.id, node);
+    if (row.depth === 0 || !row.parentId) {
+      roots.push(node);
+    } else {
+      const parent = byId.get(row.parentId);
+      if (parent) (parent.children ??= []).push(node);
+    }
+  }
+
+  return { categories: roots, locations };
 }
 
 /**

@@ -12,73 +12,18 @@ import type { PrismaClient } from "../../src/generated/prisma/client";
  * Phase 3; here the seed computes them directly as it walks the tree.
  */
 
-type CategoryNode = { slug: string; name: string; children?: CategoryNode[] };
-
-const CATEGORY_TREE: CategoryNode[] = [
-  {
-    slug: "electronics",
-    name: "Electronics & Electrical",
-    children: [
-      {
-        slug: "lighting",
-        name: "Lighting",
-        children: [
-          { slug: "led-bulbs", name: "LED Bulbs" },
-          { slug: "led-panels", name: "LED Panels" },
-          { slug: "street-lights", name: "Street Lights" },
-        ],
-      },
-      {
-        slug: "cables-wires",
-        name: "Cables & Wires",
-        children: [
-          { slug: "copper-cables", name: "Copper Cables" },
-          { slug: "control-cables", name: "Control Cables" },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "building-construction",
-    name: "Building & Construction",
-    children: [
-      {
-        slug: "steel",
-        name: "Steel & Metal",
-        children: [
-          { slug: "tmt-bars", name: "TMT Bars" },
-          { slug: "steel-pipes", name: "Steel Pipes" },
-          { slug: "steel-sheets", name: "Steel Sheets" },
-        ],
-      },
-      { slug: "cement", name: "Cement" },
-    ],
-  },
-  {
-    slug: "textiles",
-    name: "Textiles & Fabrics",
-    children: [
-      { slug: "cotton-fabric", name: "Cotton Fabric" },
-      { slug: "industrial-textiles", name: "Industrial Textiles" },
-    ],
-  },
-  {
-    slug: "industrial-supplies",
-    name: "Industrial Supplies",
-    children: [
-      { slug: "hand-tools", name: "Hand Tools" },
-      { slug: "power-tools", name: "Power Tools" },
-      { slug: "safety-equipment", name: "Safety Equipment" },
-    ],
-  },
-];
+import { CATEGORY_TREE, countNodes, type CategoryNode } from "./data/categories";
 
 type LocationNode = {
   slug: string;
   name: string;
   type: "COUNTRY" | "STATE" | "CITY" | "LOCALITY";
+  /** Metro cluster for the lead matcher's city tier (docs/LEADS.md). */
+  clusterKey?: string;
   children?: LocationNode[];
 };
+
+const NCR = "ncr";
 
 const LOCATION_TREE: LocationNode[] = [
   {
@@ -105,11 +50,33 @@ const LOCATION_TREE: LocationNode[] = [
           { slug: "surat", name: "Surat", type: "CITY" },
         ],
       },
+      // The NCR cities span three states but trade as one market — a buyer in
+      // Noida is happy to source from Gurugram. `clusterKey` lets the matcher
+      // rank them between "same city" and "serves this city".
       {
         slug: "delhi",
         name: "Delhi",
         type: "STATE",
-        children: [{ slug: "new-delhi", name: "New Delhi", type: "CITY" }],
+        children: [{ slug: "new-delhi", name: "New Delhi", type: "CITY", clusterKey: NCR }],
+      },
+      {
+        slug: "haryana",
+        name: "Haryana",
+        type: "STATE",
+        children: [
+          { slug: "gurugram", name: "Gurugram", type: "CITY", clusterKey: NCR },
+          { slug: "faridabad", name: "Faridabad", type: "CITY", clusterKey: NCR },
+        ],
+      },
+      {
+        slug: "uttar-pradesh",
+        name: "Uttar Pradesh",
+        type: "STATE",
+        children: [
+          { slug: "noida", name: "Noida", type: "CITY", clusterKey: NCR },
+          { slug: "ghaziabad", name: "Ghaziabad", type: "CITY", clusterKey: NCR },
+          { slug: "lucknow", name: "Lucknow", type: "CITY" },
+        ],
       },
       {
         slug: "tamil-nadu",
@@ -176,8 +143,9 @@ export async function seedTaxonomy(prisma: PrismaClient) {
           type: node.type,
           path,
           ancestorIds: ancestors,
+          clusterKey: node.clusterKey ?? null,
         },
-        update: { name: node.name, ancestorIds: ancestors },
+        update: { name: node.name, ancestorIds: ancestors, clusterKey: node.clusterKey ?? null },
         select: { id: true },
       });
 
@@ -190,6 +158,7 @@ export async function seedTaxonomy(prisma: PrismaClient) {
   }
 
   await walkCategories(CATEGORY_TREE, null, "", [], 0);
+  console.log(`   ${countNodes(CATEGORY_TREE)} categories in ${CATEGORY_TREE.length} groups`);
   await walkLocations(LOCATION_TREE, null, "", []);
 
   return { categories, locations };

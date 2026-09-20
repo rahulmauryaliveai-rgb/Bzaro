@@ -121,11 +121,25 @@ export function getPopularCities(limit = 12) {
     async () =>
       db.location.findMany({
         where: { type: "CITY", isActive: true },
-        select: { id: true, name: true, path: true, sellerCount: true },
+        select: { id: true, slug: true, name: true, path: true, sellerCount: true },
         orderBy: [{ sellerCount: "desc" }, { name: "asc" }],
         take: limit,
       }),
     ["popular-cities", String(limit)],
+    { tags: [cacheTags.locationTree()], revalidate: TAXONOMY_REVALIDATE },
+  )();
+}
+
+/** Every active city, for the buyer city picker. Small and long-lived. */
+export function getAllCities() {
+  return unstable_cache(
+    async () =>
+      db.location.findMany({
+        where: { type: "CITY", isActive: true },
+        select: { id: true, slug: true, name: true, path: true },
+        orderBy: [{ sellerCount: "desc" }, { name: "asc" }],
+      }),
+    ["all-cities"],
     { tags: [cacheTags.locationTree()], revalidate: TAXONOMY_REVALIDATE },
   )();
 }

@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  BUSINESS_TYPES,
+  CERTIFICATIONS,
+  MAX_SERVICE_AREAS,
+  TURNOVER_BANDS,
+} from "@/lib/validation/business-lists";
 import { checkSlug } from "@/lib/tenant/reserved";
 import { phoneSchema } from "@/lib/validation/auth";
 import { IMAGE_REFERENCE_MESSAGE, isUsableImageReference } from "@/lib/validation/image-reference";
@@ -27,7 +33,7 @@ const imageReference = z
   .optional()
   .or(z.literal(""));
 
-const slugField = z
+export const slugField = z
   .string()
   .trim()
   .toLowerCase()
@@ -61,13 +67,31 @@ export type BusinessRegistrationInput = z.infer<typeof businessRegistrationSchem
 export const sellerProfileSchema = z.object({
   businessName: z.string().trim().min(2, "Enter your business name").max(200),
   legalName: z.string().trim().max(200).optional().or(z.literal("")),
-  tagline: z.string().trim().max(160, "Keep the tagline under 160 characters").optional().or(z.literal("")),
+  tagline: z
+    .string()
+    .trim()
+    .max(160, "Keep the tagline under 160 characters")
+    .optional()
+    .or(z.literal("")),
   description: z.string().trim().max(5000, "Description is too long").optional().or(z.literal("")),
 
-  email: z.string().trim().toLowerCase().max(254).email("Enter a valid email").optional().or(z.literal("")),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254)
+    .email("Enter a valid email")
+    .optional()
+    .or(z.literal("")),
   phone: z.string().trim().max(20).optional().or(z.literal("")),
   whatsapp: z.string().trim().max(20).optional().or(z.literal("")),
-  websiteUrl: z.string().trim().max(300).url("Enter a full URL including https://").optional().or(z.literal("")),
+  websiteUrl: z
+    .string()
+    .trim()
+    .max(300)
+    .url("Enter a full URL including https://")
+    .optional()
+    .or(z.literal("")),
 
   addressLine1: z.string().trim().max(200).optional().or(z.literal("")),
   addressLine2: z.string().trim().max(200).optional().or(z.literal("")),
@@ -83,6 +107,11 @@ export const sellerProfileSchema = z.object({
     .or(z.literal("").transform(() => undefined))
     .catch(undefined),
   employeeCount: z.string().trim().max(40).optional().or(z.literal("")),
+  businessType: z.enum(BUSINESS_TYPES).optional().or(z.literal("")),
+  annualTurnover: z.enum(TURNOVER_BANDS).optional().or(z.literal("")),
+  certifications: z.array(z.enum(CERTIFICATIONS)).max(CERTIFICATIONS.length).default([]),
+  /** Cities served besides the home city. */
+  servesLocationIds: z.array(z.string().cuid()).max(MAX_SERVICE_AREAS).default([]),
   gstin: z
     .string()
     .trim()
@@ -123,7 +152,12 @@ export const websiteSettingsSchema = z.object({
   headerVariant: z.string().trim().max(20),
   heroVariant: z.string().trim().max(20),
 
-  metaTitle: z.string().trim().max(70, "Search engines truncate past ~60 characters").optional().or(z.literal("")),
+  metaTitle: z
+    .string()
+    .trim()
+    .max(70, "Search engines truncate past ~60 characters")
+    .optional()
+    .or(z.literal("")),
   metaDescription: z
     .string()
     .trim()

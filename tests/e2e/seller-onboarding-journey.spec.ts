@@ -28,6 +28,8 @@ const STAMP = Date.now().toString(36);
 const EMAIL = `journey-${STAMP}@example.test`;
 const SLUG = `journey-${STAMP}`;
 const PASSWORD = "journey-password-123";
+/** Unique per run too: User.phone is unique, and a run whose cleanup failed must not block the next. */
+const PHONE = `98${String(Date.now()).slice(-8)}`;
 
 /** Hidden inputs Next renders to make a Server Action work without JavaScript. */
 function actionFields(html: string): Array<{ name: string; value: string }> {
@@ -39,6 +41,20 @@ function actionFields(html: string): Array<{ name: string; value: string }> {
         .replace(/&amp;/g, "&"),
     }))
     .filter((field) => field.name);
+}
+
+/** The first real option value of a named <select> (skipping the placeholder). */
+function firstOption(html: string, selectName: string): string | undefined {
+  // Named selects (`name="locationId"`) and the category picker's cascaded
+  // group select, which carries no name — its id ends in `-primary-group`
+  // (D34) and the chosen id is posted through a hidden input.
+  const start =
+    selectName === "primaryCategoryId"
+      ? html.search(/id="[^"]*-primary-group"/)
+      : html.indexOf(`name="${selectName}"`);
+  if (start < 0) return undefined;
+  const end = html.indexOf("</select>", start);
+  return html.slice(start, end).match(/<option value="(c[^"]+)"/)?.[1];
 }
 
 function withActionFields(html: string, values: Record<string, string>) {
@@ -86,6 +102,9 @@ test.describe("a seller can register and claim a subdomain", () => {
       maxRedirects: 0,
       multipart: withActionFields(body, {
         name: "Journey Tester",
+        // Step 1 collects the mobile; the OTP is optional at sign-up (the
+        // dashboard nags until it is verified), so none is supplied here.
+        phone: PHONE,
         email: EMAIL,
         password: PASSWORD,
         confirmPassword: PASSWORD,
@@ -162,8 +181,8 @@ test.describe("a seller can register and claim a subdomain", () => {
     // Read the real option values rather than hardcoding ids: the seed
     // regenerates them, and a stale id would fail as a validation error that
     // looks like a bug in the form.
-    const locationId = body.match(/<option value="(c[^"]+)"/)?.[1];
-    const categoryId = [...body.matchAll(/name="categoryIds" value="([^"]+)"/g)][0]?.[1];
+    const locationId = firstOption(body, "locationId");
+    const categoryId = firstOption(body, "primaryCategoryId");
 
     expect(locationId, "the form should offer cities").toBeTruthy();
     expect(categoryId, "the form should offer categories").toBeTruthy();
@@ -173,14 +192,76 @@ test.describe("a seller can register and claim a subdomain", () => {
       multipart: withActionFields(body, {
         businessName: "Journey Instruments",
         slug: SLUG,
-        phone: "+919876500000",
+        businessType: "MANUFACTURER",
+        phone: PHONE,
+        addressLine1: "Plot 1, Test Estate",
+        postalCode: "400001",
         locationId: locationId!,
-        categoryIds: categoryId!,
+        primaryCategoryId: categoryId!,
       }),
     });
 
     expect(response.status(), "onboarding should redirect on success").toBe(303);
-    expect(response.headers()["location"]).toContain("/dashboard");
+    // Step 2 done → step 3 (trust), not straight to the dashboard.
+    expect(response.headers()["location"]).toContain("/register/trust");
+  });
+
+  test("steps 3 and 4 are reachable and the dashboard offers to resume", async () => {
+    expect((await html(request, "/register/trust")).response.status()).toBe(200);
+    expect((await html(request, "/register/catalog")).response.status()).toBe(200);
+
+    // /register/business now sends an existing seller to where they stopped.
+    const resume = await request.get(`${APEX}/register/business`, { maxRedirects: 0 });
+    expect(resume.status()).toBe(307);
+    expect(resume.headers()["location"]).toContain("/register/trust");
+
+    const { body } = await html(request, "/dashboard");
+    expect(body).toContain("Profile completion");
+    expect(body).toContain("Continue where you left off");
+  });
+
+  test("skipping trust, choosing a look and finishing the catalogue step completes onboarding", async ({
+    browser,
+  }) => {
+    // Three routes compile on first visit under `next dev`.
+    test.setTimeout(120_000);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${APEX}/login`);
+    await page.getByLabel(/email/i).fill(EMAIL);
+    await page.getByLabel(/password/i).fill(PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(/\/dashboard|\/register/);
+    // The login redirect lands twice under `next dev` (a second navigation
+    // ~500 ms after the first, from the post-compile reload). Moving on before
+    // it fires gets the test bounced back to /dashboard mid-flow.
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1_500);
+
+    await page.goto(`${APEX}/register/trust`);
+    // The clicks are not awaited: under `next dev` the promise for a click
+    // that triggers a Server Action redirect does not settle. The URL change
+    // is the signal — and the ?welcome=1 redirect exists only on the finish
+    // action, so reaching it proves the action ran.
+    const skip = page.getByRole("button", { name: "Skip for now" });
+    await expect(skip).toBeVisible();
+    void skip.click({ noWaitAfter: true }).catch(() => {});
+    await page.waitForURL(/\/register\/theme/);
+
+    // Step 4 (D33): pick a website template. The picker posts the key and
+    // redirects on to the catalogue step.
+    const look = page.getByRole("button", { name: "Use this look & continue" }).first();
+    await expect(look).toBeVisible();
+    void look.click({ noWaitAfter: true }).catch(() => {});
+    await page.waitForURL(/\/register\/catalog/);
+
+    const finish = page.getByRole("button", { name: "Go to my dashboard" });
+    await expect(finish).toBeVisible();
+    void finish.click({ noWaitAfter: true }).catch(() => {});
+    await page.waitForURL(/\/dashboard\?welcome=1/);
+    await expect(page.getByText("Profile completion")).toBeVisible();
+    await expect(page.getByText("Continue where you left off")).toHaveCount(0);
+    await context.close();
   });
 
   test("the new subdomain is reserved but not yet public", async () => {
@@ -194,17 +275,20 @@ test.describe("a seller can register and claim a subdomain", () => {
 
   test("the claimed slug cannot be taken by someone else", async () => {
     const { body } = await html(request, "/register/business");
-    const locationId = body.match(/<option value="(c[^"]+)"/)?.[1];
-    const categoryId = [...body.matchAll(/name="categoryIds" value="([^"]+)"/g)][0]?.[1];
+    const locationId = firstOption(body, "locationId");
+    const categoryId = firstOption(body, "primaryCategoryId");
 
     const response = await request.post(`${APEX}/register/business`, {
       maxRedirects: 0,
       multipart: withActionFields(body, {
         businessName: "Impostor Instruments",
         slug: SLUG,
-        phone: "+919876500001",
+        businessType: "TRADER",
+        phone: PHONE,
+        addressLine1: "Plot 2, Test Estate",
+        postalCode: "400002",
         locationId: locationId ?? "",
-        categoryIds: categoryId ?? "",
+        primaryCategoryId: categoryId ?? "",
       }),
     });
 

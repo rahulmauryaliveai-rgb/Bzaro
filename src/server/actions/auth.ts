@@ -8,15 +8,16 @@ import {
   credentialsSchema,
   passwordResetRequestSchema,
   passwordResetSchema,
-  registerSchema,
 } from "@/lib/validation/auth";
+import { accountStepSchema } from "@/lib/validation/onboarding";
+import { verifyOtp } from "@/lib/otp/challenge";
 import {
   registerUser,
   requestPasswordReset,
   resetPassword,
   sendVerificationEmail,
 } from "@/server/services/auth.service";
-import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
+import { checkRateLimit, getClientIp, peekRateLimit } from "@/lib/ratelimit";
 
 /**
  * Authentication Server Actions.
@@ -69,7 +70,10 @@ export async function loginAction(
     return { error: "Enter your email address and password." };
   }
 
-  const limit = await checkRateLimit("login", await clientIp());
+  // Failures count, successes do not (see peekRateLimit): the bucket is
+  // consumed only after a wrong password below.
+  const ip = await clientIp();
+  const limit = await peekRateLimit("login", ip);
   if (!limit.success) {
     return { error: "Too many attempts. Try again in a little while." };
   }
@@ -90,6 +94,7 @@ export async function loginAction(
     // Auth.js signals a successful redirect by throwing. Rethrow so Next can
     // perform it; anything else is a genuine failure.
     if (error instanceof AuthError) {
+      await checkRateLimit("login", ip);
       // Deliberately uniform. Distinguishing "no such account" from "wrong
       // password" turns this form into an account-enumeration oracle.
       return { error: "Email address or password is incorrect." };
@@ -104,8 +109,11 @@ export async function registerAction(
   _previous: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const parsed = registerSchema.safeParse({
+  const parsed = accountStepSchema.safeParse({
     name: formData.get("name"),
+    phone: formData.get("phone"),
+    whatsapp: formData.get("whatsapp") ?? undefined,
+    otpCode: formData.get("otpCode") ?? undefined,
     email: formData.get("email"),
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
@@ -121,24 +129,64 @@ export async function registerAction(
     return { error: "Too many sign-ups from this network. Try again later." };
   }
 
+  // The mobile OTP is verified in the same submission when a code was typed.
+  // Without one the account is still created — with the phone unverified —
+  // and the dashboard checklist keeps asking until it is (D2 rule).
+  let phoneVerified = false;
+  if (parsed.data.otpCode) {
+    const otp = await verifyOtp({
+      phone: parsed.data.phone,
+      purpose: "SELLER_SIGNUP",
+      code: parsed.data.otpCode,
+    });
+    if (!otp.ok) {
+      return {
+        fieldErrors: {
+          otpCode:
+            otp.reason === "mismatch"
+              ? "That code isn't right."
+              : "That code has expired or was used. Request a new one.",
+        },
+      };
+    }
+    phoneVerified = true;
+  }
+
   const result = await registerUser({
     name: parsed.data.name,
     email: parsed.data.email,
     password: parsed.data.password,
+    phone: parsed.data.phone,
+    whatsapp: parsed.data.whatsapp,
+    phoneVerified,
   });
 
   if (!result.ok) {
     // An existing address is the one case where we cannot avoid being
     // informative — the user genuinely needs to know to sign in instead.
+    if (result.reason === "phone_taken") {
+      return { fieldErrors: { phone: "An account with this mobile number already exists." } };
+    }
     return { fieldErrors: { email: "An account with this email already exists." } };
   }
 
-  return {
-    ok: true,
-    message: result.emailSent
-      ? "Check your inbox to confirm your email address."
-      : "Account created, but we could not send the confirmation email. Try requesting it again.",
-  };
+  // Straight into onboarding. The mobile number is the seller's identity
+  // (D28); the confirmation email is a background nicety, not a gate —
+  // sending a new seller off to their inbox at step 1 lost most of them.
+  try {
+    await authSignIn("credentials", {
+      email: parsed.data.email,
+      password: parsed.data.password,
+      redirectTo: "/register/business",
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { ok: true, message: "Account created. Sign in to register your business." };
+    }
+    throw error; // the redirect
+  }
+
+  return { ok: true, message: "Account created." };
 }
 
 export async function requestPasswordResetAction(

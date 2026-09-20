@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/AuthForms";
-import { getSessionUser } from "@/lib/auth/guards";
+import { getSessionUser, homeFor } from "@/lib/auth/guards";
 
 export const metadata: Metadata = { title: "Sign in", robots: { index: false, follow: false } };
 
@@ -13,7 +13,7 @@ export default async function LoginPage({ searchParams }: Props) {
   // Already signed in: send them on rather than showing a form that will
   // bounce them straight back.
   const user = await getSessionUser();
-  if (user) redirect(next && next.startsWith("/") ? next : "/dashboard");
+  if (user) redirect(next && next.startsWith("/") ? next : homeFor(user.role));
 
   return (
     <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-6">

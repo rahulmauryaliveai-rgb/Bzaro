@@ -45,8 +45,8 @@ export function EligibilityChecklist({ result }: { result: EligibilityResult }) 
       <section className="rounded-lg border border-teal-600 bg-teal-50 p-5">
         <h2 className="font-medium text-teal-900">Your website is visible to search engines</h2>
         <p className="mt-1 text-sm text-teal-800">
-          Your profile is complete. Search engines can now index your site — it usually takes
-          a few weeks for pages to start appearing.
+          Your profile is complete. Search engines can now index your site — it usually takes a few
+          weeks for pages to start appearing.
         </p>
       </section>
     );
@@ -75,8 +75,8 @@ export function EligibilityChecklist({ result }: { result: EligibilityResult }) 
       </div>
 
       <p className="mt-3 text-sm text-amber-900">
-        Buyers can already find you on the marketplace. Complete these to let Google index
-        your own website too:
+        Buyers can already find you on the marketplace. Complete these to let Google index your own
+        website too:
       </p>
 
       <ul className="mt-4 space-y-2">
@@ -95,9 +95,7 @@ export function EligibilityChecklist({ result }: { result: EligibilityResult }) 
               <span className="min-w-0 flex-1 text-amber-900">{failure.message}</span>
 
               {fix?.pending ? (
-                <span className="shrink-0 text-xs font-medium text-amber-700">
-                  Coming soon
-                </span>
+                <span className="shrink-0 text-xs font-medium text-amber-700">Coming soon</span>
               ) : fix ? (
                 <Link
                   href={fix.href}
@@ -119,10 +117,10 @@ export function EligibilityChecklist({ result }: { result: EligibilityResult }) 
       <details className="mt-4 text-sm text-amber-900">
         <summary className="cursor-pointer font-medium">Why does this exist?</summary>
         <p className="mt-2 leading-relaxed">
-          Every seller here gets a website on a shared domain. If search engines find
-          thousands of near-empty sites on it, they penalise the whole domain — including
-          the sellers who did fill theirs in. Holding incomplete sites back until they have
-          real content protects everyone&rsquo;s ranking, including yours.
+          Every seller here gets a website on a shared domain. If search engines find thousands of
+          near-empty sites on it, they penalise the whole domain — including the sellers who did
+          fill theirs in. Holding incomplete sites back until they have real content protects
+          everyone&rsquo;s ranking, including yours.
         </p>
       </details>
     </section>

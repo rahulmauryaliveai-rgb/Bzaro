@@ -1,5 +1,6 @@
 "use client";
 
+import { CategoryPicker, type CategoryOption } from "@/components/onboarding/CategoryPicker";
 import { useActionState, useId, useRef, useState } from "react";
 import {
   checkSlugAction,
@@ -7,6 +8,11 @@ import {
   type SellerActionState,
 } from "@/server/actions/seller";
 import { clientEnv } from "@/env.client";
+import {
+  BUSINESS_TYPES,
+  BUSINESS_TYPE_LABELS,
+  MAX_SECONDARY_CATEGORIES,
+} from "@/lib/validation/onboarding";
 
 /**
  * Business registration.
@@ -47,11 +53,15 @@ function suggestSlug(name: string): string {
 export function BusinessRegistrationForm({
   categories,
   locations,
+  defaultPhone = "",
 }: {
-  categories: Array<{ id: string; name: string; depth: number }>;
+  categories: CategoryOption[];
   locations: Array<{ id: string; name: string; parent: { name: string } | null }>;
+  /** From the account step, so the seller does not type it twice. */
+  defaultPhone?: string;
 }) {
   const [state, action, pending] = useActionState(registerBusinessAction, INITIAL);
+  const [homeLocationId, setHomeLocationId] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugState, setSlugState] = useState<SlugState>({ status: "idle" });
@@ -171,8 +181,8 @@ export function BusinessRegistrationForm({
             <span className="text-red-600">{slugState.reason}</span>
           ) : (
             <span className="text-neutral-500">
-              Lowercase letters, numbers and hyphens. You can change this later, but only
-              once every 90 days.
+              Lowercase letters, numbers and hyphens. You can change this later, but only once every
+              90 days.
             </span>
           )}
         </p>
@@ -186,17 +196,82 @@ export function BusinessRegistrationForm({
           id={`${formId}-phone`}
           name="phone"
           required
-          placeholder="+919876543210"
-          maxLength={20}
+          defaultValue={defaultPhone}
+          placeholder="98765 43210"
+          maxLength={24}
           autoComplete="tel"
           className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
         />
         <p className="mt-1 text-xs text-neutral-500">
-          Used for your WhatsApp enquiry button, so buyers can reach you directly.
+          The business line buyers call. Your WhatsApp number from the previous step is used for
+          WhatsApp enquiries.
         </p>
         {state.fieldErrors?.phone ? (
           <p className="mt-1 text-xs text-red-600">{state.fieldErrors.phone}</p>
         ) : null}
+      </div>
+
+      <div>
+        <label htmlFor={`${formId}-type`} className="mb-1 block text-sm font-medium">
+          Business type
+        </label>
+        <select
+          id={`${formId}-type`}
+          name="businessType"
+          required
+          defaultValue=""
+          className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="" disabled>
+            Choose…
+          </option>
+          {BUSINESS_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {BUSINESS_TYPE_LABELS[type]}
+            </option>
+          ))}
+        </select>
+        {state.fieldErrors?.businessType ? (
+          <p className="mt-1 text-xs text-red-600">{state.fieldErrors.businessType}</p>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
+        <div>
+          <label htmlFor={`${formId}-address`} className="mb-1 block text-sm font-medium">
+            Address
+          </label>
+          <input
+            id={`${formId}-address`}
+            name="addressLine1"
+            required
+            maxLength={200}
+            autoComplete="street-address"
+            placeholder="Plot 14, Industrial Estate"
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+          {state.fieldErrors?.addressLine1 ? (
+            <p className="mt-1 text-xs text-red-600">{state.fieldErrors.addressLine1}</p>
+          ) : null}
+        </div>
+        <div>
+          <label htmlFor={`${formId}-pin`} className="mb-1 block text-sm font-medium">
+            PIN code
+          </label>
+          <input
+            id={`${formId}-pin`}
+            name="postalCode"
+            required
+            inputMode="numeric"
+            maxLength={6}
+            autoComplete="postal-code"
+            placeholder="400001"
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+          {state.fieldErrors?.postalCode ? (
+            <p className="mt-1 text-xs text-red-600">{state.fieldErrors.postalCode}</p>
+          ) : null}
+        </div>
       </div>
 
       <div>
@@ -207,7 +282,8 @@ export function BusinessRegistrationForm({
           id={`${formId}-location`}
           name="locationId"
           required
-          defaultValue=""
+          value={homeLocationId}
+          onChange={(event) => setHomeLocationId(event.currentTarget.value)}
           className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
         >
           <option value="" disabled>
@@ -225,28 +301,40 @@ export function BusinessRegistrationForm({
         ) : null}
       </div>
 
+      <CategoryPicker
+        groups={categories}
+        maxSecondary={MAX_SECONDARY_CATEGORIES}
+        errors={{
+          primaryCategoryId: state.fieldErrors?.primaryCategoryId,
+          secondaryCategoryIds: state.fieldErrors?.secondaryCategoryIds,
+        }}
+      />
+
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">What do you sell?</legend>
+        <legend className="mb-2 text-sm font-medium">
+          Cities you deliver to{" "}
+          <span className="font-normal text-neutral-500">(besides your own)</span>
+        </legend>
         <p className="mb-3 text-xs text-neutral-500">
-          Choose up to five. This decides where buyers find you on the marketplace.
+          Buyers in these cities see you in their listings and their requirements can reach you.
         </p>
-
-        <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-md border border-neutral-200 p-3">
-          {categories.map((category) => (
-            <label
-              key={category.id}
-              className={`flex items-center gap-2 text-sm ${
-                category.depth > 0 ? "pl-5 text-neutral-600" : "font-medium"
-              }`}
-            >
-              <input type="checkbox" name="categoryIds" value={category.id} />
-              <span>{category.name}</span>
-            </label>
-          ))}
+        <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-neutral-200 p-3">
+          {locations
+            .filter((location) => location.id !== homeLocationId)
+            .map((location) => (
+              <label key={location.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="servesLocationIds" value={location.id} />
+                <span>
+                  {location.name}
+                  {location.parent ? (
+                    <span className="text-neutral-500">, {location.parent.name}</span>
+                  ) : null}
+                </span>
+              </label>
+            ))}
         </div>
-
-        {state.fieldErrors?.categoryIds ? (
-          <p className="mt-1 text-xs text-red-600">{state.fieldErrors.categoryIds}</p>
+        {state.fieldErrors?.servesLocationIds ? (
+          <p className="mt-1 text-xs text-red-600">{state.fieldErrors.servesLocationIds}</p>
         ) : null}
       </fieldset>
 
@@ -255,12 +343,12 @@ export function BusinessRegistrationForm({
         disabled={pending || slugState.status === "taken"}
         className="w-full rounded-md bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-60"
       >
-        {pending ? "Creating…" : "Register business"}
+        {pending ? "Saving…" : "Continue"}
       </button>
 
       <p className="text-xs text-neutral-500">
-        Your website address is reserved immediately. It goes live once we verify your
-        business — usually within a working day.
+        Your website address is reserved immediately. It goes live once we verify your business —
+        usually within a working day.
       </p>
     </form>
   );

@@ -92,6 +92,19 @@ const LIMITS = {
   login: { tokens: 10, window: "1 h" },
   /** Phone OTP requests. Per phone number: each one costs real money. */
   otp: { tokens: 3, window: "1 h" },
+  /**
+   * Phone OTP requests. Per IP. Looser than per-phone — an office NAT is many
+   * buyers — but tight enough that one machine cannot SMS-bomb the phone book.
+   */
+  otpIp: { tokens: 10, window: "1 h" },
+  /**
+   * OTP verification attempts. Per phone. The challenge row allows three
+   * guesses per code; this caps how many CODES one number can burn through,
+   * so "request, guess three times, request again" is bounded too.
+   */
+  otpVerify: { tokens: 12, window: "1 h" },
+  /** Requirement submission (lead creation). Per buyer. */
+  requirement: { tokens: 10, window: "1 h" },
   /** Upload signature requests. Per seller. */
   upload: { tokens: 30, window: "1 h" },
   /** Search queries. Per IP — protects the database, not the business. */
@@ -157,6 +170,41 @@ function memoryLimit(kind: LimitKind, identifier: string): LimitResult {
     remaining: Math.max(0, tokens - entry.count),
     reset: entry.reset,
   };
+}
+
+/**
+ * Read the bucket without consuming a token.
+ *
+ * For limits that should count FAILURES, not attempts: login checks this
+ * first and only consumes after a wrong password. Counting successes locks
+ * out an office behind one NAT after ten colleagues sign in — and in
+ * development it locks out the developer after the e2e suite runs.
+ */
+export async function peekRateLimit(kind: LimitKind, identifier: string): Promise<LimitResult> {
+  assertConfigured();
+  const { tokens } = LIMITS[kind];
+
+  const limiter = getLimiter(kind);
+  if (!limiter) {
+    const entry = memory.get(`${kind}:${identifier}`);
+    const now = Date.now();
+    if (!entry || entry.reset < now) {
+      return { success: true, limit: tokens, remaining: tokens, reset: now };
+    }
+    return {
+      success: entry.count < tokens,
+      limit: tokens,
+      remaining: Math.max(0, tokens - entry.count),
+      reset: entry.reset,
+    };
+  }
+
+  try {
+    const { remaining, reset } = await limiter.getRemaining(identifier);
+    return { success: remaining > 0, limit: tokens, remaining, reset };
+  } catch {
+    return { success: true, limit: tokens, remaining: tokens, reset: Date.now() };
+  }
 }
 
 /**

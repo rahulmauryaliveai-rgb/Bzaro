@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import { BrandLogo } from "@/components/shared/BrandLogo";
 import { IBM_Plex_Sans } from "next/font/google";
-import { clientEnv } from "@/env.client";
 import "../globals.css";
 
 /**
@@ -33,9 +33,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           picker — constraining both here would make one of them wrong.
         */}
         <div className="flex flex-1 flex-col items-center px-4 py-16">
-          <p className="mb-8 text-center text-lg font-semibold tracking-tight">
-            {clientEnv.NEXT_PUBLIC_PLATFORM_NAME}
-          </p>
+          <div className="mb-8">
+            <BrandLogo variant="full" height={64} priority />
+          </div>
           {children}
         </div>
       </body>

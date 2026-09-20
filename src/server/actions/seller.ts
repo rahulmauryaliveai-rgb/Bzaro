@@ -3,14 +3,18 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { isPlatformStaff } from "@/lib/auth/permissions";
+import { GSTIN_TAKEN, isUniqueViolation } from "@/lib/db-errors";
 import { requireSeller, requireUserStrict } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
+import { businessStepSchema } from "@/lib/validation/onboarding";
 import {
-  businessRegistrationSchema,
   sellerProfileSchema,
   slugChangeSchema,
   websiteSettingsSchema,
 } from "@/lib/validation/seller";
 import {
+  applyTemplate,
   changeSlug,
   checkSlugAvailability,
   createSeller,
@@ -73,13 +77,21 @@ export async function registerBusinessAction(
   formData: FormData,
 ): Promise<SellerActionState> {
   const user = await requireUserStrict();
+  if (isPlatformStaff(user.role)) {
+    return { error: "Staff accounts cannot register a business. Use a separate seller account." };
+  }
 
-  const parsed = businessRegistrationSchema.safeParse({
+  const parsed = businessStepSchema.safeParse({
     businessName: formData.get("businessName"),
     slug: formData.get("slug"),
+    businessType: formData.get("businessType"),
     phone: formData.get("phone"),
+    addressLine1: formData.get("addressLine1"),
+    postalCode: formData.get("postalCode"),
     locationId: formData.get("locationId"),
-    categoryIds: formData.getAll("categoryIds").map(String).filter(Boolean),
+    primaryCategoryId: formData.get("primaryCategoryId"),
+    secondaryCategoryIds: formData.getAll("secondaryCategoryIds").map(String).filter(Boolean),
+    servesLocationIds: formData.getAll("servesLocationIds").map(String).filter(Boolean),
   });
 
   if (!parsed.success) {
@@ -91,9 +103,15 @@ export async function registerBusinessAction(
     return { error: "Too many attempts. Try again shortly." };
   }
 
+  const account = await db.user.findUnique({
+    where: { id: user.id },
+    select: { whatsapp: true },
+  });
+
   const result = await createSeller({
     userId: user.id,
     userEmail: user.email,
+    userWhatsapp: account?.whatsapp ?? null,
     input: parsed.data,
   });
 
@@ -105,7 +123,7 @@ export async function registerBusinessAction(
 
   // Redirect must be outside the try/catch of the caller: Next signals it by
   // throwing, and swallowing that would leave the seller on a dead form.
-  redirect("/dashboard?welcome=1");
+  redirect("/register/trust");
 }
 
 export async function updateProfileAction(
@@ -130,6 +148,8 @@ export async function updateProfileAction(
       "locationId",
       "establishedYear",
       "employeeCount",
+      "businessType",
+      "annualTurnover",
       "gstin",
       "logoUrl",
       "coverImageUrl",
@@ -141,13 +161,24 @@ export async function updateProfileAction(
     ].map((key) => [key, formData.get(key) ?? ""]),
   );
 
-  const parsed = sellerProfileSchema.safeParse(raw);
+  const parsed = sellerProfileSchema.safeParse({
+    ...raw,
+    certifications: formData.getAll("certifications").map(String).filter(Boolean),
+    servesLocationIds: formData.getAll("servesLocationIds").map(String).filter(Boolean),
+  });
 
   if (!parsed.success) {
     return { fieldErrors: fieldErrorsFrom(parsed.error.issues) };
   }
 
-  await updateSellerProfile(scope.sellerId, scope.sellerSlug, parsed.data);
+  try {
+    await updateSellerProfile(scope.sellerId, scope.sellerSlug, parsed.data);
+  } catch (error) {
+    if (isUniqueViolation(error, "Seller", "gstin")) {
+      return { fieldErrors: { gstin: GSTIN_TAKEN } };
+    }
+    throw error;
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/profile");
@@ -203,6 +234,15 @@ export async function updateWebsiteAction(
   revalidatePath("/dashboard/website");
 
   return { ok: true, message: "Website settings saved." };
+}
+
+/** Dashboard template picker (D33): apply a template's preset and layout. */
+export async function chooseTemplateAction(formData: FormData): Promise<void> {
+  const scope = await requireSeller();
+  const key = formData.get("templateKey");
+  if (typeof key !== "string" || !key) return;
+  await applyTemplate(scope.sellerId, scope.sellerSlug, key);
+  revalidatePath("/dashboard/website");
 }
 
 export async function publishWebsiteAction(formData: FormData): Promise<void> {

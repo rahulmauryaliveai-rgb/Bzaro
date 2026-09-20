@@ -35,7 +35,8 @@ const ARGON2_OPTIONS = {
 } as const;
 
 export type RegisterResult =
-  { ok: true; userId: string; emailSent: boolean } | { ok: false; reason: "email_taken" };
+  | { ok: true; userId: string; emailSent: boolean }
+  | { ok: false; reason: "email_taken" | "phone_taken" };
 
 /**
  * Register a user.
@@ -49,6 +50,12 @@ export async function registerUser(input: {
   name: string;
   email: string;
   password: string;
+  /** E.164. Seller onboarding step 1; buyers registering later may omit it. */
+  phone?: string;
+  /** E.164. Defaults to the phone. */
+  whatsapp?: string;
+  /** True when an OTP for the phone was verified in the same submission. */
+  phoneVerified?: boolean;
 }): Promise<RegisterResult> {
   const email = input.email.toLowerCase();
 
@@ -59,6 +66,14 @@ export async function registerUser(input: {
 
   if (existing) return { ok: false, reason: "email_taken" };
 
+  if (input.phone) {
+    const phoneOwner = await db.user.findUnique({
+      where: { phone: input.phone },
+      select: { id: true },
+    });
+    if (phoneOwner) return { ok: false, reason: "phone_taken" };
+  }
+
   const passwordHash = await hash(input.password, ARGON2_OPTIONS);
 
   const user = await db.user.create({
@@ -67,6 +82,9 @@ export async function registerUser(input: {
       name: input.name.trim(),
       passwordHash,
       role: "BUYER",
+      phone: input.phone ?? null,
+      whatsapp: input.whatsapp ?? input.phone ?? null,
+      phoneVerified: input.phone && input.phoneVerified ? new Date() : null,
     },
     select: { id: true, email: true },
   });
