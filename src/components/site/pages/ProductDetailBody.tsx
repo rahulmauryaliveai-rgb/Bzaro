@@ -3,7 +3,7 @@ import type { ProductDetailProps } from "@/components/site/templates/registry";
 import { SiteImage } from "@/components/site/sections/SiteImage";
 import { ProductCard } from "@/components/site/sections/ProductCard";
 import { Breadcrumbs } from "@/components/site/sections/common";
-import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
+import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { formatPrice } from "@/lib/utils/money";
 import { z } from "zod";
 
@@ -116,17 +116,15 @@ export function ProductDetailBody({ context, data }: ProductDetailProps) {
           ) : null}
 
           <div className="mt-7 flex flex-wrap gap-3">
-            {seller.whatsapp ? (
-              <WhatsAppButton
-                phone={seller.whatsapp}
-                context={{
-                  kind: "product",
-                  productName: product.name,
-                  sellerName: seller.businessName,
-                  url: `${context.urls.base}/products/${product.slug}`,
-                }}
-              />
-            ) : null}
+            <ContactIntent
+              className="contents"
+              seller={{
+                id: seller.id,
+                businessName: seller.businessName,
+                whatsapp: seller.whatsapp,
+              }}
+              product={{ id: product.id, name: product.name }}
+            />
 
             {seller.phone ? (
               <a

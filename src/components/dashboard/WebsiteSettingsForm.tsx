@@ -114,8 +114,8 @@ export function WebsiteSettingsForm({
           </div>
 
           <p className="mt-3 text-xs text-neutral-500">
-            Switching template never loses content — every template shows the same
-            information, arranged differently.
+            Switching template never loses content — every template shows the same information,
+            arranged differently.
           </p>
         </fieldset>
 
@@ -140,10 +140,30 @@ export function WebsiteSettingsForm({
           </legend>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField name="fontPair" label="Typeface" options={FONT_PAIRS} defaultValue={tokens.fontPair} />
-            <SelectField name="radius" label="Corners" options={RADII} defaultValue={tokens.radius} />
-            <SelectField name="headerVariant" label="Header" options={HEADERS} defaultValue={tokens.headerVariant} />
-            <SelectField name="heroVariant" label="Hero" options={HEROES} defaultValue={tokens.heroVariant} />
+            <SelectField
+              name="fontPair"
+              label="Typeface"
+              options={FONT_PAIRS}
+              defaultValue={tokens.fontPair}
+            />
+            <SelectField
+              name="radius"
+              label="Corners"
+              options={RADII}
+              defaultValue={tokens.radius}
+            />
+            <SelectField
+              name="headerVariant"
+              label="Header"
+              options={HEADERS}
+              defaultValue={tokens.headerVariant}
+            />
+            <SelectField
+              name="heroVariant"
+              label="Hero"
+              options={HEROES}
+              defaultValue={tokens.heroVariant}
+            />
           </div>
         </fieldset>
 
@@ -255,8 +275,8 @@ function SlugForm({
       ) : (
         <form action={action} className="mt-4 space-y-3">
           <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Your current address will redirect here permanently, but anything printed with
-            the old address will look wrong. You can only do this once every 90 days.
+            Your current address will redirect here permanently, but anything printed with the old
+            address will look wrong. You can only do this once every 90 days.
           </div>
 
           <div>

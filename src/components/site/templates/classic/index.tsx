@@ -16,7 +16,7 @@ import { ProductCard } from "@/components/site/sections/ProductCard";
 import { ServiceCard } from "@/components/site/sections/ServiceCard";
 import { ContactPanel } from "@/components/site/sections/ContactPanel";
 import { GalleryGrid } from "@/components/site/sections/GalleryGrid";
-import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
+import { ContactIntent } from "@/components/buyer/ContactIntent";
 import {
   AboutBody,
   ContactBody,
@@ -72,12 +72,7 @@ function Home({ context, data }: HomeProps) {
           ) : null}
 
           <div className="mt-7 flex flex-wrap gap-3">
-            {seller.whatsapp ? (
-              <WhatsAppButton
-                phone={seller.whatsapp}
-                context={{ kind: "seller", sellerName: seller.businessName }}
-              />
-            ) : null}
+            <ContactIntent seller={seller} show="whatsapp" className="flex flex-wrap gap-3" />
             {seller.phone ? (
               <a
                 href={`tel:${seller.phone}`}

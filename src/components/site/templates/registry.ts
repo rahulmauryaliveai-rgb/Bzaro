@@ -6,9 +6,18 @@ import type {
   ProductDetail,
   ServiceCard,
   ServiceDetail,
+  SiteCategory,
 } from "@/server/services/site-content.service";
 import { ClassicTemplate } from "@/components/site/templates/classic";
 import { ModernTemplate } from "@/components/site/templates/modern";
+import {
+  AutopartsTemplate,
+  BoutiqueTemplate,
+  ElectroTemplate,
+  FreshTemplate,
+  MedicoTemplate,
+  MinimalTemplate,
+} from "@/components/site/templates/storefronts";
 
 /**
  * Website template registry (decision D7).
@@ -44,6 +53,9 @@ export type HomeProps = TemplateProps & {
     products: ProductCard[];
     services: ServiceCard[];
     gallery: Array<Pick<GalleryEntry, "id" | "url" | "alt" | "title" | "blurDataUrl">>;
+    /** The seller's categories with live products, most-stocked first. */
+    categories: SiteCategory[];
+    counts: { products: number; services: number; gallery: number };
   };
 };
 
@@ -52,7 +64,14 @@ export type AboutProps = TemplateProps & {
 };
 
 export type ProductsProps = TemplateProps & {
-  data: { items: ProductCard[]; total: number; page: number; pageCount: number };
+  data: {
+    items: ProductCard[];
+    total: number;
+    page: number;
+    pageCount: number;
+    filters: { q: string | null; category: string | null };
+    categories: SiteCategory[];
+  };
 };
 
 export type ProductDetailProps = TemplateProps & {
@@ -90,9 +109,15 @@ export type SiteTemplate = {
 const TEMPLATES: Record<string, SiteTemplate> = {
   classic: ClassicTemplate,
   modern: ModernTemplate,
+  electro: ElectroTemplate,
+  medico: MedicoTemplate,
+  autoparts: AutopartsTemplate,
+  minimal: MinimalTemplate,
+  boutique: BoutiqueTemplate,
+  fresh: FreshTemplate,
 };
 
-export const DEFAULT_TEMPLATE_KEY = "classic";
+export const DEFAULT_TEMPLATE_KEY = "electro";
 
 /**
  * Resolve a template by key.

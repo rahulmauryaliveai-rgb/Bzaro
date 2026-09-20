@@ -86,12 +86,39 @@ export const PRODUCTS_PER_PAGE = 12;
  * Featured first, then newest. Sellers pay for featured placement (D5), so the
  * ordering is a product decision, not an incidental one.
  */
-export function listProducts(sellerId: string, slug: string, page = 1) {
+export type ProductListFilters = {
+  /** Free-text, matched against name, brand and short description. */
+  q?: string;
+  /** Category slug, as `listSiteCategories` reports it. */
+  category?: string;
+};
+
+export function listProducts(
+  sellerId: string,
+  slug: string,
+  page = 1,
+  filters: ProductListFilters = {},
+) {
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const q = filters.q?.trim().slice(0, 80) || undefined;
+  const category = filters.category?.trim().slice(0, 80) || undefined;
 
   return unstable_cache(
     async () => {
-      const where = { sellerId, ...LIVE };
+      const where = {
+        sellerId,
+        ...LIVE,
+        ...(category ? { category: { slug: category } } : {}),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" as const } },
+                { brand: { contains: q, mode: "insensitive" as const } },
+                { shortDescription: { contains: q, mode: "insensitive" as const } },
+              ],
+            }
+          : {}),
+      };
 
       const [items, total] = await Promise.all([
         db.product.findMany({
@@ -109,9 +136,10 @@ export function listProducts(sellerId: string, slug: string, page = 1) {
         total,
         page: safePage,
         pageCount: Math.max(1, Math.ceil(total / PRODUCTS_PER_PAGE)),
+        filters: { q: q ?? null, category: category ?? null },
       };
     },
-    ["site-products", sellerId, String(safePage)],
+    ["site-products", sellerId, String(safePage), q ?? "", category ?? ""],
     {
       tags: [cacheTags.tenantProducts(slug)],
       revalidate: CONTENT_REVALIDATE_SECONDS,
@@ -261,28 +289,40 @@ export function listGallery(sellerId: string, slug: string) {
 export function getHomeContent(sellerId: string, slug: string) {
   return unstable_cache(
     async () => {
-      const [products, services, gallery] = await Promise.all([
+      const [products, services, gallery, counts] = await Promise.all([
         db.product.findMany({
           where: { sellerId, ...LIVE },
           select: productCardSelect,
           orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-          take: 6,
+          take: 12,
         }),
         db.service.findMany({
           where: { sellerId, ...LIVE },
           select: serviceCardSelect,
           orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-          take: 3,
+          take: 4,
         }),
         db.galleryItem.findMany({
           where: { sellerId, deletedAt: null, moderationStatus: "APPROVED" },
           orderBy: { sortOrder: "asc" },
-          take: 6,
+          take: 8,
           select: { id: true, url: true, alt: true, title: true, blurDataUrl: true },
         }),
+        Promise.all([
+          db.product.count({ where: { sellerId, ...LIVE } }),
+          db.service.count({ where: { sellerId, ...LIVE } }),
+        ]),
       ]);
 
-      return { products, services, gallery };
+      const categories = await listSiteCategories(sellerId);
+
+      return {
+        products,
+        services,
+        gallery,
+        categories,
+        counts: { products: counts[0], services: counts[1], gallery: gallery.length },
+      };
     },
     ["site-home", sellerId],
     {
@@ -294,6 +334,62 @@ export function getHomeContent(sellerId: string, slug: string) {
       revalidate: CONTENT_REVALIDATE_SECONDS,
     },
   )();
+}
+
+export type SiteCategory = {
+  slug: string;
+  name: string;
+  count: number;
+  imageUrl: string | null;
+};
+
+/**
+ * The seller's own category tree, flattened: every category that has a live
+ * product, with its count and a representative image. Storefront templates
+ * use it for category rails and the header's category bar.
+ */
+async function listSiteCategories(sellerId: string): Promise<SiteCategory[]> {
+  const rows = await db.product.findMany({
+    where: { sellerId, ...LIVE },
+    select: {
+      category: { select: { slug: true, name: true, imageUrl: true } },
+      images: {
+        where: { moderationStatus: "APPROVED" },
+        orderBy: { sortOrder: "asc" },
+        take: 1,
+        select: { url: true },
+      },
+    },
+    orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+    take: 500,
+  });
+
+  const byCategory = new Map<string, SiteCategory>();
+  for (const row of rows) {
+    const category = row.category;
+    if (!category) continue;
+    const existing = byCategory.get(category.slug);
+    if (existing) {
+      existing.count += 1;
+      if (!existing.imageUrl && row.images[0]) existing.imageUrl = row.images[0].url;
+    } else {
+      byCategory.set(category.slug, {
+        slug: category.slug,
+        name: category.name,
+        count: 1,
+        imageUrl: category.imageUrl ?? row.images[0]?.url ?? null,
+      });
+    }
+  }
+  return [...byCategory.values()].sort((a, b) => b.count - a.count);
+}
+
+/** Cached categories for the products page's filter chips. */
+export function getSiteCategories(sellerId: string, slug: string) {
+  return unstable_cache(() => listSiteCategories(sellerId), ["site-categories", sellerId], {
+    tags: [cacheTags.tenantProducts(slug)],
+    revalidate: CONTENT_REVALIDATE_SECONDS,
+  })();
 }
 
 /** Live counts, used to decide which navigation items to show. */

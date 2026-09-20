@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireSeller } from "@/lib/auth/guards";
+import { requireSeller, scopeSurface } from "@/lib/auth/guards";
 import { getSellerProfile, getSlugChangeStatus } from "@/server/services/seller.service";
 import { publishWebsiteAction } from "@/server/actions/seller";
 import { listTemplates } from "@/components/site/templates/registry";
 import { themeTokensSchema, defaultThemeTokens } from "@/lib/validation/theme";
 import { WebsiteSettingsForm } from "@/components/dashboard/WebsiteSettingsForm";
-import { tenantUrl } from "@/lib/utils/url";
+import { sellerSiteUrl } from "@/lib/utils/url";
+import { CatalogueLinkCard } from "@/components/dashboard/CatalogueLinkCard";
+import { UpgradeCard } from "@/components/dashboard/UpgradeCard";
+import { getActivePlan, listPublicPlans } from "@/server/services/plan.service";
+import { listActiveTemplates } from "@/server/services/seller.service";
+import { chooseTemplateAction } from "@/server/actions/seller";
+import { TemplatePicker } from "@/components/site/TemplatePicker";
 
 export const metadata: Metadata = {
   title: "Website settings",
@@ -17,14 +23,43 @@ export const metadata: Metadata = {
 export default async function WebsiteSettingsPage() {
   const scope = await requireSeller();
 
-  const [profile, slugStatus] = await Promise.all([
+  const [profile, slugStatus, subscription, plans, templates] = await Promise.all([
     getSellerProfile(scope.sellerId),
     // The 90-day cooldown is computed in the service: reading the clock in a
     // render body is an impure call, and the rule (D11) belongs in one place.
     getSlugChangeStatus(scope.sellerId),
+    getActivePlan(scope.sellerId),
+    listPublicPlans(),
+    listActiveTemplates(),
   ]);
 
   if (!profile) notFound();
+
+  // Decision D32: the catalogue tier has no website to configure. The page
+  // becomes the seller's shareable link plus the reason to upgrade — the
+  // template and theme controls would only edit something nobody can see.
+  if (scope.webPresence === "CATALOGUE") {
+    return (
+      <div className="max-w-3xl space-y-6">
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight">Website</h1>
+          <p className="mt-1 text-sm text-neutral-600">
+            You are on the <strong>{subscription?.plan.name ?? "Free"}</strong> plan, which includes
+            a catalogue page on Bzaro.
+          </p>
+        </header>
+        <CatalogueLinkCard
+          url={sellerSiteUrl(scopeSurface(scope))}
+          businessName={profile.businessName}
+        />
+        <UpgradeCard
+          currentPlanKey={subscription?.plan.key ?? "free"}
+          currentWebPresence={scope.webPresence}
+          plans={plans}
+        />
+      </div>
+    );
+  }
 
   // Stored tokens are parsed, never trusted: the column is JSON, and a row
   // written by an older schema version must degrade to defaults rather than
@@ -47,7 +82,7 @@ export default async function WebsiteSettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Website</h1>
         <p className="mt-1 text-sm text-neutral-600">
           <a
-            href={tenantUrl(scope.sellerSlug)}
+            href={sellerSiteUrl(scopeSurface(scope))}
             target="_blank"
             rel="noopener noreferrer"
             className="text-teal-700 underline underline-offset-2"
@@ -75,10 +110,7 @@ export default async function WebsiteSettingsPage() {
               ) : (
                 <>
                   Your site is live, but not yet eligible for search indexing.{" "}
-                  <Link
-                    href="/dashboard"
-                    className="text-teal-700 underline underline-offset-2"
-                  >
+                  <Link href="/dashboard" className="text-teal-700 underline underline-offset-2">
                     See what is missing
                   </Link>
                   .
@@ -101,6 +133,21 @@ export default async function WebsiteSettingsPage() {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="font-medium">Template</h2>
+        <p className="mt-0.5 mb-4 text-sm text-neutral-600">
+          Pick the layout. Switching applies that template&apos;s colours and fonts; you can
+          fine-tune them below afterwards. Nothing about your products or pages changes.
+        </p>
+        <TemplatePicker
+          templates={templates}
+          currentKey={profile.website?.template.key ?? null}
+          action={chooseTemplateAction}
+          columns={2}
+          premiumAllowed={subscription?.plan.allowPremiumTemplates ?? false}
+        />
       </section>
 
       <WebsiteSettingsForm

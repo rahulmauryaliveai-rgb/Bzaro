@@ -91,7 +91,11 @@ function Fact({ label, value, mono }: { label: string; value: string; mono?: boo
 // ── Products ─────────────────────────────────────────────────────────────────
 
 export function ProductsBody({ context, data }: ProductsProps) {
-  const { items, total, page, pageCount } = data;
+  const { items, total, page, pageCount, filters, categories } = data;
+  const activeCategory = filters.category
+    ? categories.find((category) => category.slug === filters.category)
+    : null;
+  const filtered = Boolean(filters.q || filters.category);
 
   return (
     <>
@@ -104,7 +108,13 @@ export function ProductsBody({ context, data }: ProductsProps) {
 
       <PageHeader
         eyebrow="Catalogue"
-        title="Products"
+        title={
+          activeCategory
+            ? activeCategory.name
+            : filters.q
+              ? `Results for “${filters.q}”`
+              : "Products"
+        }
         description={
           total > 0
             ? `${total} product${total === 1 ? "" : "s"} from ${context.seller.businessName}.`
@@ -112,11 +122,50 @@ export function ProductsBody({ context, data }: ProductsProps) {
         }
       />
 
+      {categories.length > 1 ? (
+        <ul className="-mt-3 mb-8 flex flex-wrap gap-2 text-sm">
+          <li>
+            <Link
+              href="/products"
+              className={`inline-block rounded-full border px-3 py-1 ${
+                !filters.category ? "font-semibold" : "opacity-70 hover:opacity-100"
+              }`}
+              style={{ borderColor: "var(--site-border)" }}
+            >
+              All
+            </Link>
+          </li>
+          {categories.map((category) => (
+            <li key={category.slug}>
+              <Link
+                href={`/products?category=${encodeURIComponent(category.slug)}`}
+                className={`inline-block rounded-full border px-3 py-1 ${
+                  filters.category === category.slug
+                    ? "font-semibold"
+                    : "opacity-70 hover:opacity-100"
+                }`}
+                style={{ borderColor: "var(--site-border)" }}
+              >
+                {category.name} <span className="opacity-60">{category.count}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       {items.length === 0 ? (
         <EmptyState
-          title="No products listed yet"
-          hint="Get in touch to ask what's available."
-          action={{ href: "/contact", label: "Contact us" }}
+          title={filtered ? "Nothing matches" : "No products listed yet"}
+          hint={
+            filtered
+              ? "Try a different word or browse the full catalogue."
+              : "Get in touch to ask what's available."
+          }
+          action={
+            filtered
+              ? { href: "/products", label: "All products" }
+              : { href: "/contact", label: "Contact us" }
+          }
         />
       ) : (
         <>
@@ -125,7 +174,7 @@ export function ProductsBody({ context, data }: ProductsProps) {
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
-          <Pagination page={page} pageCount={pageCount} basePath="/products" />
+          {!filtered ? <Pagination page={page} pageCount={pageCount} basePath="/products" /> : null}
         </>
       )}
     </>

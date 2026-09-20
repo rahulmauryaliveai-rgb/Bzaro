@@ -183,22 +183,19 @@ test.describe("SEO", () => {
 });
 
 test.describe("WhatsApp call-to-action", () => {
-  test("product pages deep-link with a contextual pre-filled message", async ({ request }) => {
+  test("product pages offer WhatsApp through the contact-intent modal, never a raw link", async ({
+    request,
+  }) => {
+    // Since the lead system (docs/LEADS.md §1) the seller's number is not in
+    // the page at all: the wa.me link is built server-side only after the
+    // buyer has verified a phone and left a requirement. What the page must
+    // show is the trigger.
     const body = await html(request, `${ABC}/products/led-panel-40w`);
 
-    const match = body.match(/https:\/\/wa\.me\/(\d+)\?text=([^"]+)/);
-    expect(match, "no wa.me link found").not.toBeNull();
-
-    // Digits only — a leading + produces "phone number is invalid" in WhatsApp.
-    expect(match![1]).toMatch(/^\d{8,15}$/);
-
-    const message = decodeURIComponent(match![2]!.replace(/&amp;/g, "&"));
-    expect(message).toContain("LED Panel Light 40W");
-
-    // Read from configuration rather than hardcoding the brand: this assertion
-    // is that the message NAMES the platform, so a buyer knows where the
-    // enquiry came from. Pinning the literal name here just makes the test
-    // break the next time the platform is renamed, which is not a defect.
-    expect(message).toContain(process.env.NEXT_PUBLIC_PLATFORM_NAME ?? "Bzaro");
+    expect(body).toContain("Enquire on WhatsApp");
+    expect(body).toContain("Get Best Price");
+    expect(body, "the seller's WhatsApp number must not be exposed pre-OTP").not.toMatch(
+      /https:\/\/wa\.me\/\d+/,
+    );
   });
 });
