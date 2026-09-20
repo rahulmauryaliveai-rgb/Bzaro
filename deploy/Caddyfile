@@ -16,6 +16,11 @@
 
 {
 	email {$ACME_EMAIL}
+	# No HTTP/3: UDP 443 is not open, and an Alt-Svc h3 header leaking through
+	# Cloudflare makes Chrome attempt QUIC and fail (ERR_QUIC_PROTOCOL_ERROR).
+	servers {
+		protocols h1 h2
+	}
 	on_demand_tls {
 		ask http://127.0.0.1:3000/api/tls/ask
 	}
