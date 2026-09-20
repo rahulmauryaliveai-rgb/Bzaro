@@ -36,6 +36,9 @@ npx prisma migrate deploy
 echo "→ building (this is the slow step)"
 NODE_OPTIONS="--max-old-space-size=3072" npm run build
 
+echo "→ refreshing infrastructure (picks up Caddyfile/compose changes; no-op otherwise)"
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d --force-recreate caddy --quiet-pull >/dev/null 2>&1 || echo "   (caddy not recreated — run compose up manually)"
+
 echo "→ reloading processes"
 mkdir -p /var/log/bzaro public/uploads
 pm2 startOrReload deploy/ecosystem.config.cjs --update-env
