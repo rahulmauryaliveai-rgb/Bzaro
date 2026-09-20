@@ -13,9 +13,12 @@ module.exports = {
     {
       name: "bzaro-web",
       cwd,
-      // Bind to loopback only: Caddy is the only thing that should reach it.
+      // No -H: with an explicit bind address Next reports its own origin as
+      // localhost:3000, and the tenant rewrite in src/proxy.ts then looks
+      // cross-origin and is proxied over TLS to itself (EPROTO, 500 on every
+      // seller subdomain). Port 3000 is closed by ufw, so only Caddy reaches it.
       script: "node_modules/next/dist/bin/next",
-      args: "start -p 3000 -H 127.0.0.1",
+      args: "start -p 3000",
       env: { NODE_ENV: "production" },
       instances: 1,
       exec_mode: "fork",
