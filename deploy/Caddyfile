@@ -1,0 +1,50 @@
+# Bzaro edge: one certificate for the apex, one wildcard for every seller
+# subdomain, both obtained through Cloudflare DNS-01 so a subdomain that has
+# never been visited already has valid TLS the moment its Seller row exists.
+#
+# Variables come from deploy/.env via compose.yml.
+
+{
+	email {$ACME_EMAIL}
+}
+
+(tls_cloudflare) {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+		resolvers 1.1.1.1 1.0.0.1
+	}
+}
+
+# www is an alias of the apex; the app treats both as the marketplace, but a
+# single canonical host is better for SEO.
+www.{$ROOT_DOMAIN} {
+	import tls_cloudflare
+	redir https://{$ROOT_DOMAIN}{uri} permanent
+}
+
+{$ROOT_DOMAIN}, *.{$ROOT_DOMAIN} {
+	import tls_cloudflare
+	encode zstd gzip
+
+	# Seller media uploaded through the app lives on the host disk
+	# (public/uploads). Files are UUID-named, so they can be cached forever.
+	handle_path /uploads/* {
+		root * /srv/uploads
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else is the Next.js server (pm2 "bzaro-web"). The Host header
+	# is passed through untouched — src/proxy.ts resolves the tenant from it.
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	# Next.js sets its own security headers; do not cache HTML here (§7).
+	log {
+		output stderr
+		format console
+	}
+}

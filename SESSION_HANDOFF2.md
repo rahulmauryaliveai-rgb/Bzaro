@@ -207,3 +207,11 @@ leads/credits), `owner@delhi-led-house.test` (Basic → catalogue page only),
 5. Deploy prerequisites (see docs/DEPLOYMENT): `OTP_PEPPER`, `BUYER_COOKIE_SECRET`, worker
    (`npm run worker`) under PM2, cron entries incl. `recompute-web-presence`; do NOT set
    `OTP_TEST_CODE` in production.
+
+## 5. Deployment kit (added 2026-09-20)
+
+- Repo moved to `C:\dev\Seller_Maketplace` (out of OneDrive); all work committed and pushed to `github.com/rahulmauryaliveai-rgb/Bzaro` `main`.
+- `deploy/` — Hostinger VPS kit: `compose.yml` (postgres, redis + serverless-redis-http as the Upstash REST shim, Caddy with Cloudflare DNS-01 for the `*.bzaro.in` wildcard cert), `Caddyfile` (serves `/uploads/*` from disk, proxies the rest to `127.0.0.1:3000`), `ecosystem.config.cjs` (pm2 `bzaro-web` + `bzaro-worker`), `setup-vps.sh` (one-shot bootstrap), `deploy.sh` (redeploy), `crontab` + `cron-run.sh` (replaces Vercel Cron), env examples.
+- `prisma/seed/production.ts` (`npm run db:seed:prod`): settings, plans, templates, taxonomy, partition, one admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` — no demo data.
+- `MEDIA_LOCAL_UPLOADS=1` (src/env.ts, src/lib/media/index.ts) permits the local-disk upload provider in production on the VPS.
+- Guide: `docs/HOSTINGER.md`. Requires the domain's DNS on Cloudflare (free) for the wildcard certificate; OTP/WhatsApp and email still need provider keys before buyers can complete contact flows.

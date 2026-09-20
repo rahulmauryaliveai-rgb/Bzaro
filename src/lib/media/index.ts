@@ -30,7 +30,7 @@ function createProvider(): MediaProvider {
     );
   }
 
-  if (env.NODE_ENV === "production") {
+  if (env.NODE_ENV === "production" && !env.MEDIA_LOCAL_UPLOADS) {
     console.error(
       "[media] No upload provider configured in production. " +
         "Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and " +
@@ -46,10 +46,12 @@ function createProvider(): MediaProvider {
  *
  * The local provider writes to disk, which does not work on a per-invocation
  * platform — so in production without Cloudinary the honest answer is to hide
- * the upload control rather than offer a button that cannot work.
+ * the upload control rather than offer a button that cannot work. A VPS with a
+ * persistent disk opts back in with MEDIA_LOCAL_UPLOADS=1 (see deploy/).
  */
 export const uploadsAvailable =
   env.NODE_ENV !== "production" ||
+  env.MEDIA_LOCAL_UPLOADS ||
   Boolean(
     clientEnv.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME &&
     env.CLOUDINARY_API_KEY &&

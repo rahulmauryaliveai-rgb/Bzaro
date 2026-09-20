@@ -1,0 +1,16 @@
+# Bzaro scheduled jobs — the same schedule as vercel.json, run by system cron.
+# Installed to /etc/cron.d/bzaro by deploy/setup-vps.sh. Times are UTC.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN=/srv/bzaro/app/deploy/cron-run.sh
+LOG=/var/log/bzaro/cron.log
+
+17 *  * * *  root  $RUN rollup-analytics        >> $LOG 2>&1
+35 *  * * *  root  $RUN expire-market-leads     >> $LOG 2>&1
+20 3  * * *  root  $RUN recompute-indexability  >> $LOG 2>&1
+40 3  * * *  root  $RUN refresh-counters        >> $LOG 2>&1
+50 3  * * *  root  $RUN recompute-web-presence  >> $LOG 2>&1
+10 4  * * *  root  $RUN prune-events            >> $LOG 2>&1
+30 4  * * *  root  $RUN refresh-lead-stats      >> $LOG 2>&1
+0  5  25 * *  root  $RUN create-partitions       >> $LOG 2>&1
+15 0  1 * *   root  $RUN grant-monthly-credits   >> $LOG 2>&1

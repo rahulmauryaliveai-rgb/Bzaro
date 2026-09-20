@@ -1,5 +1,9 @@
 # Deployment
 
+> **Self-hosting on a VPS (Hostinger):** see [HOSTINGER.md](HOSTINGER.md) — the
+> `deploy/` kit replaces Vercel, Upstash and Cloudinary with Docker + pm2 on one
+> box. The DNS/TLS material below (§2–§3) applies to both.
+
 Getting one Next.js application to serve `bzaro.in`, every
 `*.bzaro.in` seller subdomain, and eventually seller-owned custom
 domains — with valid TLS on all of them.
@@ -33,11 +37,11 @@ rather than per-tenant records.
 
 ## 2. DNS
 
-| Record            | Type                 | Value                  | Proxy        |
-| ----------------- | -------------------- | ---------------------- | ------------ |
+| Record     | Type                 | Value                  | Proxy        |
+| ---------- | -------------------- | ---------------------- | ------------ |
 | `bzaro.in` | A / CNAME flattening | `76.76.21.21` (Vercel) | see §3       |
-| `www`             | CNAME                | `cname.vercel-dns.com` | see §3       |
-| `*`               | CNAME                | `cname.vercel-dns.com` | **DNS only** |
+| `www`      | CNAME                | `cname.vercel-dns.com` | see §3       |
+| `*`        | CNAME                | `cname.vercel-dns.com` | **DNS only** |
 
 ### The wildcard is the whole design
 
@@ -123,28 +127,28 @@ Set in the Vercel dashboard, or `vercel env add`. Everything is validated at
 boot by `src/env.ts`, so a missing value fails the deploy rather than surfacing
 as `undefined` in a request handler weeks later.
 
-| Variable                            | Scope | Notes                                        |
-| ----------------------------------- | ----- | -------------------------------------------- |
-| `NEXT_PUBLIC_ROOT_DOMAIN`           | all   | `bzaro.in` — **no port, no protocol** |
-| `NEXT_PUBLIC_PROTOCOL`              | all   | `https`                                      |
-| `NEXT_PUBLIC_PLATFORM_NAME`         | all   | Display name                                 |
-| `DATABASE_URL`                      | all   | **Pooled** (PgBouncer / Neon pooler)         |
-| `DIRECT_DATABASE_URL`               | all   | Direct. Migrations only                      |
-| `AUTH_SECRET`                       | all   | `npx auth secret`                            |
-| `AUTH_URL`                          | all   | `https://bzaro.in`                    |
-| `AUTH_TRUST_HOST`                   | all   | `true`                                       |
-| `UPSTASH_REDIS_REST_URL`            | all   | **Required in production**                   |
-| `UPSTASH_REDIS_REST_TOKEN`          | all   | **Required in production**                   |
-| `REVALIDATE_SECRET`                 | all   | Long random string                           |
-| `IP_HASH_SALT`                      | all   | Long random string, rotate quarterly         |
-| `CRON_SECRET`                       | all   | Set automatically by Vercel Cron             |
-| `RESEND_API_KEY`                    | all   | Optional; falls back to console logging      |
-| `MAIL_FROM`                         | all   | e.g. `no-reply@bzaro.in`              |
-| `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | all   | Optional until uploads ship                  |
+| Variable                            | Scope | Notes                                                                  |
+| ----------------------------------- | ----- | ---------------------------------------------------------------------- |
+| `NEXT_PUBLIC_ROOT_DOMAIN`           | all   | `bzaro.in` — **no port, no protocol**                                  |
+| `NEXT_PUBLIC_PROTOCOL`              | all   | `https`                                                                |
+| `NEXT_PUBLIC_PLATFORM_NAME`         | all   | Display name                                                           |
+| `DATABASE_URL`                      | all   | **Pooled** (PgBouncer / Neon pooler)                                   |
+| `DIRECT_DATABASE_URL`               | all   | Direct. Migrations only                                                |
+| `AUTH_SECRET`                       | all   | `npx auth secret`                                                      |
+| `AUTH_URL`                          | all   | `https://bzaro.in`                                                     |
+| `AUTH_TRUST_HOST`                   | all   | `true`                                                                 |
+| `UPSTASH_REDIS_REST_URL`            | all   | **Required in production**                                             |
+| `UPSTASH_REDIS_REST_TOKEN`          | all   | **Required in production**                                             |
+| `REVALIDATE_SECRET`                 | all   | Long random string                                                     |
+| `IP_HASH_SALT`                      | all   | Long random string, rotate quarterly                                   |
+| `CRON_SECRET`                       | all   | Set automatically by Vercel Cron                                       |
+| `RESEND_API_KEY`                    | all   | Optional; falls back to console logging                                |
+| `MAIL_FROM`                         | all   | e.g. `no-reply@bzaro.in`                                               |
+| `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | all   | Optional until uploads ship                                            |
 | `OTP_PEPPER`                        | all   | **Required in production.** ≥32 chars, keys OTP hashes (docs/LEADS.md) |
-| `BUYER_COOKIE_SECRET`               | all   | **Required in production.** ≥32 chars, distinct from `OTP_PEPPER` |
-| `WHATSAPP_ACCESS_TOKEN`             | all   | Optional; OTP + lead alerts fall back to console logging |
-| `WHATSAPP_PHONE_NUMBER_ID`          | all   | Optional; as above                           |
+| `BUYER_COOKIE_SECRET`               | all   | **Required in production.** ≥32 chars, distinct from `OTP_PEPPER`      |
+| `WHATSAPP_ACCESS_TOKEN`             | all   | Optional; OTP + lead alerts fall back to console logging               |
+| `WHATSAPP_PHONE_NUMBER_ID`          | all   | Optional; as above                                                     |
 
 > **`NEXT_PUBLIC_ROOT_DOMAIN` includes the port in development and excludes it
 > in production.** This asymmetry is the single most common source of "works
@@ -189,16 +193,16 @@ production.
 
 Defined in `vercel.json`; handlers in `src/server/jobs/`.
 
-| Job                      | Schedule     | Purpose                                  |
-| ------------------------ | ------------ | ---------------------------------------- |
-| `rollup-analytics`       | hourly       | AnalyticsEvent → AnalyticsDaily          |
-| `recompute-indexability` | daily 03:20  | D2 sweep — catches missed hooks          |
-| `refresh-counters`       | daily 03:40  | Reconcile denormalised counts (R7)       |
-| `prune-events`           | daily 04:10  | Drop partitions >90 days, expired tokens |
-| `create-partitions`      | 25th monthly | Provision two months ahead (D22)         |
-| `expire-market-leads`    | hourly       | Backstop for the worker's expiry sweep   |
-| `grant-monthly-credits`  | 1st monthly  | Plan credits (docs/LEADS.md §4)          |
-| `refresh-lead-stats`     | daily 04:30  | Reconcile responseRate / lead counters   |
+| Job                      | Schedule     | Purpose                                                      |
+| ------------------------ | ------------ | ------------------------------------------------------------ |
+| `rollup-analytics`       | hourly       | AnalyticsEvent → AnalyticsDaily                              |
+| `recompute-indexability` | daily 03:20  | D2 sweep — catches missed hooks                              |
+| `refresh-counters`       | daily 03:40  | Reconcile denormalised counts (R7)                           |
+| `prune-events`           | daily 04:10  | Drop partitions >90 days, expired tokens                     |
+| `create-partitions`      | 25th monthly | Provision two months ahead (D22)                             |
+| `expire-market-leads`    | hourly       | Backstop for the worker's expiry sweep                       |
+| `grant-monthly-credits`  | 1st monthly  | Plan credits (docs/LEADS.md §4)                              |
+| `refresh-lead-stats`     | daily 04:30  | Reconcile responseRate / lead counters                       |
 | `recompute-web-presence` | daily 03:50  | Re-derive `Seller.webPresence` from live subscriptions (D32) |
 
 Trigger manually:

@@ -71,6 +71,19 @@ const serverSchema = z.object({
   // ── Media ──
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  /**
+   * Permit the local-disk upload provider in production.
+   *
+   * The local provider writes to `public/uploads`, which is only correct on a
+   * host with a persistent filesystem behind a reverse proxy that serves that
+   * directory — a VPS (deploy/), never a serverless platform. Set to "1" there
+   * and leave unset everywhere else, so an ephemeral-filesystem deploy without
+   * Cloudinary still refuses uploads rather than losing them.
+   */
+  MEDIA_LOCAL_UPLOADS: z
+    .enum(["0", "1"])
+    .optional()
+    .transform((value) => value === "1"),
 
   // ── Transactional email ──
   // Optional everywhere: without these, src/lib/mail falls back to logging
