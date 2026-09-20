@@ -28,6 +28,8 @@ export function image(seed: string, w = 800, h = 600): string {
 export type ProductFixture = {
   slug: string;
   name: string;
+  /** Photo search phrase for scripts/demo-images.ts; defaults to the name. */
+  imageQuery?: string;
   shortDescription: string;
   description?: string;
   brand?: string;
@@ -221,6 +223,8 @@ export const VERMA_PRODUCTS: ProductFixture[] = [
 export type ServiceFixture = {
   slug: string;
   name: string;
+  /** Photo search phrase for scripts/demo-images.ts; defaults to the name. */
+  imageQuery?: string;
   shortDescription: string;
   description?: string;
   categorySlug: string;
@@ -349,6 +353,12 @@ export type CatalogEntry = {
   products: ProductFixture[];
   services: ServiceFixture[];
   galleryCount: number;
+  /**
+   * Where an image for `seed` (e.g. "led-panel-40w-0", "abc-gallery-2",
+   * "service-amc-maintenance") lives. Defaults to picsum placeholders; the
+   * showcase seed points at real photos fetched by scripts/demo-images.ts.
+   */
+  resolveImage?: (seed: string, w: number, h: number) => string;
 };
 
 /** Write one seller's products, services and gallery, then reconcile its counters. */
@@ -358,6 +368,7 @@ export async function seedSellerCatalog(
   sellerId: string,
   entry: CatalogEntry,
 ) {
+  const img = entry.resolveImage ?? image;
   {
     // Products
     for (const [index, fixture] of entry.products.entries()) {
@@ -406,7 +417,7 @@ export async function seedSellerCatalog(
             sellerId,
             provider: "CLOUDINARY" as const,
             publicId: `seed/${entry.sellerSlug}/${fixture.slug}-${i}`,
-            url: image(`${fixture.slug}-${i}`),
+            url: img(`${fixture.slug}-${i}`, 800, 600),
             width: 800,
             height: 600,
             alt: `${fixture.name} — view ${i + 1}`,
@@ -438,12 +449,14 @@ export async function seedSellerCatalog(
           priceOnRequest: fixture.priceMinor === undefined,
           serviceAreas: fixture.serviceAreas ?? [],
           deliverables: fixture.deliverables ?? undefined,
+          imageUrl: img(`service-${fixture.slug}`, 800, 600),
           status: "PUBLISHED",
           moderationStatus: "APPROVED",
           isFeatured: fixture.featured ?? false,
         },
         update: {
           name: fixture.name,
+          imageUrl: img(`service-${fixture.slug}`, 800, 600),
           status: "PUBLISHED",
           moderationStatus: "APPROVED",
         },
@@ -458,7 +471,7 @@ export async function seedSellerCatalog(
           sellerId,
           provider: "CLOUDINARY" as const,
           publicId: `seed/${entry.sellerSlug}/gallery-${i}`,
-          url: image(`${entry.sellerSlug}-gallery-${i}`, 600, 600),
+          url: img(`${entry.sellerSlug}-gallery-${i}`, 600, 600),
           width: 600,
           height: 600,
           alt: `${entry.sellerSlug} facility photo ${i + 1}`,

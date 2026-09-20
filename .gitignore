@@ -60,3 +60,8 @@ playwright.local.config.ts
 # Showcase seed output (prisma/seed/showcase.ts)
 demo-credentials.txt
 .demo-credentials.tmp
+
+# Openverse search cache + review sheets for scripts/demo-images.ts
+scripts/demo-images/candidates.json
+scripts/demo-images/search.log
+scripts/demo-images/sheet-*.jpg
