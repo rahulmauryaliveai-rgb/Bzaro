@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ImageGallery } from "@/components/shared/ImageGallery";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -100,41 +101,20 @@ export default async function MarketplaceProductPage({ params }: Props) {
 
       <div className="grid gap-10 lg:grid-cols-2">
         <div>
-          <div className="aspect-4/3 w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100">
-            {product.images[0] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={product.images[0].url}
-                alt={product.images[0].alt ?? product.name}
-                className="h-full w-full object-cover"
-                decoding="async"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-neutral-400">
-                No image provided
-              </div>
-            )}
-          </div>
-
-          {product.images.length > 1 ? (
-            <ul className="mt-3 grid grid-cols-5 gap-2">
-              {product.images.slice(1, 6).map((image) => (
-                <li
-                  key={image.id}
-                  className="aspect-square overflow-hidden rounded-md border border-neutral-200"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.url}
-                    alt={image.alt ?? ""}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover"
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {product.images.length > 0 ? (
+            <ImageGallery
+              images={product.images.map((image) => ({
+                id: image.id,
+                url: image.url,
+                alt: image.alt,
+              }))}
+              name={product.name}
+            />
+          ) : (
+            <div className="flex aspect-4/3 w-full items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-sm text-neutral-400">
+              No image provided
+            </div>
+          )}
         </div>
 
         <div>

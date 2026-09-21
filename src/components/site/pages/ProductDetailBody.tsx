@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { ImageGallery } from "@/components/shared/ImageGallery";
 import type { ProductDetailProps } from "@/components/site/templates/registry";
-import { SiteImage } from "@/components/site/sections/SiteImage";
 import { ProductCard } from "@/components/site/sections/ProductCard";
 import { Breadcrumbs } from "@/components/site/sections/common";
 import { ContactIntent } from "@/components/buyer/ContactIntent";
@@ -27,7 +27,6 @@ const specificationsSchema = z
 export function ProductDetailBody({ context, data }: ProductDetailProps) {
   const { product, related } = data;
   const { seller } = context;
-  const cover = product.images[0];
 
   const specs = specificationsSchema.safeParse(product.specifications);
   const specifications = specs.success ? specs.data : [];
@@ -52,44 +51,23 @@ export function ProductDetailBody({ context, data }: ProductDetailProps) {
 
       <div className="grid gap-10 lg:grid-cols-2">
         <div>
-          <div
-            className="aspect-4/3 w-full overflow-hidden rounded-lg border"
-            style={{ borderColor: "var(--site-border)", background: "var(--site-surface)" }}
-          >
-            {cover ? (
-              <SiteImage
-                src={cover.url}
-                alt={cover.alt ?? product.name}
-                width={cover.width}
-                height={cover.height}
-                priority
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm opacity-40">
-                No image provided
-              </div>
-            )}
-          </div>
-
-          {product.images.length > 1 ? (
-            <ul className="mt-3 grid grid-cols-4 gap-3">
-              {product.images.slice(1, 9).map((image) => (
-                <li key={image.id}>
-                  <div
-                    className="aspect-square overflow-hidden rounded-md border"
-                    style={{ borderColor: "var(--site-border)" }}
-                  >
-                    <SiteImage
-                      src={image.url}
-                      alt={image.alt ?? ""}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {product.images.length > 0 ? (
+            <ImageGallery
+              images={product.images.map((image) => ({
+                id: image.id,
+                url: image.url,
+                alt: image.alt,
+              }))}
+              name={product.name}
+            />
+          ) : (
+            <div
+              className="flex aspect-4/3 w-full items-center justify-center rounded-lg border text-sm opacity-40"
+              style={{ borderColor: "var(--site-border)", background: "var(--site-surface)" }}
+            >
+              No image provided
+            </div>
+          )}
         </div>
 
         <div>
