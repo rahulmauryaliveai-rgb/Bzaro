@@ -212,7 +212,7 @@ export function ServicesBody({ context, data }: ServicesProps) {
           action={{ href: "/contact", label: "Contact us" }}
         />
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((service) => (
             <ServiceCard key={service.id} service={service} />
           ))}
@@ -246,6 +246,16 @@ export function ServiceDetailBody({ context, data }: ServiceDetailProps) {
         title={service.name}
         description={service.shortDescription}
       />
+
+      {service.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={service.imageUrl}
+          alt={service.name}
+          className="mb-8 aspect-[16/9] w-full rounded-lg object-cover"
+          style={{ borderColor: "var(--site-border)" }}
+        />
+      ) : null}
 
       {!service.priceOnRequest && service.priceMinor !== null ? (
         <p className="-mt-4 mb-8 text-2xl font-semibold tabular-nums">
