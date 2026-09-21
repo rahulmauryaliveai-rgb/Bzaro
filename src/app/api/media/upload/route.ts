@@ -7,13 +7,14 @@ import { readLocalToken, signLocalAsset } from "@/lib/media/local";
 import { folderFor, UPLOAD_LIMITS } from "@/lib/media/types";
 
 /**
- * Receiver for the LOCAL media provider. Development only.
+ * Receiver for the LOCAL media provider: development, and production hosts
+ * with a persistent disk that opt in with MEDIA_LOCAL_UPLOADS=1 (the VPS).
  *
  * Cloudinary uploads never reach this route — the browser posts those straight
  * to Cloudinary. This exists so the catalogue can be used on a laptop with no
- * Cloudinary account, and it is refused outright in production, where the
- * filesystem is ephemeral and writing to it would appear to work and then
- * silently lose every image.
+ * Cloudinary account. On a serverless production host it is refused outright:
+ * the filesystem there is ephemeral and writing to it would appear to work
+ * and then silently lose every image.
  *
  * ── Still checked properly ───────────────────────────────────────────────────
  * A development-only path is exactly where an unchecked file write gets
@@ -35,7 +36,7 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
-  if (env.NODE_ENV === "production") {
+  if (env.NODE_ENV === "production" && !env.MEDIA_LOCAL_UPLOADS) {
     return NextResponse.json({ error: "not_available" }, { status: 404 });
   }
 
