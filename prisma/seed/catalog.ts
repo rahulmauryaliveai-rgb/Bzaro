@@ -410,7 +410,12 @@ export async function seedSellerCatalog(
         where: { productId: product.id },
       });
 
-      if (existingImages === 0 && imageCount > 0) {
+      // A custom image source (the showcase seed) replaces what is there, so a
+      // re-run picks up new photos; the dev seed leaves existing rows alone.
+      if (entry.resolveImage && existingImages > 0 && imageCount > 0) {
+        await prisma.productImage.deleteMany({ where: { productId: product.id } });
+      }
+      if ((existingImages === 0 || entry.resolveImage) && imageCount > 0) {
         await prisma.productImage.createMany({
           data: Array.from({ length: imageCount }, (_, i) => ({
             productId: product.id,
@@ -465,7 +470,10 @@ export async function seedSellerCatalog(
 
     // Gallery
     const existingGallery = await prisma.galleryItem.count({ where: { sellerId } });
-    if (existingGallery === 0 && entry.galleryCount > 0) {
+    if (entry.resolveImage && existingGallery > 0 && entry.galleryCount > 0) {
+      await prisma.galleryItem.deleteMany({ where: { sellerId } });
+    }
+    if ((existingGallery === 0 || entry.resolveImage) && entry.galleryCount > 0) {
       await prisma.galleryItem.createMany({
         data: Array.from({ length: entry.galleryCount }, (_, i) => ({
           sellerId,
