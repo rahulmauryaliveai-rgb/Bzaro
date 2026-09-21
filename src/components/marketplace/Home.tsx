@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   MapPin,
   MessageCircle,
   Package,
+  Phone,
   Search,
   ShieldCheck,
   Sparkles,
@@ -428,24 +430,68 @@ const FAQ = [
   },
 ] as const;
 
+/** Platform support line for "Book a 10 min call" — the operator's own number, not a seller's. */
+const SUPPORT_PHONE = "+919999171512";
+const SUPPORT_PHONE_DISPLAY = "+91 99991 71512";
+const SUPPORT_WHATSAPP = `https://wa.me/${SUPPORT_PHONE.replace(/\D/g, "")}?text=${encodeURIComponent(
+  "Hi Bzaro, I'd like to book a 10 minute call.",
+)}`;
+
 export function Faq() {
   return (
-    <section className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+    <section className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
       <div>
-        <SectionHeading
-          eyebrow="FAQ"
-          title="Questions buyers and sellers ask"
-          description="Still unsure? Post a requirement and see how it works — it costs nothing."
-        />
+        <p className="text-accent-700 flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+          <span aria-hidden="true" className="bg-accent-600 h-2 w-2 rounded-full" />
+          FAQs
+        </p>
+        <h2 className="mt-2 text-3xl font-bold tracking-tight text-balance text-neutral-900 sm:text-4xl">
+          Frequently Asked Questions
+        </h2>
+
+        {/* Book a call — the operator's WhatsApp, not a seller's (LEADS §1 does not apply). */}
+        <div className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <span className="bg-brand-50 ring-brand-100 flex h-16 w-16 items-center justify-center rounded-full ring-4">
+            <Image src="/brand/bzaro-mark.png" alt="" width={36} height={36} />
+          </span>
+          <h3 className="mt-4 text-xl font-bold tracking-tight text-neutral-900">
+            Book a 10 min call
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+            Have a question before listing your business or posting a requirement? Chat with our
+            team on WhatsApp and we&rsquo;ll set up a quick 10-minute call at a time that suits you.
+          </p>
+          <a
+            href={SUPPORT_WHATSAPP}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-accent-600 shadow-accent-600/25 hover:bg-accent-700 mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold text-white shadow-lg transition-all hover:-translate-y-0.5"
+          >
+            <MessageCircle className="h-5 w-5" aria-hidden="true" />
+            Chat on WhatsApp
+          </a>
+          <a
+            href={`tel:${SUPPORT_PHONE}`}
+            className="mt-3 flex items-center justify-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900"
+          >
+            <Phone className="h-4 w-4" aria-hidden="true" />
+            {SUPPORT_PHONE_DISPLAY}
+          </a>
+        </div>
       </div>
-      <div className="divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white px-6">
-        {FAQ.map(({ q, a }) => (
-          <details key={q} className="group py-4">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-neutral-900 marker:hidden">
+
+      <div className="space-y-3">
+        {FAQ.map(({ q, a }, index) => (
+          <details
+            key={q}
+            open={index === 0}
+            className="group rounded-2xl border border-neutral-200 bg-white px-6 py-4 open:shadow-sm"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold text-neutral-900 marker:hidden">
               {q}
               <span
                 aria-hidden="true"
-                className="bg-brand-50 text-brand-700 flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform group-open:rotate-45"
+                className="bg-brand-50 text-brand-700 group-open:bg-accent-600 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-lg leading-none transition-all group-open:rotate-45 group-open:text-white"
               >
                 +
               </span>
