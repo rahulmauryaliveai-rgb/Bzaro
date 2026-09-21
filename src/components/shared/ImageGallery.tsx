@@ -29,16 +29,28 @@ function subscribeReduceMotion(onChange: () => void) {
   return () => query.removeEventListener("change", onChange);
 }
 
-export type GalleryImage = { id: string; url: string; alt: string | null };
+export type GalleryImage = {
+  id: string;
+  url: string;
+  alt: string | null;
+  /** Shown under the large image (storefront gallery page). */
+  caption?: string | null;
+};
 
 export function ImageGallery({
   images,
   name,
   intervalMs = 4000,
+  columns = 6,
+  aspect = "4/3",
 }: {
   images: GalleryImage[];
   name: string;
   intervalMs?: number;
+  /** Thumbnail columns on wide screens; the gallery page uses more, product pages fewer. */
+  columns?: 6 | 8;
+  /** Frame shape: 4:3 suits a product beside its details, 16:9 a full-width gallery. */
+  aspect?: "4/3" | "16/9";
 }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -86,7 +98,7 @@ export function ImageGallery({
       aria-label={`${name} images`}
     >
       <div
-        className="relative aspect-4/3 w-full overflow-hidden rounded-lg border"
+        className={`relative w-full overflow-hidden rounded-lg border ${aspect === "16/9" ? "aspect-video" : "aspect-4/3"}`}
         style={{
           borderColor: "var(--site-border, #e5e5e5)",
           background: "var(--site-surface, #fafafa)",
@@ -135,8 +147,13 @@ export function ImageGallery({
         ) : null}
       </div>
 
+      {current.caption ? <p className="mt-2 text-sm opacity-70">{current.caption}</p> : null}
+
       {count > 1 ? (
-        <ul className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-6" role="tablist">
+        <ul
+          className={`mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6 ${columns === 8 ? "lg:grid-cols-8" : ""}`}
+          role="tablist"
+        >
           {images.map((image, i) => (
             <li key={image.id} role="presentation">
               <button

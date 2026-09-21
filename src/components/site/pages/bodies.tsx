@@ -10,7 +10,7 @@ import type {
 } from "@/components/site/templates/registry";
 import { ProductCard } from "@/components/site/sections/ProductCard";
 import { ServiceCard } from "@/components/site/sections/ServiceCard";
-import { GalleryGrid } from "@/components/site/sections/GalleryGrid";
+import { GallerySlider } from "@/components/site/sections/GallerySlider";
 import { ContactPanel } from "@/components/site/sections/ContactPanel";
 import { Breadcrumbs, EmptyState, PageHeader, Pagination } from "@/components/site/sections/common";
 import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
@@ -344,7 +344,7 @@ export function GalleryBody({ context, data }: GalleryProps) {
           action={{ href: "/products", label: "Browse products" }}
         />
       ) : (
-        <GalleryGrid items={items} />
+        <GallerySlider items={items} name={`${context.seller.businessName} gallery`} />
       )}
     </>
   );
