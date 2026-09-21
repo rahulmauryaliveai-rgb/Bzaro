@@ -1,0 +1,409 @@
+{
+  "led-bulb-9w-b22": [
+    3,
+    4
+  ],
+  "street-light-120w": [
+    6,
+    3
+  ],
+  "control-cable-4core": [
+    4
+  ],
+  "service-lighting-design-consultation": [
+    1
+  ],
+  "service-installation-commissioning": [
+    7
+  ],
+  "service-amc-maintenance": [
+    1
+  ],
+  "demo-abc-electronics-cover": [
+    7
+  ],
+  "tmt-bar-12mm-fe500d": [
+    0,
+    3
+  ],
+  "tmt-bar-16mm-fe500d": [
+    0,
+    5
+  ],
+  "service-cut-and-bend": [
+    0
+  ],
+  "demo-sharma-steel-gallery": [
+    0,
+    1,
+    2,
+    4,
+    5,
+    6
+  ],
+  "demo-sharma-steel-cover": [
+    7
+  ],
+  "3-ply-surgical-mask": [
+    5
+  ],
+  "digital-bp-monitor": [
+    3,
+    2
+  ],
+  "stainless-surgical-scissors-set": [
+    6
+  ],
+  "service-hospital-consumables-supply": [
+    4
+  ],
+  "demo-medicare-supplies-cover": [
+    3
+  ],
+  "turmeric-powder-bulk": [
+    7,
+    2
+  ],
+  "black-pepper-whole-550gl": [
+    2,
+    1
+  ],
+  "red-chilli-powder-teja": [
+    5
+  ],
+  "cardamom-green-8mm": [
+    0
+  ],
+  "cumin-seeds-europe-quality": [
+    0
+  ],
+  "demo-kerala-spice-co-gallery": [
+    2,
+    4,
+    5,
+    7,
+    1,
+    6
+  ],
+  "demo-kerala-spice-co-cover": [
+    6
+  ],
+  "brake-pad-set-commercial": [
+    3,
+    0
+  ],
+  "led-headlamp-h4-truck": [
+    5,
+    4
+  ],
+  "two-wheeler-clutch-plate": [
+    3
+  ],
+  "12v-100ah-truck-battery": [
+    0
+  ],
+  "service-fleet-spares-supply": [
+    0
+  ],
+  "demo-rathi-auto-parts-cover": [
+    4
+  ],
+  "moulded-closures": [
+    5
+  ],
+  "service-custom-extrusion": [
+    6
+  ],
+  "demo-verma-plastics-gallery": [
+    4,
+    5,
+    0,
+    3,
+    2
+  ],
+  "category-led-bulbs": [
+    1
+  ],
+  "category-led-panels": [
+    2
+  ],
+  "category-street-lights": [
+    3
+  ],
+  "category-copper-cables": [
+    0
+  ],
+  "category-control-cables": [
+    2
+  ],
+  "category-cables-wires": [
+    0
+  ],
+  "category-tmt-bars": [
+    2
+  ],
+  "category-steel-pipes": [
+    3
+  ],
+  "category-hospital-equipment": [
+    7
+  ],
+  "category-surgical-instruments": [
+    7
+  ],
+  "category-spices-masala": [
+    3
+  ],
+  "category-dry-fruits": [
+    3
+  ],
+  "category-truck-bus-parts": [
+    0
+  ],
+  "category-auto-electricals": [
+    0
+  ],
+  "category-two-wheeler-parts": [
+    2
+  ],
+  "category-auto-lubricants": [
+    1
+  ],
+  "category-auto-batteries": [
+    3
+  ],
+  "category-electronics": [
+    4
+  ],
+  "category-building-construction": [
+    4
+  ],
+  "category-textiles": [
+    0
+  ],
+  "category-industrial-supplies": [
+    0
+  ],
+  "category-industrial-machinery": [
+    5
+  ],
+  "category-electrical-equipment": [
+    2
+  ],
+  "category-apparel-garments": [
+    4
+  ],
+  "category-fashion-accessories": [
+    2
+  ],
+  "category-gems-jewellery": [
+    2
+  ],
+  "category-food-beverages": [
+    6
+  ],
+  "category-agriculture": [
+    2
+  ],
+  "category-chemicals": [
+    2
+  ],
+  "category-plastics-polymers": [
+    5
+  ],
+  "category-packaging": [
+    2
+  ],
+  "category-paper-stationery": [
+    4
+  ],
+  "category-furniture": [
+    2
+  ],
+  "category-home-textiles": [
+    0
+  ],
+  "category-kitchen-housewares": [
+    3
+  ],
+  "category-glass-ceramics": [
+    1
+  ],
+  "category-wood-timber": [
+    2
+  ],
+  "category-pharmaceuticals": [
+    0
+  ],
+  "category-medical-equipment": [
+    1
+  ],
+  "category-herbal-ayurvedic": [
+    0
+  ],
+  "category-cosmetics-personal-care": [
+    6
+  ],
+  "category-sports-toys": [
+    6
+  ],
+  "category-automobile": [
+    3
+  ],
+  "category-computers-it": [
+    1
+  ],
+  "category-lab-testing": [
+    0
+  ],
+  "category-hvac-refrigeration": [
+    4
+  ],
+  "category-solar-energy": [
+    1
+  ],
+  "category-safety-security": [
+    0
+  ],
+  "category-bags-luggage-industrial": [
+    0
+  ],
+  "category-business-services": [
+    4
+  ],
+  "category-logistics-transport": [
+    1
+  ],
+  "category-real-estate": [
+    6
+  ],
+  "category-events-hospitality": [
+    6
+  ],
+  "category-pet-animal": [
+    4
+  ],
+  "category-baby-care": [
+    6
+  ],
+  "category-musical-instruments": [
+    4
+  ],
+  "category-marine-aviation": [
+    2
+  ],
+  "category-oil-gas-mining": [
+    0
+  ],
+  "category-environment-water": [
+    6
+  ],
+  "category-tobacco-alcohol": [
+    6
+  ],
+  "led-panel-40w": [
+    2,
+    3,
+    6
+  ],
+  "high-bay-150w": [
+    5
+  ],
+  "copper-cable-2-5mm": [
+    7
+  ],
+  "ms-square-pipe-50x50": [
+    1,
+    2
+  ],
+  "gi-round-pipe-2-inch": [
+    2
+  ],
+  "nitrile-gloves-powder-free": [
+    3,
+    4
+  ],
+  "hospital-bed-semi-fowler": [
+    7,
+    3
+  ],
+  "demo-medicare-supplies-gallery": [
+    3,
+    4,
+    2,
+    1,
+    6
+  ],
+  "service-private-label-packing": [
+    4
+  ],
+  "engine-oil-15w40-ci4": [
+    0
+  ],
+  "shrink-sleeve": [
+    4
+  ],
+  "service-contract-packaging": [
+    1
+  ],
+  "demo-verma-plastics-cover": [
+    3
+  ],
+  "category-industrial-lights": [
+    6
+  ],
+  "category-medical-disposables": [
+    3
+  ],
+  "category-diagnostic-equipment": [
+    3
+  ],
+  "category-industrial-textiles": [
+    3
+  ],
+  "category-mechanical-parts": [
+    4
+  ],
+  "category-leather-products": [
+    4
+  ],
+  "category-rubber-products": [
+    6
+  ],
+  "category-metals-minerals": [
+    2
+  ],
+  "category-handicrafts-decor": [
+    2
+  ],
+  "category-telecom": [
+    3
+  ],
+  "category-books-media": [
+    2
+  ],
+  "category-printing-signage": [
+    5
+  ],
+  "demo-abc-electronics-gallery": [
+    4,
+    3,
+    1,
+    6,
+    0,
+    5,
+    2,
+    7
+  ],
+  "demo-rathi-auto-parts-gallery": [
+    1,
+    6,
+    7,
+    0,
+    2
+  ],
+  "ldpe-packaging-film": [
+    0,
+    0
+  ]
+}

@@ -356,13 +356,18 @@ async function create() {
 
   console.log("→ category tiles");
   let tiles = 0;
-  for (const root of CATEGORY_TREE) {
-    const url = categoryImage(root.slug);
-    if (!url) continue;
-    await prisma.category.updateMany({ where: { slug: root.slug }, data: { imageUrl: url } });
-    tiles++;
-  }
-  console.log(`   ${tiles} root categories given a photo`);
+  const walk = async (nodes: typeof CATEGORY_TREE) => {
+    for (const node of nodes) {
+      const url = categoryImage(node.slug);
+      if (url) {
+        await prisma.category.updateMany({ where: { slug: node.slug }, data: { imageUrl: url } });
+        tiles++;
+      }
+      if (node.children) await walk(node.children);
+    }
+  };
+  await walk(CATEGORY_TREE);
+  console.log(`   ${tiles} categories given a photo`);
 
   await prisma.$executeRawUnsafe(`SELECT create_analytics_partition(CURRENT_DATE)`);
 
