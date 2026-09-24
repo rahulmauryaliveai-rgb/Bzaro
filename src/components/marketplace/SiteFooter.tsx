@@ -35,6 +35,8 @@ export async function SiteFooter() {
           <FooterLink href="/register">List your business</FooterLink>
           <FooterLink href="/pricing">Pricing &amp; plans</FooterLink>
           <FooterLink href="/login">Seller login</FooterLink>
+          <FooterLink href="/privacy">Privacy policy</FooterLink>
+          <FooterLink href="/terms">Terms of service</FooterLink>
         </FooterColumn>
 
         <FooterColumn title="Top categories">
