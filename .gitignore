@@ -65,3 +65,6 @@ demo-credentials.txt
 scripts/demo-images/candidates.json
 scripts/demo-images/search.log
 scripts/demo-images/sheet-*.jpg
+
+# Local copies of Cloudflare Turnstile keys - never commit
+Cloudfare KEYS/
