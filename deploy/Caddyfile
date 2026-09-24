@@ -62,9 +62,11 @@
 # "covered by the wildcard" and never get a certificate): it is issued on demand
 # like any subdomain, then redirected to the apex — one canonical host for SEO.
 *.{$ROOT_DOMAIN} {
-	tls {
-		on_demand
-	}
+	# Seller subdomains use the Cloudflare Origin Certificate (bzaro.in + *.bzaro.in,
+	# valid to 2041). On-demand Let's Encrypt cannot complete behind the Cloudflare
+	# proxy and left every subdomain on error 525. Files live in the caddy-data
+	# volume at /data/cloudflare/ (copied from /etc/ssl/cloudflare/ on the VPS).
+	tls /data/cloudflare/bzaro-origin.pem /data/cloudflare/bzaro-origin.key
 	@www host www.{$ROOT_DOMAIN}
 	redir @www https://{$ROOT_DOMAIN}{uri} permanent
 	import app
