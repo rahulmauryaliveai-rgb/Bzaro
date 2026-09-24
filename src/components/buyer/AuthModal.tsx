@@ -91,71 +91,76 @@ function SignupForm({
   }, [state.step, state.email]);
 
   return (
-    <form action={action} className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold text-neutral-900">Create your account</h3>
-        <p className="mt-1 text-sm text-neutral-600">
-          Sellers reply to you here, so we need a way to reach you.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <form action={action} className="space-y-4">
+        <div>
+          <h3 className="text-base font-semibold text-neutral-900">Create your account</h3>
+          <p className="mt-1 text-sm text-neutral-600">
+            Sellers reply to you here, so we need a way to reach you.
+          </p>
+        </div>
 
-      <Field
-        label="Your name"
-        name="name"
-        required
-        maxLength={120}
-        error={state.fieldErrors?.name}
-      />
-      <Field
-        label="Email"
-        name="email"
-        type="email"
-        required
-        maxLength={254}
-        error={state.fieldErrors?.email}
-      />
-      <Field
-        label="Mobile number"
-        name="phone"
-        type="tel"
-        required
-        placeholder="+919876543210"
-        hint="Sellers call or WhatsApp you on this number."
-        error={state.fieldErrors?.phone}
-      />
-      <Field
-        label="Password"
-        name="password"
-        type="password"
-        required
-        hint="At least 10 characters."
-        error={state.fieldErrors?.password}
-      />
+        <Field
+          label="Your name"
+          name="name"
+          required
+          maxLength={120}
+          error={state.fieldErrors?.name}
+        />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          required
+          maxLength={254}
+          error={state.fieldErrors?.email}
+        />
+        <Field
+          label="Mobile number"
+          name="phone"
+          type="tel"
+          required
+          placeholder="+919876543210"
+          hint="Sellers call or WhatsApp you on this number."
+          error={state.fieldErrors?.phone}
+        />
+        <Field
+          label="Password"
+          name="password"
+          type="password"
+          required
+          hint="At least 10 characters."
+          error={state.fieldErrors?.password}
+        />
 
-      <label className="flex items-start gap-2 text-sm text-neutral-700">
-        <input type="checkbox" name="acceptTerms" className="mt-1 h-4 w-4" />
-        <span>
-          I accept the{" "}
-          <Link href="/terms" className="underline hover:text-neutral-900">
-            terms
-          </Link>{" "}
-          and{" "}
-          <Link href="/privacy" className="underline hover:text-neutral-900">
-            privacy policy
-          </Link>
-          .
-        </span>
-      </label>
-      {state.fieldErrors?.acceptTerms ? (
-        <ErrorText>{state.fieldErrors.acceptTerms}</ErrorText>
-      ) : null}
+        <label className="flex items-start gap-2 text-sm text-neutral-700">
+          <input type="checkbox" name="acceptTerms" className="mt-1 h-4 w-4" />
+          <span>
+            I accept the{" "}
+            <Link href="/terms" className="underline hover:text-neutral-900">
+              terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline hover:text-neutral-900">
+              privacy policy
+            </Link>
+            .
+          </span>
+        </label>
+        {state.fieldErrors?.acceptTerms ? (
+          <ErrorText>{state.fieldErrors.acceptTerms}</ErrorText>
+        ) : null}
 
-      <Turnstile />
+        <Turnstile />
 
-      {state.error ? <ErrorText>{state.error}</ErrorText> : null}
+        {state.error ? <ErrorText>{state.error}</ErrorText> : null}
 
-      <SubmitButton pending={pending}>Create account</SubmitButton>
+        <SubmitButton pending={pending}>Create account</SubmitButton>
+      </form>
 
+      {/* Outside the credentials form: a <form> nested in a <form> is invalid
+          HTML, and React refuses the inner submit ("A React form was
+          unexpectedly submitted"), so Google sign-in silently did nothing. */}
       <GoogleButton />
 
       <p className="text-center text-sm text-neutral-600">
@@ -168,7 +173,7 @@ function SignupForm({
           Sign in
         </button>
       </p>
-    </form>
+    </div>
   );
 }
 
@@ -189,16 +194,19 @@ function LoginForm({
   }, [state.step]);
 
   return (
-    <form action={action} className="space-y-4">
-      <h3 className="text-base font-semibold text-neutral-900">Sign in</h3>
+    <div className="space-y-4">
+      <form action={action} className="space-y-4">
+        <h3 className="text-base font-semibold text-neutral-900">Sign in</h3>
 
-      <Field label="Email" name="email" type="email" required maxLength={254} />
-      <Field label="Password" name="password" type="password" required />
+        <Field label="Email" name="email" type="email" required maxLength={254} />
+        <Field label="Password" name="password" type="password" required />
 
-      {state.error ? <ErrorText>{state.error}</ErrorText> : null}
+        {state.error ? <ErrorText>{state.error}</ErrorText> : null}
 
-      <SubmitButton pending={pending}>Sign in</SubmitButton>
+        <SubmitButton pending={pending}>Sign in</SubmitButton>
+      </form>
 
+      {/* Outside the credentials form — see SignupForm. */}
       <GoogleButton />
 
       <div className="flex items-center justify-between text-sm text-neutral-600">
@@ -213,7 +221,7 @@ function LoginForm({
           Create account
         </button>
       </div>
-    </form>
+    </div>
   );
 }
 
