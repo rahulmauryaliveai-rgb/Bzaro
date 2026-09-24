@@ -16,7 +16,7 @@ import { PURPOSE_LABELS, TIMELINE_LABELS } from "@/lib/validation/requirement";
 export type LeadRow = {
   id: string;
   type: "DIRECT" | "MARKET";
-  status: "NEW" | "VIEWED" | "ACCEPTED" | "CLOSED" | "EXPIRED";
+  status: "NEW" | "VIEWED" | "ACCEPTED" | "CONTACTED" | "WON" | "LOST" | "CLOSED" | "EXPIRED";
   score: number | null;
   expiresAt: Date | null;
   viewedAt: Date | null;
@@ -34,7 +34,15 @@ export type LeadRow = {
     location: { name: string };
     category: { name: string };
     product: { name: string; slug: string } | null;
-    buyer: { phone: string; name: string | null; company: string | null };
+    source: "BZARO_MARKETPLACE" | "STOREFRONT";
+    refBzaro: boolean;
+    /** The buyer's business, captured on the requirement itself. */
+    businessName: string | null;
+    /**
+     *  is nullable since buyers became  rows (D35) — a Google
+     * sign-up may not have given one. Never assume it is present.
+     */
+    buyer: { phone: string | null; name: string | null };
   };
   flag: { status: "OPEN" | "REFUNDED" | "REJECTED"; reason: string } | null;
 };
@@ -70,6 +78,10 @@ export type LeadView = {
   purpose: string;
   notes: string | null;
   buyer: { phone: string; name: string | null; company: string | null };
+  /** Where the requirement came from, for the "From Bzaro" badge. */
+  source: "BZARO_MARKETPLACE" | "STOREFRONT";
+  /** Buyer reached the storefront from bzaro.in (`?ref=bzaro`). */
+  refBzaro: boolean;
   sellerNote: string | null;
   flag: LeadRow["flag"];
   score: number | null;
@@ -114,9 +126,21 @@ export function projectLead(lead: LeadRow, entitlement: Entitlement, now = new D
     timeline: TIMELINE_LABELS[r.timeline],
     purpose: PURPOSE_LABELS[r.purpose],
     notes: revealed ? r.notes : null,
+    // A buyer with no number is shown as such rather than as a masked
+    // placeholder, which would imply there is something to unlock.
     buyer: revealed
-      ? { phone: formatPhone(r.buyer.phone), name: r.buyer.name, company: r.buyer.company }
-      : { phone: maskPhone(r.buyer.phone), name: null, company: null },
+      ? {
+          phone: r.buyer.phone ? formatPhone(r.buyer.phone) : "No phone provided",
+          name: r.buyer.name,
+          company: r.businessName,
+        }
+      : {
+          phone: r.buyer.phone ? maskPhone(r.buyer.phone) : "No phone provided",
+          name: null,
+          company: null,
+        },
+    source: r.source,
+    refBzaro: r.refBzaro,
     sellerNote: lead.sellerNote,
     flag: lead.flag,
     score: lead.score,

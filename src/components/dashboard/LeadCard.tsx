@@ -12,10 +12,40 @@ import type { LeadView } from "@/lib/leads/projection";
  * blurs the product and shows the upgrade path instead.
  */
 
+/**
+ * Where the lead came from. Worth its own badge: a seller paying for a
+ * marketplace listing wants to see what that listing is actually producing,
+ * and "from your own store" is the honest label for the rest.
+ */
+function SourceBadge({
+  source,
+  refBzaro,
+}: {
+  source: "BZARO_MARKETPLACE" | "STOREFRONT";
+  refBzaro: boolean;
+}) {
+  // A storefront visit that began on the marketplace still counts as Bzaro's
+  // introduction — that is what the first-touch cookie records.
+  const fromBzaro = source === "BZARO_MARKETPLACE" || refBzaro;
+
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-xs ${
+        fromBzaro ? "bg-teal-50 text-teal-700" : "bg-neutral-100 text-neutral-600"
+      }`}
+    >
+      {fromBzaro ? "From Bzaro" : "From your store"}
+    </span>
+  );
+}
+
 const STATUS_LABEL: Record<LeadView["status"], string> = {
   NEW: "New",
   VIEWED: "Viewed",
   ACCEPTED: "Accepted",
+  CONTACTED: "Contacted",
+  WON: "Won",
+  LOST: "Lost",
   CLOSED: "Closed",
   EXPIRED: "Expired",
 };
@@ -35,6 +65,7 @@ export function LeadCard({ lead }: { lead: LeadView }) {
           <div className="flex flex-wrap items-center gap-2">
             <TypeBadge type={lead.type} />
             <span className="text-xs text-neutral-500">{STATUS_LABEL[lead.status]}</span>
+            <SourceBadge source={lead.source} refBzaro={lead.refBzaro} />
             {lead.flag ? (
               <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
                 Flagged · {lead.flag.status.toLowerCase()}

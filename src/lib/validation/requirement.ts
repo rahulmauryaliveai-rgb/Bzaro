@@ -45,6 +45,12 @@ export const PURPOSE_LABELS: Record<z.infer<typeof requirementPurposeSchema>, st
   PERSONAL_USE: "Personal use",
 };
 
+/** Which control the buyer pressed. Decides what happens after submit. */
+export const requirementTriggerSchema = z.enum(["CALL", "WHATSAPP", "ENQUIRY", "SEARCH_CARD"]);
+
+/** Where the requirement was raised. Attribution only — never routing. */
+export const requirementSourceSchema = z.enum(["BZARO_MARKETPLACE", "STOREFRONT"]);
+
 export const requirementSchema = z.object({
   productName: z.string().trim().min(2, "What are you looking for?").max(200),
   quantity: z.coerce
@@ -66,8 +72,21 @@ export const requirementSchema = z.object({
   /** Category chosen by the buyer on "Post requirement". Ignored when productId is set. */
   categoryId: optionalText(64),
 
-  /** Buyer name, optional; stored on the Buyer row if given. */
+  /** Buyer name, optional; stored on the User row if given. */
   name: optionalText(120),
+
+  trigger: requirementTriggerSchema,
+  source: requirementSourceSchema,
+
+  /**
+   * Collected only when purpose is RESALE or BUSINESS_USE. The refinement
+   * below enforces that; the form hides the fields otherwise.
+   */
+  businessName: optionalText(200),
+  gstin: optionalText(20),
+
+  /** As entered. The service resolves it to a city via the Pincode table. */
+  pincode: optionalText(6),
 
   /** Honeypot. */
   website: z.string().max(0, "Invalid submission").optional(),

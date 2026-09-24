@@ -64,6 +64,10 @@ cd "$APP"
 
 # ── Environment files ───────────────────────────────────────────────────────
 gen() { openssl rand -base64 48 | tr -d '\n/+=' | cut -c1-48; }
+# The integrations key is different: it must decode to EXACTLY 32 bytes
+# for AES-256-GCM, so it keeps its base64 padding rather than being
+# stripped like the opaque secrets above.
+genkey() { openssl rand -base64 32; }
 
 if [[ ! -f deploy/.env ]]; then
   echo "→ writing deploy/.env"
@@ -88,10 +92,10 @@ if [[ ! -f .env ]]; then
     -e "s|__SRH_TOKEN__|$SRH_TOKEN|g" \
     -e "s|^AUTH_SECRET=.*|AUTH_SECRET=\"$(gen)\"|" \
     -e "s|^OTP_PEPPER=.*|OTP_PEPPER=\"$(gen)\"|" \
-    -e "s|^BUYER_COOKIE_SECRET=.*|BUYER_COOKIE_SECRET=\"$(gen)\"|" \
     -e "s|^REVALIDATE_SECRET=.*|REVALIDATE_SECRET=\"$(gen)\"|" \
     -e "s|^CRON_SECRET=.*|CRON_SECRET=\"$(gen)\"|" \
     -e "s|^IP_HASH_SALT=.*|IP_HASH_SALT=\"$(gen)\"|" \
+    -e "s|^INTEGRATIONS_ENCRYPTION_KEY=.*|INTEGRATIONS_ENCRYPTION_KEY=\"$(genkey)\"|" \
     -e "s|^ADMIN_EMAIL=.*|ADMIN_EMAIL=\"$ADMIN_EMAIL\"|" \
     -e "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=\"$ADMIN_PASSWORD\"|" \
     deploy/env.production.example > .env

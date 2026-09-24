@@ -3,6 +3,7 @@ import { IBM_Plex_Sans } from "next/font/google";
 import { clientEnv } from "@/env.client";
 import { marketplaceUrl } from "@/lib/utils/url";
 import { SiteHeader } from "@/components/marketplace/SiteHeader";
+import { LocationBar } from "@/components/marketplace/LocationBar";
 import { SiteFooter } from "@/components/marketplace/SiteFooter";
 import "../globals.css";
 
@@ -39,6 +40,7 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-white text-neutral-900">
         <SiteHeader />
+        <LocationBar />
         <main className="flex-1">{children}</main>
         <SiteFooter />
       </body>

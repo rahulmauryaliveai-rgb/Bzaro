@@ -35,9 +35,13 @@ const NAV: NavItem[] = [
   { href: "/dashboard/gallery", label: "Gallery" },
   { href: "/dashboard/enquiries", label: "Enquiries" },
   { href: "/dashboard/leads", label: "Leads" },
+  { href: "/dashboard/orders", label: "Orders" },
+  { href: "/dashboard/demand", label: "Demand alerts" },
   { href: "/dashboard/credits", label: "Credits" },
   { href: "/dashboard/website", label: "Website" },
   { href: "/dashboard/billing", label: "Plan & billing" },
+  { href: "/dashboard/settings/payments", label: "Payments" },
+  { href: "/dashboard/settings/shipping", label: "Shipping" },
   { href: "/dashboard/analytics", label: "Analytics", soon: true },
   { href: "/dashboard/settings", label: "Settings" },
 ];

@@ -74,7 +74,9 @@ test.describe("post requirement", () => {
   test("renders the inline steps with a category picker", async ({ page }) => {
     await page.goto(`${APEX}/post-requirement`);
     await expect(page.getByRole("heading", { name: /Suppliers come to you/ })).toBeVisible();
-    await expect(page.getByLabel("Mobile number")).toBeVisible();
+    // Since D35 the requirement is asked for first; the account comes at "Send".
+    await expect(page.getByLabel("What do you need?")).toBeVisible();
+    await expect(page.getByLabel("Category")).toBeVisible();
   });
 });
 

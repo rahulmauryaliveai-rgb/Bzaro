@@ -4,6 +4,7 @@ import type { ProductDetailProps } from "@/components/site/templates/registry";
 import { ProductCard } from "@/components/site/sections/ProductCard";
 import { Breadcrumbs } from "@/components/site/sections/common";
 import { ContactIntent } from "@/components/buyer/ContactIntent";
+import { PurchaseActions } from "@/components/site/PurchaseActions";
 import { formatPrice } from "@/lib/utils/money";
 import { z } from "zod";
 
@@ -93,7 +94,18 @@ export function ProductDetailBody({ context, data }: ProductDetailProps) {
             </p>
           ) : null}
 
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-7">
+            <PurchaseActions
+              sellerId={seller.id}
+              product={{
+                id: product.id,
+                priceMinor: product.priceMinor,
+                priceOnRequest: product.priceOnRequest,
+              }}
+            />
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
             <ContactIntent
               className="contents"
               seller={{

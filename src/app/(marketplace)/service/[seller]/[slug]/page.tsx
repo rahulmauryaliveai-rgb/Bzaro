@@ -8,7 +8,7 @@ import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, serviceJsonLd } from "@/lib/seo/jsonld";
 import { formatMoney } from "@/lib/utils/money";
-import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
 
 /** Canonical points at the microsite, same rationale as the product page (D1). */
 
@@ -44,6 +44,8 @@ export default async function MarketplaceServicePage({ params }: Props) {
 
   const hasWebsite = service.seller.webPresence !== "CATALOGUE";
   const micrositeUrl = sellerSiteUrl(service.seller, `/services/${service.slug}`);
+  // JSON-LD and canonical use micrositeUrl; only the clickable link is tagged.
+  const micrositeVisitUrl = sellerVisitUrl(service.seller, `/services/${service.slug}`);
   const locality = [service.seller.location?.name, service.seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
@@ -163,7 +165,7 @@ export default async function MarketplaceServicePage({ params }: Props) {
         {locality ? <p className="text-sm text-neutral-600">{locality}</p> : null}
         {hasWebsite ? (
           <a
-            href={micrositeUrl}
+            href={micrositeVisitUrl}
             className="text-brand-700 mt-2 inline-block text-sm underline underline-offset-2"
           >
             Visit their website ↗

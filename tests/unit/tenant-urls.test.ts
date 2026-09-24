@@ -4,6 +4,7 @@ import {
   marketplacePathFor,
   marketplaceUrl,
   sellerSiteUrl,
+  sellerVisitUrl,
   tenantUrl,
   tenantUrlFor,
 } from "@/lib/utils/url";
@@ -165,5 +166,28 @@ describe("sellerSiteUrl", () => {
         customDomainStatus: "PENDING_DNS",
       }),
     ).toBe("http://abc.lvh.me:3000/");
+  });
+});
+
+describe("sellerVisitUrl", () => {
+  it("tags a storefront link so the proxy can record first-touch attribution", () => {
+    expect(sellerVisitUrl({ slug: "abc", webPresence: "SUBDOMAIN" })).toBe(
+      "http://abc.lvh.me:3000/?ref=bzaro",
+    );
+    expect(sellerVisitUrl({ slug: "abc", webPresence: "SUBDOMAIN" }, "/products")).toBe(
+      "http://abc.lvh.me:3000/products?ref=bzaro",
+    );
+  });
+
+  it("leaves a catalogue-tier seller untagged — that page IS the marketplace", () => {
+    const seller = { slug: "abc", webPresence: "CATALOGUE" } as const;
+    expect(sellerVisitUrl(seller)).toBe(sellerSiteUrl(seller));
+    expect(sellerVisitUrl(seller)).not.toContain("ref=bzaro");
+  });
+
+  it("appends rather than replaces an existing query string", () => {
+    expect(sellerVisitUrl({ slug: "abc", webPresence: "SUBDOMAIN" }, "/products?page=2")).toBe(
+      "http://abc.lvh.me:3000/products?page=2&ref=bzaro",
+    );
   });
 });

@@ -75,7 +75,51 @@ export const sellerRegistrationSchema = z.object({
   categoryIds: z.array(z.string().cuid()).min(1, "Choose at least one category").max(5),
 });
 
+/**
+ * Buyer signup (D35). Phone is required here even though `User.phone` is
+ * nullable — the seller's whole reason to answer a lead is a number to call.
+ * It is stored unverified; SMS verification is a later phase.
+ */
+export const buyerSignupSchema = z
+  .object({
+    name: z.string().trim().min(2, "Enter your name").max(120),
+    email: emailSchema,
+    phone: phoneSchema,
+    password: passwordSchema,
+    acceptTerms: z.literal(true, { message: "You must accept the terms to continue" }),
+    turnstileToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+/** The code from the signup email, checked against `EmailOtp`. */
+export const emailOtpVerifySchema = z.object({
+  email: emailSchema,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Enter the 6-digit code"),
+});
+
+/** Google sign-in leaves no phone behind; this is the one-time step that asks. */
+export const buyerPhoneSchema = z.object({ phone: phoneSchema });
+
 export const passwordResetRequestSchema = z.object({ email: emailSchema });
+
+/** Password reset by emailed code rather than a link (D35). */
+export const passwordResetOtpSchema = z
+  .object({
+    email: emailSchema,
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "Enter the 6-digit code"),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 export const passwordResetSchema = z
   .object({

@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { ContactIntentModal, type CityOption, type ContactTarget } from "./ContactIntentModal";
+import {
+  ContactIntentModal,
+  type CityOption,
+  type ContactIntentKind,
+  type ContactTarget,
+} from "./ContactIntentModal";
 
 /**
  * The two contact-intent triggers: "Enquire on WhatsApp" and "Get Best Price".
@@ -33,7 +38,7 @@ export function ContactButtons({
   priceClassName?: string;
   priceLabel?: string;
 }) {
-  const [intent, setIntent] = useState<"whatsapp" | "price" | null>(null);
+  const [intent, setIntent] = useState<ContactIntentKind | null>(null);
   const showWhatsApp = target.sellerHasWhatsApp && show !== "price";
   // With no WhatsApp number the "whatsapp only" slot still needs a trigger,
   // otherwise a header loses its one call to action.
@@ -52,6 +57,16 @@ export function ContactButtons({
         >
           <WhatsAppGlyph />
           Enquire on WhatsApp
+        </button>
+      ) : null}
+
+      {target.sellerHasPhone && show === "both" ? (
+        <button
+          type="button"
+          onClick={() => setIntent("call")}
+          className="inline-flex min-h-11 items-center gap-2 rounded-md border border-neutral-300 px-4 text-sm font-medium text-neutral-900 hover:bg-neutral-50"
+        >
+          Show number
         </button>
       ) : null}
 

@@ -47,7 +47,7 @@ export default async function AdminLeadsPage({
                   </span>
                 </p>
                 <p className="mt-1 text-neutral-400">
-                  Buyer {formatPhone(r.buyer.phone)}
+                  Buyer {r.buyer.phone ? formatPhone(r.buyer.phone) : "—"}
                   {r.buyer.name ? ` (${r.buyer.name})` : ""} ·{" "}
                   <time dateTime={r.createdAt.toISOString()}>
                     {r.createdAt.toLocaleString("en-IN")}

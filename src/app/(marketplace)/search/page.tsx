@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RequirementCard } from "@/components/marketplace/RequirementCard";
+import { resolveLocation } from "@/lib/location/cookie";
+import { getBuyerSession } from "@/server/services/buyer.service";
 import { search } from "@/lib/search";
 import {
   buildSearchQuery,
@@ -69,13 +72,31 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 export default async function SearchPage({ searchParams }: Props) {
   const params = parseSearchParams(await searchParams);
 
+  // A signed-in buyer's saved city outranks the IP guess but not their cookie.
+  const buyer = await getBuyerSession();
+
   // Filter paths arrive as human-readable strings; resolve them to ids. An
   // unknown path resolves to undefined, which widens the search rather than
   // erroring — stale filter links should degrade, not break.
-  const [categoryId, locationId] = await Promise.all([
+  const [categoryId, explicitLocationId] = await Promise.all([
     categoryIdFromPath(params.category),
     locationIdFromPath(params.location),
   ]);
+
+  /**
+   * Fall back to the city the visitor chose (Phase 3).
+   *
+   * Only when no explicit `location` filter is set and they have not opted out.
+   * Safe for SEO: a crawler sends no cookie, so it sees the unnarrowed results,
+   * and the canonical already points at the bare /search regardless.
+   *
+   * `implicitCity` drives the notice below — narrowing results silently is how
+   * a buyer concludes the marketplace is empty.
+   */
+  const implicitCity =
+    explicitLocationId || params.everywhere ? null : await resolveLocation(buyer?.locationId);
+
+  const locationId = explicitLocationId ?? implicitCity?.id;
 
   const input = {
     query: params.q,
@@ -139,6 +160,18 @@ export default async function SearchPage({ searchParams }: Props) {
             </p>
           ) : null}
 
+          {implicitCity ? (
+            <p className="mb-4 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
+              Narrowed to <span className="font-medium">{implicitCity.name}</span>.{" "}
+              <Link
+                href={buildSearchQuery(params, { everywhere: true, page: 1 })}
+                className="underline hover:text-neutral-900"
+              >
+                Search everywhere
+              </Link>
+            </p>
+          ) : null}
+
           {results.total === 0 ? (
             <NoResults params={params} />
           ) : isSellerMode ? (
@@ -160,6 +193,10 @@ export default async function SearchPage({ searchParams }: Props) {
           )}
 
           <ResultsPagination params={params} pageCount={results.pageCount} />
+
+          <div className="mt-8">
+            <RequirementCard query={params.q} />
+          </div>
         </div>
       </div>
     </div>

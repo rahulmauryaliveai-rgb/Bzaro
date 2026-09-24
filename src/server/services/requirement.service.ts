@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { CONSENT_VERSION } from "@/lib/consent";
 import { hashIp } from "@/lib/ratelimit";
 import { isValidWhatsAppNumber } from "@/lib/whatsapp/link";
 import { requirementFingerprint, type RequirementInput } from "@/lib/validation/requirement";
@@ -26,6 +27,11 @@ export type CreateRequirementResult =
         sellerName: string;
         /** E.164, only when it can produce a working wa.me link. */
         whatsapp: string | null;
+        /**
+         * Revealed only after the requirement exists, which is the point: the
+         * number is what the buyer wanted, and the lead is what we wanted.
+         */
+        phone: string | null;
       } | null;
       cityName: string;
     }
@@ -35,10 +41,13 @@ export type CreateRequirementResult =
     };
 
 export async function createRequirement(params: {
+  /** The buyer's `User` id, from the session. */
   buyerId: string;
   input: RequirementInput;
   ip: string;
   userAgent?: string | null;
+  /** Buyer reached this storefront from bzaro.in (`?ref=bzaro`). */
+  refBzaro?: boolean;
 }): Promise<CreateRequirementResult> {
   const { input } = params;
 
@@ -47,6 +56,7 @@ export async function createRequirement(params: {
   let categoryId: string | null = null;
   let sellerName: string | null = null;
   let sellerWhatsapp: string | null = null;
+  let sellerPhone: string | null = null;
 
   if (input.productId) {
     const product = await db.product.findFirst({
@@ -64,6 +74,7 @@ export async function createRequirement(params: {
             id: true,
             businessName: true,
             whatsapp: true,
+            phone: true,
             categories: { where: { isPrimary: true }, select: { categoryId: true }, take: 1 },
           },
         },
@@ -74,6 +85,7 @@ export async function createRequirement(params: {
     directSellerId = product.seller.id;
     sellerName = product.seller.businessName;
     sellerWhatsapp = product.seller.whatsapp;
+    sellerPhone = product.seller.phone;
     categoryId = product.categoryId ?? product.seller.categories[0]?.categoryId ?? null;
   } else if (input.sellerId) {
     const seller = await db.seller.findFirst({
@@ -82,6 +94,7 @@ export async function createRequirement(params: {
         id: true,
         businessName: true,
         whatsapp: true,
+        phone: true,
         categories: { where: { isPrimary: true }, select: { categoryId: true }, take: 1 },
       },
     });
@@ -90,6 +103,7 @@ export async function createRequirement(params: {
     directSellerId = seller.id;
     sellerName = seller.businessName;
     sellerWhatsapp = seller.whatsapp;
+    sellerPhone = seller.phone;
     categoryId = input.categoryId ?? seller.categories[0]?.categoryId ?? null;
   } else {
     categoryId = input.categoryId ?? null;
@@ -124,6 +138,14 @@ export async function createRequirement(params: {
         timeline: input.timeline,
         purpose: input.purpose,
         notes: input.notes ?? null,
+        businessName: input.businessName ?? null,
+        gstin: input.gstin ?? null,
+        pincode: input.pincode ?? null,
+        trigger: input.trigger,
+        source: input.source,
+        refBzaro: params.refBzaro ?? false,
+        consentVersion: CONSENT_VERSION,
+        consentAt: new Date(),
         fingerprint: requirementFingerprint(input.productName, category.id),
         ipHash: hashIp(params.ip),
         userAgent: params.userAgent?.slice(0, 500) ?? null,
@@ -165,13 +187,15 @@ export async function createRequirement(params: {
       });
     }
 
-    await tx.buyer.update({
-      where: { id: params.buyerId },
-      data: {
-        ...(input.name ? { name: input.name } : {}),
-        locationId: city.id,
-        lastSeenAt: new Date(),
-      },
+    if (input.name) {
+      await tx.user.update({ where: { id: params.buyerId }, data: { name: input.name } });
+    }
+
+    const profile = { locationId: city.id, ...(input.pincode ? { pincode: input.pincode } : {}) };
+    await tx.buyerProfile.upsert({
+      where: { userId: params.buyerId },
+      create: { userId: params.buyerId, ...profile },
+      update: profile,
     });
 
     return { requirementId: requirement.id, leadId };
@@ -182,7 +206,7 @@ export async function createRequirement(params: {
     requirementId: created.requirementId,
     direct:
       created.leadId && directSellerId && sellerName
-        ? { leadId: created.leadId, sellerName, whatsapp }
+        ? { leadId: created.leadId, sellerName, whatsapp, phone: sellerPhone }
         : null,
     cityName: city.name,
   };

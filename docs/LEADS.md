@@ -1,11 +1,12 @@
 # Buyer discovery and leads
 
 How a buyer's "WhatsApp" click becomes leads in seller inboxes, and the rules
-that govern those leads. This is the reference for the `Buyer`, `OtpChallenge`,
-`Requirement`, `Lead`, `LeadDelivery`, `CreditLedger` and `LeadFlag` models.
+that govern those leads. This is the reference for the `BuyerProfile`,
+`EmailOtp`, `Requirement`, `Lead`, `LeadDelivery`, `CreditLedger` and `LeadFlag`
+models.
 
-Decisions behind this design: D28 (buyer identity), D29 (fan-out outbox), and
-the D5 revision (direct leads free, market leads metered).
+Decisions behind this design: D35 (buyer identity — **supersedes D28**), D29
+(fan-out outbox), and the D5 revision (direct leads free, market leads metered).
 
 ---
 
@@ -13,35 +14,39 @@ the D5 revision (direct leads free, market leads metered).
 
 ```
 browse → click "WhatsApp" / "Get Best Price"
-      → phone → OTP → requirement form → lead(s) created → wa.me opens
+      → requirement form → (sign in / create account, if needed)
+      → lead(s) created → wa.me opens
 ```
 
-- **No popup on page load.** The OTP modal opens only on contact intent.
-- **Consent** is collected at the OTP step, verbatim:
-  > I agree to share my requirement with the selected supplier and up to 10
-  > other verified suppliers.
-- **Returning buyers** carry a signed cookie (`bz_buyer`, `__Host-` over https)
-  and skip the OTP. The cookie holds only a buyer id; everything else is read
-  from the `Buyer` row, including `isBlocked`.
-- The cookie is host-only, like the session cookie, so a buyer verified on the
-  marketplace is not recognised on a tenant microsite. Accepted cost.
+- **No popup on page load.** The modal opens only on contact intent.
+- **A buyer is a `User`** — email + password (verified by an `EmailOtp`) or
+  Google — plus a `BuyerProfile` holding the last city, pincode and optional
+  lat/lng. Identity comes from the Auth.js session; there is no buyer cookie.
+- **The requirement comes first.** A signed-out buyer fills the form and is
+  asked to sign in at "Send", so the cost of an account lands after they have
+  already decided what they want.
+- **Consent** is shown above the Submit button and stored per requirement as
+  `consentVersion` + `consentAt`. The wording lives in `src/lib/consent.ts` and
+  is versioned, never edited in place — existing rows point at their version.
+- `BuyerProfile.isBlocked` gates contact, replacing the old per-phone block.
 
-### OTP rules
+### Email OTP rules
 
 | Rule | Value | Where |
 |---|---|---|
-| Length | 6 digits | `src/lib/otp/challenge.ts` |
-| Expiry | 5 minutes | same |
-| Attempts per code | 3, then locked | `OtpChallenge.attempts`, CHECK constraint |
-| Storage | HMAC-SHA256(`OTP_PEPPER`, phone:purpose:code) — never the code | same |
-| Resend | deletes the open challenge; the old code stops working | `issueOtp` |
-| Sends per phone | 3 / hour | `LIMITS.otp` |
-| Sends per IP | 10 / hour | `LIMITS.otpIp` |
-| Verify attempts per phone | 12 / hour | `LIMITS.otpVerify` |
+| Length | 6 digits | `EmailOtp` |
+| Expiry | 10 minutes | `EmailOtp.expiresAt` |
+| Attempts per code | 5, then locked | `EmailOtp.attempts`, CHECK constraint |
+| Storage | HMAC of the code — never the code itself | same rule as `OtpChallenge` |
+| Purposes | `SIGNUP`, `RESET_PASSWORD` | `EmailOtpPurpose` |
 
-Phones are normalised to E.164 (`src/lib/buyer/phone.ts`) **before** any
-validation, lookup or rate-limit key is built. A bare 10-digit number is
-assumed Indian; anything else must carry `+<country code>`.
+`OtpChallenge` and its phone OTP still exist, but only for **seller** onboarding
+(`OtpPurpose.SELLER_SIGNUP`). Phones are still normalised to E.164
+(`src/lib/buyer/phone.ts`) before any validation, lookup or rate-limit key is
+built.
+
+`User.phone` is **nullable** — a Google sign-up may not have given one — so lead
+projections render "no phone provided" rather than a masked placeholder.
 
 ---
 
@@ -78,15 +83,18 @@ sellerId])`. The direct seller is excluded from the market fan-out.
 ### Lead status machine
 
 ```
-NEW ──(seller opens)──► VIEWED ──(accept, MARKET only)──► ACCEPTED ──► CLOSED
- │                        │                                   │
- └────────(48 h, MARKET)──┴──────────────────────────────► EXPIRED
+NEW ─(seller opens)─► VIEWED ─(accept, MARKET only)─► ACCEPTED ─► CONTACTED ─► WON
+ │                      │                                │           │        └► LOST
+ │                      │                                └───────────┴──────► CLOSED
+ └──────(48 h, MARKET)──┴────────────────────────────────────────────────► EXPIRED
 ```
 
 - `NEW → VIEWED` on first open of the lead detail. Records `viewedAt`.
 - `VIEWED → ACCEPTED` debits one credit and unmasks the buyer's phone. DIRECT
-  leads are never "accepted" — they go `NEW → VIEWED → CLOSED`.
-- `→ CLOSED` by the seller at any time (won, lost, not relevant).
+  leads are never "accepted" — they go `NEW → VIEWED → CONTACTED → WON/LOST`.
+- `CONTACTED`, `WON` and `LOST` are the seller's own progress markers after they
+  have the buyer's number. They carry no credit or masking effect.
+- `→ CLOSED` by the seller at any time (not relevant, duplicate).
 - `→ EXPIRED` by the sweeper for MARKET leads in NEW/VIEWED past `expiresAt`.
   ACCEPTED leads never expire.
 
@@ -220,8 +228,11 @@ error at boot. Leads still land in the dashboard; nothing is lost.
 
 ## 7. Privacy
 
-- Buyer phone is the identity key. It is shown to the DIRECT seller (the buyer
-  chose them) and to MARKET sellers only after they accept (they paid for it).
+- The buyer's email is the identity key; their phone is the contact detail
+  sellers want. It is shown to the DIRECT seller (the buyer chose them) and to
+  MARKET sellers only after they accept (they paid for it).
+- `DemandAlert` carries no buyer column at all, and bands the quantity — an
+  exact quantity plus a timestamp would re-identify the order behind it.
 - IPs are salted-hashed (`ipHash`) as everywhere else; never stored raw.
 - `LeadNotification.summary` is rendered **already masked** for MARKET leads,
   so a notifier can never receive a number it may not show.
@@ -249,3 +260,74 @@ valuable missing items and, until `COMPLETE`, a "continue where you left off"
 link. Fixed lists (business types, size and turnover bands, certifications)
 live in `src/lib/validation/business-lists.ts`; the profile page edits the
 same fields plus cities served.
+
+---
+
+## 9. Commerce (Phase 5/6)
+
+Carts and orders exist **only** on `{seller}.bzaro.in`, never on the apex. The
+guard is enforced three times, deliberately: the proxy 404s `/site/*` on the
+apex, the cart and checkout pages resolve the seller from the route and 404 if
+it cannot take payment, and every cart/checkout Server Action re-derives the
+seller from the **request Host** and refuses on the apex. A Server Action is a
+POST endpoint; not rendering a button is not a control.
+
+### Add to cart vs. Get Quote
+
+`Add to cart` appears only when both are true:
+
+| Condition | Where |
+|---|---|
+| `SellerFeature.paymentsEnabled` (plan, add-on, or admin override) | `getSellerFeatures` |
+| A `SellerIntegration` of type RAZORPAY with `enabled = true` | `canAcceptPayments` |
+
+Plus the product must have a real price — `priceOnRequest` products stay
+enquiry-only even in a store that takes payment. Everywhere else the contact
+buttons are the only call to action.
+
+### Money
+
+Bzaro never holds it. Each seller stores **their own** Razorpay key pair,
+AES-256-GCM encrypted under `INTEGRATIONS_ENCRYPTION_KEY`; the order is created
+against the seller's account and settles there. The decrypted config leaves
+`integration.service.ts` only through `getRazorpayConfig` / `getShiprocketConfig`.
+
+### Confirming a payment
+
+Two independent paths, both idempotent:
+
+1. **Browser callback** — fast, optional. The signature
+   (`HMAC(keySecret, orderId|paymentId)`) is verified server-side; the browser
+   saying "paid" is not evidence of payment.
+2. **Webhook** (`/api/webhooks/razorpay`) — reliable. Verified against the
+   seller's webhook secret over the **raw** body, and de-duplicated through
+   `WebhookEvent (provider, eventId)`.
+
+`markPaid` is a guarded `updateMany`, so whichever arrives first does the work
+and the other is a provable no-op. That is what stops a duplicate delivery
+fanning out two sets of demand alerts.
+
+### Demand alerts
+
+A paid order creates an `Order` for exactly one seller — never a lead — and an
+anonymous `DemandAlert` for up to 20 other verified sellers in the same category
+and city. The alert carries no buyer column of any kind and the quantity is
+**banded** (`quantityBand`), because an exact quantity plus a timestamp would
+re-identify the order behind it.
+
+### Shipping
+
+Shiprocket has no API-key auth: an email and password are exchanged for a
+bearer token that lasts ~10 days. That token is cached inside the seller's own
+encrypted config and refreshed a day early, so a burst of shipments costs one
+login rather than one per order. Re-saving credentials deliberately discards the
+cached token — reusing one minted from the old password would hide a typo until
+it expired days later.
+
+`createShipmentForOrder` claims the order with a guarded `updateMany` on
+`shiprocketOrderId` **before** calling out, so a double-click or a retried
+webhook cannot book two real pickups. Failure is never fatal: the order stays
+paid and unshipped with the reason recorded, for the seller to book by hand.
+
+Auto-create is opt-in per seller. When it is off, the Orders tab shows
+"Ship now".

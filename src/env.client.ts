@@ -25,6 +25,8 @@ const clientSchema = z.object({
   NEXT_PUBLIC_PROTOCOL: z.enum(["http", "https"]).default("https"),
   NEXT_PUBLIC_PLATFORM_NAME: z.string().min(1).default("Bzaro"),
   NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  /** Turnstile site key. Public by design; the secret stays server-side. */
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
 });
 
 /**
@@ -37,6 +39,7 @@ const values = {
   NEXT_PUBLIC_PROTOCOL: process.env.NEXT_PUBLIC_PROTOCOL,
   NEXT_PUBLIC_PLATFORM_NAME: process.env.NEXT_PUBLIC_PLATFORM_NAME,
   NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
 };
 
 const parsed = clientSchema.safeParse(values);

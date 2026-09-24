@@ -9,7 +9,7 @@ import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, productJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
-import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
 
 /**
  * Marketplace product page.
@@ -71,6 +71,8 @@ export default async function MarketplaceProductPage({ params }: Props) {
 
   const hasWebsite = product.seller.webPresence !== "CATALOGUE";
   const micrositeUrl = sellerSiteUrl(product.seller, `/products/${product.slug}`);
+  // JSON-LD and canonical use micrositeUrl; only the clickable link is tagged.
+  const micrositeVisitUrl = sellerVisitUrl(product.seller, `/products/${product.slug}`);
   const locality = [product.seller.location?.name, product.seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
@@ -175,7 +177,7 @@ export default async function MarketplaceProductPage({ params }: Props) {
             {locality ? <p className="text-sm text-neutral-600">{locality}</p> : null}
             {hasWebsite ? (
               <a
-                href={micrositeUrl}
+                href={micrositeVisitUrl}
                 className="text-brand-700 mt-2 inline-block text-sm underline underline-offset-2"
               >
                 Visit their website ↗

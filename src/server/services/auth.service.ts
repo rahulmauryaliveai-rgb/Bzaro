@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { mailer } from "@/lib/mail";
 import { passwordChangedEmail, passwordResetEmail, verificationEmail } from "@/lib/mail/templates";
 import { consumeToken, issueToken, TOKEN_PURPOSES } from "@/lib/tokens";
+import { issueEmailOtp, verifyEmailOtp } from "@/lib/otp/email-challenge";
 import { marketplaceUrl } from "@/lib/utils/url";
 
 /**
@@ -96,6 +97,183 @@ export async function registerUser(input: {
   const emailSent = await sendVerificationEmail(user.email);
 
   return { ok: true, userId: user.id, emailSent };
+}
+
+export type RegisterBuyerResult =
+  | { ok: true; userId: string; codeSent: boolean }
+  | { ok: false; reason: "email_taken" | "phone_taken" };
+
+/**
+ * Register a buyer (D35).
+ *
+ * Differs from `registerUser` in how the address is proved: a six-digit code
+ * (`EmailOtp`) rather than a link, because signup happens inside a modal on top
+ * of a half-filled requirement form. Sending the buyer to their inbox to click
+ * a link would lose that context; a code they can type back keeps it.
+ *
+ * The account is created before the code is verified — `emailVerified` stays
+ * null until then — so a buyer who closes the modal can finish later instead of
+ * re-entering everything.
+ */
+export async function registerBuyer(input: {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  ipHash?: string | null;
+}): Promise<RegisterBuyerResult> {
+  const email = input.email.toLowerCase();
+
+  const existing = await db.user.findUnique({ where: { email }, select: { id: true } });
+  if (existing) return { ok: false, reason: "email_taken" };
+
+  const phoneOwner = await db.user.findUnique({
+    where: { phone: input.phone },
+    select: { id: true },
+  });
+  if (phoneOwner) return { ok: false, reason: "phone_taken" };
+
+  const passwordHash = await hash(input.password, ARGON2_OPTIONS);
+
+  const user = await db.user.create({
+    data: {
+      email,
+      name: input.name.trim(),
+      passwordHash,
+      role: "BUYER",
+      phone: input.phone,
+      // Deliberately null: the email is proved at signup, the phone is not.
+      phoneVerified: null,
+      buyerProfile: { create: {} },
+    },
+    select: { id: true },
+  });
+
+  await db.auditLog.create({ data: { actorId: user.id, action: "auth.buyer_register" } });
+
+  const issued = await issueEmailOtp({ email, purpose: "SIGNUP", ipHash: input.ipHash });
+
+  return { ok: true, userId: user.id, codeSent: issued.ok };
+}
+
+export type ConfirmBuyerEmailResult =
+  | { ok: true; userId: string }
+  | {
+      ok: false;
+      reason: "invalid" | "expired" | "locked" | "mismatch" | "no_user";
+      attemptsRemaining?: number;
+    };
+
+/** Check the signup code and mark the address verified. */
+export async function confirmBuyerEmail(
+  email: string,
+  code: string,
+): Promise<ConfirmBuyerEmailResult> {
+  const normalized = email.toLowerCase();
+  const result = await verifyEmailOtp({ email: normalized, purpose: "SIGNUP", code });
+
+  if (!result.ok) {
+    return { ok: false, reason: result.reason, attemptsRemaining: result.attemptsRemaining };
+  }
+
+  const user = await db.user.findUnique({
+    where: { email: normalized },
+    select: { id: true, emailVerified: true },
+  });
+  if (!user) return { ok: false, reason: "no_user" };
+
+  if (!user.emailVerified) {
+    await db.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+    await db.auditLog.create({
+      data: { actorId: user.id, action: "auth.email_verified" },
+    });
+  }
+
+  return { ok: true, userId: user.id };
+}
+
+/**
+ * Begin a password reset by code. Same enumeration rule as the link-based
+ * flow: the caller is told nothing about whether the address exists.
+ */
+export async function requestPasswordResetOtp(
+  email: string,
+  ipHash?: string | null,
+): Promise<void> {
+  const normalized = email.toLowerCase();
+
+  const user = await db.user.findUnique({
+    where: { email: normalized },
+    select: { id: true, isActive: true, deletedAt: true },
+  });
+  if (!user || !user.isActive || user.deletedAt) return;
+
+  await issueEmailOtp({ email: normalized, purpose: "RESET_PASSWORD", ipHash });
+  await db.auditLog.create({
+    data: { actorId: user.id, action: "auth.password_reset_requested" },
+  });
+}
+
+export type ResetWithOtpResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "invalid" | "expired" | "locked" | "mismatch" | "no_user";
+      attemptsRemaining?: number;
+    };
+
+export async function resetPasswordWithOtp(input: {
+  email: string;
+  code: string;
+  password: string;
+}): Promise<ResetWithOtpResult> {
+  const normalized = input.email.toLowerCase();
+  const result = await verifyEmailOtp({
+    email: normalized,
+    purpose: "RESET_PASSWORD",
+    code: input.code,
+  });
+
+  if (!result.ok) {
+    return { ok: false, reason: result.reason, attemptsRemaining: result.attemptsRemaining };
+  }
+
+  const user = await db.user.findUnique({ where: { email: normalized }, select: { id: true } });
+  if (!user) return { ok: false, reason: "no_user" };
+
+  const passwordHash = await hash(input.password, ARGON2_OPTIONS);
+
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      emailVerified: new Date(),
+      failedLogins: 0,
+      lockedUntil: null,
+      // Whoever forced the reset may have had a live session. Kill all of them.
+      sessionsInvalidAfter: new Date(),
+    },
+  });
+
+  await db.auditLog.create({
+    data: { actorId: user.id, action: "auth.password_reset_completed" },
+  });
+
+  await mailer.send(passwordChangedEmail({ to: normalized }));
+
+  return { ok: true };
+}
+
+/** One-time phone capture after a Google sign-in, which carries no number. */
+export async function setBuyerPhone(
+  userId: string,
+  phone: string,
+): Promise<{ ok: true } | { ok: false; reason: "phone_taken" }> {
+  const owner = await db.user.findUnique({ where: { phone }, select: { id: true } });
+  if (owner && owner.id !== userId) return { ok: false, reason: "phone_taken" };
+
+  await db.user.update({ where: { id: userId }, data: { phone } });
+  return { ok: true };
 }
 
 /** Issue a fresh verification link and email it. */

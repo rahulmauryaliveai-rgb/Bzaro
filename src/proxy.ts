@@ -63,6 +63,9 @@ export const SITE_SEGMENT = "/site";
  */
 export const TENANT_PATH_HEADER = "x-tenant-path";
 
+/** First-touch marketplace attribution, 30 days. See `withReferralCookie`. */
+export const REFERRAL_COOKIE = "bz_ref";
+
 /** Authenticated surfaces that must never be cached or indexed. */
 const PRIVATE_PREFIXES = ["/dashboard", "/admin"] as const;
 
@@ -188,7 +191,32 @@ function rewriteWithPath(request: NextRequest, url: URL, originalPath: string) {
   // must not be able to influence where a redirect points.
   headers.set(TENANT_PATH_HEADER, originalPath);
 
-  return NextResponse.rewrite(url, { request: { headers } });
+  return withReferralCookie(request, NextResponse.rewrite(url, { request: { headers } }));
+}
+
+/**
+ * First-touch `?ref=bzaro` attribution.
+ *
+ * Set on the seller's storefront when the visitor arrived from the marketplace,
+ * so the seller can be shown which leads Bzaro sent them. FIRST touch, not
+ * last: an existing cookie is never overwritten, because the marketplace's
+ * claim to the introduction belongs to the visit that made it, and re-writing
+ * on every later visit would let any link re-attribute an existing customer.
+ *
+ * Not signed, and it only ever adds a label to a lead the seller already has.
+ */
+function withReferralCookie(request: NextRequest, response: NextResponse) {
+  if (request.nextUrl.searchParams.get("ref") !== "bzaro") return response;
+  if (request.cookies.has(REFERRAL_COOKIE)) return response;
+
+  response.cookies.set(REFERRAL_COOKIE, "bzaro", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: IS_PRODUCTION,
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  return response;
 }
 
 export const config = {

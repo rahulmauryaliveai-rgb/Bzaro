@@ -1,28 +1,23 @@
 "use client";
 
 import { startTransition, useActionState, useEffect, useRef, useState } from "react";
-import {
-  requestOtpAction,
-  resolveBuyerSessionAction,
-  verifyOtpAction,
-  type OtpRequestState,
-  type OtpVerifyState,
-} from "@/server/actions/otp";
+import Link from "next/link";
+import { resolveBuyerSessionAction } from "@/server/actions/buyer";
 import { submitRequirementAction, type RequirementState } from "@/server/actions/requirement";
-import { BUYER_CONSENT_TEXT } from "@/lib/validation/otp";
+import { CONSENT_TEXT } from "@/lib/consent";
+import { BuyerAuth } from "@/components/buyer/AuthModal";
 import { PURPOSE_LABELS, QUANTITY_UNITS, TIMELINE_LABELS } from "@/lib/validation/requirement";
-import { formatPhone } from "@/lib/buyer/phone";
 import { Field, Select, TextArea } from "@/components/dashboard/fields";
 
 /**
  * The contact-intent modal (docs/LEADS.md §1).
  *
- *   phone → otp → requirement → done
+ *   requirement → (sign in, if needed) → done
  *
  * Opens only when the buyer presses "Enquire on WhatsApp" or "Get Best Price"
- * — never on page load. A buyer with a valid cookie skips straight to the
- * requirement step; the check happens on open, not on render, so the pages
- * that mount this stay cacheable.
+ * — never on page load. A signed-in buyer goes straight to the requirement
+ * step; the check happens on open, not on render, so the pages that mount this
+ * stay cacheable.
  *
  * Each step is a real form posting to a Server Action through
  * `useActionState`, so the flow degrades to full-page posts without
@@ -45,12 +40,38 @@ export type ContactTarget = {
   categoryId?: string;
   /** True when the seller has a usable WhatsApp number. */
   sellerHasWhatsApp: boolean;
+  /** True when the seller has a phone to reveal after a CALL requirement. */
+  sellerHasPhone?: boolean;
 };
 
 export type CityOption = { id: string; name: string };
 export type CategoryOption = { id: string; name: string };
 
-type Step = "checking" | "phone" | "otp" | "requirement";
+/**
+ * Values carried over from a previous requirement ("Re-post"). Only the parts
+ * worth retyping — never the consent, which is given afresh each time.
+ */
+export type RequirementPrefill = {
+  productName?: string;
+  quantity?: number;
+  quantityUnit?: string;
+  categoryId?: string;
+  locationId?: string;
+  timeline?: string;
+  purpose?: string;
+  notes?: string;
+};
+
+/** Which trigger the buyer pressed. Recorded on the Requirement. */
+export type ContactIntentKind = "whatsapp" | "price" | "call";
+
+const TRIGGER_BY_INTENT = {
+  whatsapp: "WHATSAPP",
+  price: "ENQUIRY",
+  call: "CALL",
+} as const;
+
+type Step = "checking" | "signin" | "requirement";
 
 export function ContactIntentModal({
   open,
@@ -63,7 +84,7 @@ export function ContactIntentModal({
   onClose: () => void;
   target: ContactTarget;
   cities: CityOption[];
-  intent: "whatsapp" | "price";
+  intent: ContactIntentKind;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   // Remount the steps on every open so a reopen starts from the cookie check.
@@ -92,7 +113,11 @@ export function ContactIntentModal({
       <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4">
         <div>
           <h2 id="contact-intent-title" className="text-base font-semibold">
-            {intent === "price" ? "Get the best price" : "Contact on WhatsApp"}
+            {intent === "price"
+              ? "Get the best price"
+              : intent === "call"
+                ? "Get the seller's number"
+                : "Contact on WhatsApp"}
           </h2>
           <p className="mt-0.5 text-xs text-neutral-500">
             {target.productName ? `${target.productName} · ` : ""}
@@ -110,7 +135,9 @@ export function ContactIntentModal({
       </div>
 
       <div className="px-5 py-4">
-        {open ? <ContactIntentSteps key={session} target={target} cities={cities} /> : null}
+        {open ? (
+          <ContactIntentSteps key={session} target={target} cities={cities} intent={intent} />
+        ) : null}
       </div>
     </dialog>
   );
@@ -124,32 +151,38 @@ export function ContactIntentSteps({
   target,
   cities,
   categories,
+  intent = "price",
+  prefill,
 }: {
   target: ContactTarget;
   cities: CityOption[];
   categories?: CategoryOption[];
+  intent?: ContactIntentKind;
+  prefill?: RequirementPrefill;
 }) {
   const [step, setStep] = useState<Step>("checking");
-  const [phone, setPhone] = useState<string>("");
   const [buyer, setBuyer] = useState<{ name: string | null; locationId: string | null } | null>(
     null,
   );
+  /**
+   * The requirement the buyer tried to send before we asked them to sign in.
+   * Held here rather than in the form, which unmounts while the auth step is
+   * shown — losing it would mean retyping everything after verifying an email.
+   */
+  const [draft, setDraft] = useState<FormData | null>(null);
 
-  // On mount: does this visitor already hold a buyer cookie?
+  // On mount: is anyone signed in? Either way the buyer fills the requirement
+  // first — signing in is the step between "Send" and the lead.
   useEffect(() => {
     let cancelled = false;
     resolveBuyerSessionAction()
       .then((result) => {
         if (cancelled) return;
-        if (result.buyer) {
-          setBuyer(result.buyer);
-          setStep("requirement");
-        } else {
-          setStep("phone");
-        }
+        if (result.buyer) setBuyer(result.buyer);
+        setStep("requirement");
       })
       .catch(() => {
-        if (!cancelled) setStep("phone");
+        if (!cancelled) setStep("requirement");
       });
     return () => {
       cancelled = true;
@@ -162,25 +195,7 @@ export function ContactIntentSteps({
         <p className="py-6 text-center text-sm text-neutral-500">One moment…</p>
       ) : null}
 
-      {step === "phone" ? (
-        <PhoneStep
-          onSent={(sentTo) => {
-            setPhone(sentTo);
-            setStep("otp");
-          }}
-        />
-      ) : null}
-
-      {step === "otp" ? (
-        <OtpStep
-          phone={phone}
-          onVerified={(session) => {
-            setBuyer(session);
-            setStep("requirement");
-          }}
-          onChangeNumber={() => setStep("phone")}
-        />
-      ) : null}
+      {step === "signin" ? <SignInStep onAuthenticated={() => setStep("requirement")} /> : null}
 
       {step === "requirement" ? (
         <RequirementStep
@@ -188,158 +203,54 @@ export function ContactIntentSteps({
           cities={cities}
           categories={categories}
           buyer={buyer}
-          onSessionLost={() => setStep("phone")}
+          draft={draft}
+          onDraft={setDraft}
+          intent={intent}
+          prefill={prefill}
+          onSessionLost={() => setStep("signin")}
         />
       ) : null}
     </>
   );
 }
 
-// ── Step 1: phone ────────────────────────────────────────────────────────────
-
-function PhoneStep({ onSent }: { onSent: (phone: string) => void }) {
-  const [state, action, pending] = useActionState<OtpRequestState, FormData>(requestOtpAction, {});
-
-  useEffect(() => {
-    if (state.ok && state.phone) onSent(state.phone);
-    // onSent is stable for the life of the modal.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ok, state.phone]);
-
+/**
+ * Shown when submitting without an account. The requirement form stays mounted
+ * behind this step and its draft is held in sessionStorage, so verifying an
+ * email returns the buyer to a filled form rather than an empty one.
+ */
+function SignInStep({ onAuthenticated }: { onAuthenticated: () => void }) {
   return (
-    <form action={action} className="space-y-4">
-      <input type="hidden" name="purpose" value="BUYER_CONTACT" />
-      <Honeypot />
-
-      <p className="text-sm text-neutral-700">
-        Enter your mobile number. We&apos;ll send a one-time code to confirm it&apos;s you.
+    <div className="py-1">
+      <p className="mb-4 text-sm text-neutral-600">
+        Your requirement is ready to send. Create an account so sellers can reply to you.
       </p>
-
-      <Field
-        label="Mobile number"
-        name="phone"
-        type="tel"
-        inputMode="numeric"
-        placeholder="98765 43210"
-        required
-        error={state.fieldErrors?.phone}
-      />
-
-      {state.error ? <ErrorText>{state.error}</ErrorText> : null}
-
-      <PrimaryButton pending={pending}>Send code</PrimaryButton>
-    </form>
-  );
-}
-
-// ── Step 2: OTP ──────────────────────────────────────────────────────────────
-
-function OtpStep({
-  phone,
-  onVerified,
-  onChangeNumber,
-}: {
-  phone: string;
-  onVerified: (buyer: { name: string | null; locationId: string | null }) => void;
-  onChangeNumber: () => void;
-}) {
-  const [state, action, pending] = useActionState<OtpVerifyState, FormData>(verifyOtpAction, {});
-  const [resend, resendAction, resending] = useActionState<OtpRequestState, FormData>(
-    requestOtpAction,
-    {},
-  );
-  // The consent box lives OUTSIDE the form and feeds it through a hidden
-  // input. React resets a form once its action settles (`form.reset()`), and
-  // because the `checked` prop has not changed React never re-applies it — so
-  // a controlled checkbox inside the form would silently untick after every
-  // wrong code. Hidden inputs are untouched by a reset.
-  const [consent, setConsent] = useState(false);
-
-  useEffect(() => {
-    if (state.ok) onVerified(state.buyer ?? { name: null, locationId: null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ok]);
-
-  return (
-    <div className="space-y-4">
-      <form action={action} className="space-y-4">
-        <input type="hidden" name="purpose" value="BUYER_CONTACT" />
-        <input type="hidden" name="phone" value={phone} />
-
-        <p className="text-sm text-neutral-700">
-          We sent a 6-digit code to <span className="font-medium">{formatPhone(phone)}</span>.{" "}
-          <button
-            type="button"
-            onClick={onChangeNumber}
-            className="text-teal-700 underline-offset-2 hover:underline"
-          >
-            Change number
-          </button>
-        </p>
-
-        <Field
-          label="One-time code"
-          name="code"
-          inputMode="numeric"
-          placeholder="••••••"
-          maxLength={6}
-          required
-          error={state.fieldErrors?.code}
-        />
-        {state.attemptsRemaining !== undefined && state.attemptsRemaining > 0 ? (
-          <p className="-mt-2 text-xs text-neutral-500">
-            {state.attemptsRemaining} attempt{state.attemptsRemaining === 1 ? "" : "s"} left
-          </p>
-        ) : null}
-
-        <input type="hidden" name="consent" value={consent ? "on" : ""} />
-        {state.fieldErrors?.consent ? <ErrorText>{state.fieldErrors.consent}</ErrorText> : null}
-
-        {state.error ? <ErrorText>{state.error}</ErrorText> : null}
-
-        <PrimaryButton pending={pending}>Verify</PrimaryButton>
-      </form>
-
-      <label className="flex items-start gap-2 text-xs text-neutral-700">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(event) => setConsent(event.currentTarget.checked)}
-          className="mt-0.5"
-        />
-        <span>{BUYER_CONSENT_TEXT}</span>
-      </label>
-
-      <form action={resendAction} className="text-center text-xs text-neutral-500">
-        <input type="hidden" name="purpose" value="BUYER_CONTACT" />
-        <input type="hidden" name="phone" value={phone} />
-        Didn&apos;t get it?{" "}
-        <button
-          type="submit"
-          disabled={resending}
-          className="text-teal-700 underline-offset-2 hover:underline disabled:opacity-50"
-        >
-          {resending ? "Sending…" : resend.ok ? "Sent again" : "Resend code"}
-        </button>
-        {resend.error ? <ErrorText>{resend.error}</ErrorText> : null}
-      </form>
+      <BuyerAuth initialView="signup" onDone={onAuthenticated} />
     </div>
   );
 }
 
-// ── Step 3: requirement ──────────────────────────────────────────────────────
+// ── Requirement form ─────────────────────────────────────────────────────────
 
 function RequirementStep({
   target,
   cities,
   categories,
   buyer,
+  draft,
+  onDraft,
+  intent,
+  prefill,
   onSessionLost,
 }: {
   target: ContactTarget;
   cities: CityOption[];
   categories?: CategoryOption[];
   buyer: { name: string | null; locationId: string | null } | null;
+  draft: FormData | null;
+  onDraft: (draft: FormData) => void;
+  intent: ContactIntentKind;
+  prefill?: RequirementPrefill;
   onSessionLost: () => void;
 }) {
   const [state, action, pending] = useActionState<RequirementState, FormData>(
@@ -347,11 +258,27 @@ function RequirementStep({
     {},
   );
   const openedRef = useRef(false);
+  /**
+   * True means "no auto-submit". Seeded from whether a draft already existed at
+   * mount: this step unmounts while the auth step shows, so a draft present on
+   * mount means the buyer is coming back from signing in. A draft that appears
+   * later is just this form's own submission and must not be sent twice.
+   */
+  const resubmittedRef = useRef(draft === null);
 
   useEffect(() => {
     if (state.errorKind === "session") onSessionLost();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.errorKind]);
+
+  // Returning from the auth step: send the requirement they already filled in
+  // rather than making them press Send a second time.
+  useEffect(() => {
+    if (!draft || resubmittedRef.current) return;
+    resubmittedRef.current = true;
+    startTransition(() => action(draft));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   useEffect(() => {
     if (!state.ok) return;
@@ -374,9 +301,19 @@ function RequirementStep({
               Your requirement was sent to <span className="font-medium">{target.sellerName}</span>.
             </>
           ) : (
-            "Your requirement is posted. Matched suppliers will contact you on the number you verified."
+            "Your requirement is posted. Matched suppliers will contact you on the number on your account."
           )}
         </p>
+
+        {state.sellerPhone ? (
+          <a
+            href={`tel:${state.sellerPhone}`}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            Call {state.sellerPhone}
+          </a>
+        ) : null}
+
         {state.whatsappUrl ? (
           <a
             href={state.whatsappUrl}
@@ -396,8 +333,25 @@ function RequirementStep({
   }
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={(formData) => {
+        // Kept so an unauthenticated submit can be replayed after sign-up.
+        onDraft(formData);
+        return action(formData);
+      }}
+      className="space-y-4"
+    >
       <Honeypot />
+      <input
+        type="hidden"
+        name="trigger"
+        value={target.sellerId ? TRIGGER_BY_INTENT[intent] : "SEARCH_CARD"}
+      />
+      <input
+        type="hidden"
+        name="source"
+        value={target.sellerId ? "STOREFRONT" : "BZARO_MARKETPLACE"}
+      />
       {target.productId ? <input type="hidden" name="productId" value={target.productId} /> : null}
       {target.sellerId ? <input type="hidden" name="sellerId" value={target.sellerId} /> : null}
       {target.categoryId ? (
@@ -408,7 +362,7 @@ function RequirementStep({
         <Select
           label="Category"
           name="categoryId"
-          defaultValue=""
+          defaultValue={prefill?.categoryId ?? ""}
           placeholder="Choose a category"
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
           error={state.fieldErrors?.categoryId}
@@ -418,7 +372,7 @@ function RequirementStep({
       <Field
         label="What do you need?"
         name="productName"
-        defaultValue={target.productName ?? ""}
+        defaultValue={prefill?.productName ?? target.productName ?? ""}
         placeholder="e.g. LED bulb 9W"
         required
         maxLength={200}
@@ -431,6 +385,7 @@ function RequirementStep({
           name="quantity"
           type="number"
           inputMode="numeric"
+          defaultValue={prefill?.quantity ? String(prefill.quantity) : undefined}
           placeholder="500"
           required
           error={state.fieldErrors?.quantity}
@@ -438,7 +393,7 @@ function RequirementStep({
         <Select
           label="Unit"
           name="quantityUnit"
-          defaultValue="pieces"
+          defaultValue={prefill?.quantityUnit ?? "pieces"}
           options={QUANTITY_UNITS.map((unit) => ({ value: unit, label: unit }))}
           error={state.fieldErrors?.quantityUnit}
         />
@@ -447,7 +402,7 @@ function RequirementStep({
       <Select
         label="Your city"
         name="locationId"
-        defaultValue={buyer?.locationId ?? ""}
+        defaultValue={prefill?.locationId ?? buyer?.locationId ?? ""}
         placeholder="Choose a city"
         options={cities.map((city) => ({ value: city.id, label: city.name }))}
         error={state.fieldErrors?.locationId}
@@ -457,14 +412,14 @@ function RequirementStep({
         <Select
           label="When do you need it?"
           name="timeline"
-          defaultValue="WITHIN_WEEK"
+          defaultValue={prefill?.timeline ?? "WITHIN_WEEK"}
           options={Object.entries(TIMELINE_LABELS).map(([value, label]) => ({ value, label }))}
           error={state.fieldErrors?.timeline}
         />
         <Select
           label="Purpose"
           name="purpose"
-          defaultValue="BUSINESS_USE"
+          defaultValue={prefill?.purpose ?? "BUSINESS_USE"}
           options={Object.entries(PURPOSE_LABELS).map(([value, label]) => ({ value, label }))}
           error={state.fieldErrors?.purpose}
         />
@@ -481,6 +436,7 @@ function RequirementStep({
       <TextArea
         label="Anything else? (optional)"
         name="notes"
+        defaultValue={prefill?.notes ?? ""}
         rows={2}
         maxLength={1000}
         placeholder="Specifications, delivery needs…"
@@ -488,6 +444,13 @@ function RequirementStep({
       />
 
       {state.error ? <ErrorText>{state.error}</ErrorText> : null}
+
+      <p className="text-xs text-neutral-500">
+        {CONSENT_TEXT}{" "}
+        <Link href="/privacy" className="underline hover:text-neutral-700">
+          Privacy Policy
+        </Link>
+      </p>
 
       <PrimaryButton pending={pending}>
         {target.sellerHasWhatsApp ? "Send & open WhatsApp" : "Send requirement"}

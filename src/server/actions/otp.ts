@@ -4,15 +4,13 @@ import { headers } from "next/headers";
 import { checkRateLimit, getClientIp, hashIp } from "@/lib/ratelimit";
 import { requestOtpSchema, verifyOtpSchema } from "@/lib/validation/otp";
 import { issueOtp, verifyOtp } from "@/lib/otp/challenge";
-import { readBuyerIdFromCookie, setBuyerCookie } from "@/lib/buyer/cookie";
-import { getBuyerSession, upsertBuyerFromOtp } from "@/server/services/buyer.service";
 
 /**
- * OTP request / verify for the buyer contact flow (docs/LEADS.md §1).
+ * Phone OTP request / verify. Seller onboarding only — buyers verify an email
+ * address instead (see EmailOtp), so this no longer has a buyer path.
  *
- * Both actions are reachable from tenant subdomains as well as the
- * marketplace — `serverActions.allowedOrigins` covers `*.<root domain>` —
- * and both are rate limited before they touch the database or the provider.
+ * Both actions are rate limited before they touch the database or the
+ * provider.
  *
  * Error copy is deliberately uniform for "no such challenge" versus "wrong
  * code": distinguishing them tells an attacker whether a number is mid-flow.
@@ -31,8 +29,6 @@ export type OtpVerifyState = {
   error?: string;
   fieldErrors?: Record<string, string>;
   attemptsRemaining?: number;
-  /** Prefill for the requirement step. */
-  buyer?: { name: string | null; locationId: string | null };
 };
 
 function fieldErrorsFrom(issues: { path: PropertyKey[]; message: string }[]) {
@@ -84,15 +80,10 @@ export async function verifyOtpAction(
     phone: formData.get("phone"),
     purpose: formData.get("purpose"),
     code: formData.get("code"),
-    consent: formData.get("consent") ?? undefined,
   });
   if (!parsed.success) return { fieldErrors: fieldErrorsFrom(parsed.error.issues) };
 
-  const { phone, purpose, code, consent } = parsed.data;
-
-  if (purpose === "BUYER_CONTACT" && !consent) {
-    return { fieldErrors: { consent: "Please agree to share your requirement to continue." } };
-  }
+  const { phone, purpose, code } = parsed.data;
 
   const limit = await checkRateLimit("otpVerify", phone);
   if (!limit.success) {
@@ -117,37 +108,5 @@ export async function verifyOtpAction(
     }
   }
 
-  if (purpose !== "BUYER_CONTACT") {
-    // Seller signup verification lands in Phase 6; the challenge is consumed
-    // either way so the code cannot be replayed there.
-    return { ok: true };
-  }
-
-  const buyer = await upsertBuyerFromOtp(phone);
-  if (buyer.isBlocked) {
-    return { error: "This number can't be used to contact suppliers." };
-  }
-
-  await setBuyerCookie(buyer.id);
-
-  return { ok: true, buyer: { name: buyer.name, locationId: buyer.locationId } };
-}
-
-export type BuyerSessionState = {
-  buyer: { name: string | null; locationId: string | null } | null;
-};
-
-/**
- * Whether the visitor already holds a valid buyer cookie. Called when the
- * contact modal opens, so the public pages that mount it stay cacheable
- * (reading cookies during render would make them dynamic).
- */
-export async function resolveBuyerSessionAction(): Promise<BuyerSessionState> {
-  const buyerId = await readBuyerIdFromCookie();
-  if (!buyerId) return { buyer: null };
-
-  const buyer = await getBuyerSession(buyerId);
-  if (!buyer || buyer.isBlocked) return { buyer: null };
-
-  return { buyer: { name: buyer.name, locationId: buyer.locationId } };
+  return { ok: true };
 }

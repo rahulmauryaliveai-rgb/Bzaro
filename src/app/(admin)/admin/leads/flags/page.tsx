@@ -86,7 +86,7 @@ export default async function LeadFlagsPage({
                       {r.productName} · {r.quantity} {r.quantityUnit} · {r.location.name}
                     </p>
                     <p className="mt-1 text-neutral-400">
-                      Buyer {formatPhone(r.buyer.phone)}
+                      Buyer {r.buyer.phone ? formatPhone(r.buyer.phone) : "—"}
                       {r.buyer.name ? ` (${r.buyer.name})` : ""} · lead{" "}
                       {flag.lead.status.toLowerCase()}
                       {charged ? " · 1 credit charged" : " · no credit charged"}

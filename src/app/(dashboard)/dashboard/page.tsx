@@ -8,6 +8,8 @@ import { EligibilityChecklist } from "@/components/dashboard/EligibilityChecklis
 import { ProfileCompletionBar } from "@/components/dashboard/ProfileCompletionBar";
 import { getProfileCompletion, stepPath } from "@/server/services/onboarding.service";
 import { sellerSiteUrl } from "@/lib/utils/url";
+import { getMonthlySummary } from "@/server/services/seller-summary.service";
+import { MonthlySummaryCard } from "@/components/dashboard/MonthlySummaryCard";
 
 /**
  * Dashboard overview.
@@ -35,22 +37,33 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
 
   const tdb = forSeller(scope.sellerId);
 
-  const [seller, rules, products, services, enquiries, newEnquiries, flagged, newLeads, profile] =
-    await Promise.all([
-      getDashboardSnapshot(scope.sellerId),
-      getIndexEligibilityRules(),
-      tdb.product.count({
-        where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
-      }),
-      tdb.service.count({
-        where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
-      }),
-      tdb.enquiry.count({ where: { isSpam: false } }),
-      tdb.enquiry.count({ where: { status: "NEW", isSpam: false } }),
-      tdb.product.count({ where: { moderationStatus: "FLAGGED", deletedAt: null } }),
-      tdb.lead.count({ where: { status: "NEW" } }),
-      getProfileCompletion(scope.sellerId),
-    ]);
+  const [
+    seller,
+    rules,
+    products,
+    services,
+    enquiries,
+    newEnquiries,
+    flagged,
+    newLeads,
+    profile,
+    summary,
+  ] = await Promise.all([
+    getDashboardSnapshot(scope.sellerId),
+    getIndexEligibilityRules(),
+    tdb.product.count({
+      where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
+    }),
+    tdb.service.count({
+      where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
+    }),
+    tdb.enquiry.count({ where: { isSpam: false } }),
+    tdb.enquiry.count({ where: { status: "NEW", isSpam: false } }),
+    tdb.product.count({ where: { moderationStatus: "FLAGGED", deletedAt: null } }),
+    tdb.lead.count({ where: { status: "NEW" } }),
+    getProfileCompletion(scope.sellerId),
+    getMonthlySummary(scope.sellerId),
+  ]);
 
   if (!seller) throw new Error("Seller not found for an authorised scope");
 
@@ -137,6 +150,8 @@ export default async function DashboardOverviewPage({ searchParams }: Props) {
       ) : (
         <EligibilityChecklist result={eligibility} />
       )}
+
+      <MonthlySummaryCard summary={summary} />
 
       <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Products" value={products} href="/dashboard/products" />

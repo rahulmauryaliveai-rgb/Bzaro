@@ -30,6 +30,62 @@ npm ci --no-audit --no-fund
 echo "→ generating Prisma client"
 npx prisma generate
 
+# ── Destructive-migration guard ─────────────────────────────────────────────
+# `prisma migrate deploy` never asks. A migration that drops a table or deletes
+# rows is therefore one keystroke away from being irreversible on live data,
+# and deploy/env.production.example ships with no backup configured.
+#
+# So: work out which migrations are pending, look for destructive SQL in them,
+# and refuse unless the operator has said they mean it. Override with
+#   ALLOW_DESTRUCTIVE_MIGRATION=1 bash deploy/deploy.sh
+echo "→ checking pending migrations"
+DESTRUCTIVE_RE='DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM'
+PG=bzaro-postgres
+
+# A database with no _prisma_migrations table is a fresh one: nothing to lose,
+# so the guard stays out of the way of a first deploy.
+HAS_TABLE=$(docker exec "$PG" psql -U bzaro -d bzaro -tAc \
+  "SELECT to_regclass('public._prisma_migrations') IS NOT NULL" 2>/dev/null || echo "unreachable")
+
+if [[ "$HAS_TABLE" == "unreachable" ]]; then
+  echo "✗ cannot reach $PG to check which migrations are already applied." >&2
+  echo "  The deploy would fail at the migrate step anyway — fix the database first." >&2
+  exit 1
+fi
+
+if [[ "$HAS_TABLE" == "t" ]]; then
+  APPLIED=$(docker exec "$PG" psql -U bzaro -d bzaro -tAc \
+    'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL' 2>/dev/null || true)
+
+  OFFENDERS=""
+  for dir in prisma/migrations/*/; do
+    name=$(basename "$dir")
+    if grep -qxF "$name" <<<"$APPLIED"; then continue; fi
+
+    hits=$(grep -inE "$DESTRUCTIVE_RE" "$dir/migration.sql" 2>/dev/null || true)
+    if [[ -n "$hits" ]]; then
+      OFFENDERS+="  $name"$'\n'"$(sed 's/^/      /' <<<"$hits")"$'\n'
+    else
+      echo "   pending: $name"
+    fi
+  done
+
+  if [[ -n "$OFFENDERS" && "${ALLOW_DESTRUCTIVE_MIGRATION:-}" != "1" ]]; then
+    echo "" >&2
+    echo "✗ a pending migration destroys data:" >&2
+    echo "$OFFENDERS" >&2
+    echo "  Back up first:" >&2
+    echo "    docker exec $PG pg_dump -U bzaro bzaro > ~/bzaro-\$(date +%F-%H%M).sql" >&2
+    echo "" >&2
+    echo "  Then re-run:  ALLOW_DESTRUCTIVE_MIGRATION=1 bash deploy/deploy.sh" >&2
+    exit 1
+  fi
+
+  if [[ -n "$OFFENDERS" ]]; then
+    echo "   ⚠ applying a DESTRUCTIVE migration because ALLOW_DESTRUCTIVE_MIGRATION=1"
+  fi
+fi
+
 echo "→ applying migrations"
 npx prisma migrate deploy
 

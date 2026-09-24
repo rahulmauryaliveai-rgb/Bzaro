@@ -31,6 +31,39 @@ export function verificationEmail(params: { to: string; url: string }): MailMess
   };
 }
 
+/**
+ * The buyer's six-digit code. The subject line carries the code itself so it is
+ * readable from a notification without opening the mail — the single biggest
+ * thing that makes an emailed OTP feel as quick as an SMS.
+ */
+export function emailOtpEmail(params: {
+  to: string;
+  code: string;
+  purpose: "SIGNUP" | "RESET_PASSWORD";
+  ttlMinutes: number;
+}): MailMessage {
+  const reason =
+    params.purpose === "SIGNUP"
+      ? `Confirm your email to finish setting up your ${platform} account.`
+      : `Use this code to choose a new ${platform} password.`;
+
+  return {
+    to: params.to,
+    subject: `Your ${platform} verification code: ${params.code}`,
+    text: [
+      reason,
+      ``,
+      params.code,
+      ``,
+      `This code expires in ${params.ttlMinutes} minutes and can only be used once.`,
+      ``,
+      params.purpose === "SIGNUP"
+        ? `If you didn't create an account, you can ignore this email.`
+        : `If you didn't ask to reset your password, you can ignore this email — your password will not change.`,
+    ].join("\n"),
+  };
+}
+
 export function passwordResetEmail(params: { to: string; url: string }): MailMessage {
   return {
     to: params.to,

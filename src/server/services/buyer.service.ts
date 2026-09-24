@@ -1,60 +1,72 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth/config";
 
 /**
- * Buyer identity (decision D28).
+ * Buyer identity.
  *
- * A Buyer is a verified phone number. It is created the first time an OTP for
- * BUYER_CONTACT is confirmed and updated on every subsequent verification, so
- * `phoneVerifiedAt` always reflects the most recent proof of possession.
+ * A buyer is a full `User` account — email and password verified by an email
+ * OTP, or Google — so identity comes from the Auth.js session and never from a
+ * separate cookie. `BuyerProfile` holds only what is specific to buying: the
+ * last location they chose, which pre-fills the requirement form.
  */
 
 export type BuyerSession = {
   id: string;
-  phone: string;
   name: string | null;
+  /** Nullable: `User.phone` is optional, and sellers/admins share this table. */
+  phone: string | null;
   locationId: string | null;
   isBlocked: boolean;
 };
 
-const sessionSelect = {
-  id: true,
-  phone: true,
-  name: true,
-  locationId: true,
-  isBlocked: true,
-} as const;
-
-/** Called once an OTP has been verified for `phone`. */
-export async function upsertBuyerFromOtp(phone: string): Promise<BuyerSession> {
-  const now = new Date();
-  return db.buyer.upsert({
-    where: { phone },
-    create: { phone, phoneVerifiedAt: now, lastSeenAt: now },
-    update: { phoneVerifiedAt: now, lastSeenAt: now },
-    select: sessionSelect,
-  });
-}
-
 /**
- * Resolve a buyer from a cookie-supplied id. Returns null for an unknown id —
- * a stale cookie after a data reset must fall back to the OTP step, not 500.
+ * The signed-in buyer, or null when nobody is signed in. Returns a session for
+ * any authenticated user: a seller browsing the marketplace is also a buyer.
  */
-export async function getBuyerSession(buyerId: string): Promise<BuyerSession | null> {
-  return db.buyer.findUnique({ where: { id: buyerId }, select: sessionSelect });
+export async function getBuyerSession(): Promise<BuyerSession | null> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return null;
+
+  const user = await db.user.findFirst({
+    where: { id: userId, isActive: true, deletedAt: null },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      buyerProfile: { select: { locationId: true, isBlocked: true } },
+    },
+  });
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    name: user.name,
+    phone: user.phone,
+    locationId: user.buyerProfile?.locationId ?? null,
+    isBlocked: user.buyerProfile?.isBlocked ?? false,
+  };
 }
 
 /** Remember what the buyer told us on the requirement form. */
 export async function rememberBuyerDetails(
-  buyerId: string,
-  details: { name?: string; locationId?: string },
+  userId: string,
+  details: { name?: string; locationId?: string; pincode?: string },
 ): Promise<void> {
-  await db.buyer.update({
-    where: { id: buyerId },
-    data: {
-      ...(details.name ? { name: details.name } : {}),
-      ...(details.locationId ? { locationId: details.locationId } : {}),
-      lastSeenAt: new Date(),
-    },
+  if (details.name) {
+    await db.user.update({ where: { id: userId }, data: { name: details.name } });
+  }
+
+  const profile = {
+    ...(details.locationId ? { locationId: details.locationId } : {}),
+    ...(details.pincode ? { pincode: details.pincode } : {}),
+  };
+  if (Object.keys(profile).length === 0) return;
+
+  await db.buyerProfile.upsert({
+    where: { userId },
+    create: { userId, ...profile },
+    update: profile,
   });
 }

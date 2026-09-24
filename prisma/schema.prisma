@@ -157,11 +157,18 @@ enum OnboardingStep {
   COMPLETE
 }
 
+/// Phone OTP. Buyers no longer use this path — they authenticate with email and
+/// password (see EmailOtp), so the only remaining purpose is the seller's
+/// onboarding mobile check.
 enum OtpPurpose {
-  /// Buyer contact-intent popup (WhatsApp / Get Best Price).
-  BUYER_CONTACT
   /// Seller onboarding step 1, mobile verification.
   SELLER_SIGNUP
+}
+
+/// Email OTP, the buyer's verification channel. Sent via Resend.
+enum EmailOtpPurpose {
+  SIGNUP
+  RESET_PASSWORD
 }
 
 enum RequirementTimeline {
@@ -175,6 +182,21 @@ enum RequirementPurpose {
   RESALE
   BUSINESS_USE
   PERSONAL_USE
+}
+
+/// Which control the buyer pressed. Drives what happens after submit: CALL
+/// reveals the seller's number, WHATSAPP opens wa.me with a prefilled message.
+enum RequirementTrigger {
+  CALL
+  WHATSAPP
+  ENQUIRY
+  SEARCH_CARD
+}
+
+/// Where the requirement was raised. Attribution, not routing.
+enum RequirementSource {
+  BZARO_MARKETPLACE
+  STOREFRONT
 }
 
 /// Async fan-out state. The request that creates a Requirement only ever
@@ -193,10 +215,16 @@ enum LeadType {
   MARKET
 }
 
+/// CLOSED and EXPIRED are terminal states owned by the seller and the sweeper
+/// respectively; CONTACTED / WON / LOST are the seller's own progress markers
+/// after acceptance. See docs/LEADS.md §2.
 enum LeadStatus {
   NEW
   VIEWED
   ACCEPTED
+  CONTACTED
+  WON
+  LOST
   CLOSED
   EXPIRED
 }
@@ -236,6 +264,51 @@ enum LeadFlagStatus {
   REJECTED
 }
 
+// ── Commerce (storefronts only) ──────────────────────────────────────────────
+// Carts, orders and the seller-owned payment / shipping integrations behind
+// them. Never available on the apex — see docs/MULTI_TENANCY.md.
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum ShippingStatus {
+  NOT_SHIPPED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  RETURNED
+  CANCELLED
+}
+
+enum IntegrationType {
+  RAZORPAY
+  SHIPROCKET
+}
+
+enum IntegrationMode {
+  TEST
+  LIVE
+}
+
+/// Why a seller has a feature. ADMIN_OVERRIDE outranks the plan and is never
+/// revoked by a subscription sweep.
+enum FeatureSource {
+  PLAN
+  ADDON
+  ADMIN_OVERRIDE
+}
+
 // ═══════════════════════ IDENTITY & ACCESS ═══════════════════════════════════
 
 model User {
@@ -270,8 +343,13 @@ model User {
   memberships SellerMember[]
   reviews     Review[]
   auditLogs   AuditLog[]
-  /// Set only if a phone-first Buyer later creates a full account.
-  buyer       Buyer?
+  /// Buyer-side location and preferences. Present once the user acts as a
+  /// buyer; identity itself (email, password, phone) lives on this row.
+  buyerProfile BuyerProfile?
+  requirements Requirement[]
+  carts        Cart[]
+  orders       Order[]
+  savedSellers SavedSeller[]
 
   @@index([role])
   @@index([createdAt])
@@ -436,6 +514,12 @@ model Seller {
   events        AnalyticsEvent[]
   analytics     AnalyticsDaily[]
   payments      Payment[]
+  carts         Cart[]
+  orders        Order[]
+  demandAlerts  DemandAlert[]
+  integrations  SellerIntegration[]
+  feature       SellerFeature?
+  savedBy       SavedSeller[]
   // searchVector tsvector column + GIN index: see migration SQL.
 
   @@index([status, deletedAt])
@@ -573,6 +657,7 @@ model Category {
   services     Service[]
   sellers      SellerCategory[]
   requirements Requirement[]
+  demandAlerts DemandAlert[]
   // name trigram index: see migration SQL.
 
   @@unique([parentId, slug])
@@ -630,17 +715,41 @@ model Location {
   metaTitle       String?
   metaDescription String?
 
-  parent       Location?           @relation("LocationTree", fields: [parentId], references: [id])
-  children     Location[]          @relation("LocationTree")
-  sellers      Seller[]
-  serviceAreas SellerServiceArea[]
-  buyers       Buyer[]
-  requirements Requirement[]
+  parent        Location?           @relation("LocationTree", fields: [parentId], references: [id])
+  children      Location[]          @relation("LocationTree")
+  sellers       Seller[]
+  serviceAreas  SellerServiceArea[]
+  buyerProfiles BuyerProfile[]
+  requirements  Requirement[]
+  pincodes      Pincode[]
+  demandAlerts  DemandAlert[]
 
   @@unique([parentId, slug])
   @@index([type, isActive])
   @@index([ancestorIds], type: Gin)
   @@index([clusterKey])
+}
+
+/// India Post PIN codes, seeded NCR-first. Two jobs: resolve a pincode the
+/// buyer typed into a city, and resolve browser lat/lng to the nearest known
+/// pincode — which is why this exists instead of a paid geocoding API.
+///
+/// `locationId` is the city in the `Location` tree, so a pincode feeds the same
+/// matcher as everything else. It is nullable: the dataset covers pincodes for
+/// cities we have no `Location` row for yet.
+model Pincode {
+  pincode    String  @id
+  city       String
+  district   String?
+  state      String
+  locationId String?
+  latitude   Float?
+  longitude  Float?
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([city])
+  @@index([locationId])
 }
 
 // ════════════════════════════ CATALOGUE ══════════════════════════════════════
@@ -690,6 +799,8 @@ model Product {
   images       ProductImage[]
   enquiries    Enquiry[]
   requirements Requirement[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
   // search_vector tsvector column + GIN index: see migration SQL.
 
   // Slug is unique per tenant, not globally — two sellers may both have
@@ -867,35 +978,38 @@ model Review {
 
 // ═══════════════════════ BUYERS & LEADS ══════════════════════════════════════
 //
-// A buyer proves a phone number (OtpChallenge), states what they want
-// (Requirement), and that requirement is shown to sellers as Leads: one DIRECT
-// lead to the seller whose product was clicked, plus 0–10 MARKET leads fanned
-// out asynchronously to matched sellers. State machines, masking and credit
-// rules: docs/LEADS.md.
+// A buyer creates an account (email + password verified by EmailOtp, or
+// Google), states what they want (Requirement), and that requirement is shown
+// to sellers as Leads: one DIRECT lead to the seller whose product was clicked,
+// plus 0–10 MARKET leads fanned out asynchronously to matched sellers. State
+// machines, masking and credit rules: docs/LEADS.md.
 
-/// Phone-first buyer identity. Exists the moment an OTP is verified; no
-/// password, no email. `userId` links to a full account if one is ever made.
-model Buyer {
-  id              String   @id @default(cuid())
-  /// E.164, e.g. +919876543210. The identity key.
-  phone           String   @unique
-  phoneVerifiedAt DateTime
-  name            String?
-  email           String?  @db.Citext
-  company         String?
-  /// Last city the buyer chose.
-  locationId      String?
-  userId          String?  @unique
-  isBlocked       Boolean  @default(false)
-  lastSeenAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+/// Buyer-side extension of `User`. The buyer's identity — email, password
+/// hash, phone, phoneVerified — lives on `User`, which already carries all of
+/// them; this row holds only what is specific to buying: the last location
+/// they chose, used to pre-fill the requirement form and to match sellers.
+///
+/// `phoneVerified` on `User` stays null for now: buyers verify their email at
+/// signup, and SMS verification is not in scope yet.
+model BuyerProfile {
+  id         String  @id @default(cuid())
+  userId     String  @unique
+  /// Last city the buyer chose. Mirrors the `bz_loc` cookie for guests.
+  locationId String?
+  /// As entered, six digits. `Pincode` resolves it to a city.
+  pincode    String?
+  /// Set only after the buyer grants browser geolocation.
+  latitude   Float?
+  longitude  Float?
 
-  location     Location?     @relation(fields: [locationId], references: [id])
-  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  requirements Requirement[]
+  isBlocked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([createdAt])
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([locationId])
 }
 
 /// One row per OTP send. Only `codeHash` is stored — HMAC-SHA256 keyed by
@@ -920,9 +1034,32 @@ model OtpChallenge {
   @@index([expiresAt])
 }
 
+/// Buyer email verification and password reset. Same storage rule as
+/// `OtpChallenge` — only the HMAC of the code is kept, never the code itself —
+/// but keyed on email and delivered by Resend. 10-minute expiry, 5 attempts.
+model EmailOtp {
+  id          String          @id @default(cuid())
+  email       String          @db.Citext
+  purpose     EmailOtpPurpose
+  codeHash    String
+  attempts    Int             @default(0)
+  maxAttempts Int             @default(5)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  ipHash      String?
+  createdAt   DateTime        @default(now())
+
+  // Verify path: latest open code for this email + purpose.
+  @@index([email, purpose, createdAt(sort: Desc)])
+  // Nightly prune.
+  @@index([expiresAt])
+}
+
 /// What the buyer wants. One Requirement → one DIRECT lead + 0–10 MARKET leads.
 model Requirement {
   id             String  @id @default(cuid())
+  /// The buyer's `User` row. Buyers are full accounts (email + password, or
+  /// Google), so there is no separate buyer identity table.
   buyerId        String
   /// The product whose contact button was clicked. Null for "Post requirement".
   productId      String?
@@ -944,6 +1081,24 @@ model Requirement {
   purpose      RequirementPurpose
   notes        String?             @db.Text
 
+  /// Collected only when purpose is RESALE or BUSINESS_USE.
+  businessName String?
+  gstin        String?
+  /// As entered by the buyer; `locationId` is the city it resolved to.
+  pincode      String?
+
+  trigger RequirementTrigger
+  source  RequirementSource
+  /// Buyer arrived on the storefront from bzaro.in (`?ref=bzaro`, 30-day
+  /// first-touch cookie). Drives the seller's "from Bzaro" attribution.
+  refBzaro Boolean @default(false)
+
+  /// Which consent text the buyer agreed to, and when. Versioned because the
+  /// wording is what makes sharing the requirement with other sellers lawful —
+  /// see src/lib/consent.ts.
+  consentVersion String
+  consentAt      DateTime
+
   /// sha256 of normalised productName + categoryId. Together with buyerId and
   /// createdAt this is the 7-day "same buyer, same requirement" dedupe key.
   fingerprint String
@@ -960,7 +1115,7 @@ model Requirement {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  buyer    Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  buyer    User     @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   category Category @relation(fields: [categoryId], references: [id])
   location Location @relation(fields: [locationId], references: [id])
@@ -1095,6 +1250,212 @@ model LeadFlag {
   // Admin refund queue.
   @@index([status, createdAt(sort: Desc)])
   @@index([sellerId, createdAt(sort: Desc)])
+}
+
+// ══════════════════════ COMMERCE (STOREFRONTS ONLY) ══════════════════════════
+//
+// Carts and orders exist only on `{seller}.bzaro.in`, never on the apex, and
+// only for sellers whose `SellerFeature.paymentsEnabled` is true with a working
+// Razorpay integration. The apex guard lives in the route handlers, not just in
+// the UI. A checkout produces an Order for that one seller — never a lead — and
+// anonymous DemandAlerts for the others.
+//
+// Money is integer minor units throughout, as everywhere else in this schema.
+
+/// One cart per buyer per store. Server-side, so it survives devices.
+model Cart {
+  id        String   @id @default(cuid())
+  sellerId  String
+  buyerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller Seller     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer  User       @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  items  CartItem[]
+
+  @@unique([sellerId, buyerId])
+  @@index([buyerId])
+}
+
+model CartItem {
+  id        String @id @default(cuid())
+  cartId    String
+  productId String
+  quantity  Int
+  /// Snapshot taken when the item was added, so a price change mid-session
+  /// cannot silently move the total. Re-validated at checkout.
+  priceMinor Int
+  currency   String @default("INR")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+}
+
+/// A paid (or COD) order against exactly one seller. Appears in that seller's
+/// Orders tab and nowhere else.
+model Order {
+  id          String @id @default(cuid())
+  /// Buyer-facing reference, e.g. "BZ-2K4X9A". Unique platform-wide.
+  orderNumber String @unique
+  sellerId    String
+  buyerId     String
+
+  subtotalMinor Int
+  shippingMinor Int    @default(0)
+  taxMinor      Int    @default(0)
+  totalMinor    Int
+  currency      String @default("INR")
+
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+  /// "razorpay" | "cod"
+  paymentMethod String?
+
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String? @unique
+
+  shippingStatus    ShippingStatus @default(NOT_SHIPPED)
+  shiprocketOrderId String?
+  awb               String?
+  trackingUrl       String?
+
+  /// Snapshot at checkout — { name, line1, line2, city, state, pincode,
+  /// phone }, validated by Zod. Never a live FK: an address edited later must
+  /// not rewrite history on a shipped order.
+  shippingAddress Json
+  buyerName       String
+  buyerEmail      String? @db.Citext
+  buyerPhone      String?
+
+  placedAt  DateTime  @default(now())
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  seller Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer  User        @relation(fields: [buyerId], references: [id])
+  items  OrderItem[]
+
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([sellerId, status, createdAt(sort: Desc)])
+  @@index([buyerId, createdAt(sort: Desc)])
+  @@index([paymentStatus, createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  /// Null once the product is deleted; the snapshot below is what the order
+  /// actually was.
+  productId String?
+
+  name           String
+  sku            String?
+  quantity       Int
+  unitPriceMinor Int
+  totalMinor     Int
+  currency       String  @default("INR")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+/// "Someone in your city ordered this" — sent to other matched sellers when an
+/// order is paid. Deliberately carries NO buyer column of any kind: an exact
+/// quantity plus a timestamp would re-identify the order, which is why the
+/// quantity is banded. See docs/LEADS.md §7.
+model DemandAlert {
+  id          String @id @default(cuid())
+  /// Recipient.
+  sellerId    String
+  categoryId  String
+  locationId  String
+  productName String
+  /// Bucket label from a fixed list, e.g. "11-50". Never an exact quantity.
+  quantityBand String
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  seller   Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  // Unread badge.
+  @@index([sellerId, readAt])
+  @@index([sellerId, createdAt(sort: Desc)])
+}
+
+/// Sellers a buyer keeps for later (Phase 7).
+///
+/// Buyer-owned, not seller-owned: it is read from the buyer's side ("my saved
+/// suppliers"), so it deliberately stays OUT of `TENANT_MODELS` — scoping it by
+/// sellerId would make the buyer's own list unqueryable.
+model SavedSeller {
+  buyerId   String
+  sellerId  String
+  createdAt DateTime @default(now())
+
+  buyer  User   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@id([buyerId, sellerId])
+  @@index([buyerId, createdAt(sort: Desc)])
+  @@index([sellerId])
+}
+
+/// A seller's own Razorpay / Shiprocket credentials. Bzaro never holds the
+/// money: the keys belong to the seller's account.
+model SellerIntegration {
+  id       String          @id @default(cuid())
+  sellerId String
+  type     IntegrationType
+  enabled  Boolean         @default(false)
+  mode     IntegrationMode @default(TEST)
+
+  /// AES-256-GCM ciphertext under INTEGRATIONS_ENCRYPTION_KEY. Never returned
+  /// to a client, never logged, never in a server-component payload.
+  encryptedConfig String @db.Text
+  /// Non-secret display hints only, e.g. { keyIdLast4: "9f21" }, so the
+  /// settings screen can render ••••9f21 without decrypting anything.
+  configHint      Json?
+
+  lastTestedAt  DateTime?
+  lastTestOk    Boolean?
+  lastTestError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, type])
+}
+
+/// Which paid capabilities a seller has. Written by the plan sweep, the add-on
+/// purchase flow, or an admin override — `source` records which, and
+/// ADMIN_OVERRIDE is never revoked by the sweep.
+model SellerFeature {
+  sellerId        String        @id
+  paymentsEnabled Boolean       @default(false)
+  shippingEnabled Boolean       @default(false)
+  source          FeatureSource @default(PLAN)
+  note            String?
+  /// Admin who last changed it, for the audit trail.
+  updatedById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 }
 
 // ═══════════════════════════ MONETISATION ════════════════════════════════════

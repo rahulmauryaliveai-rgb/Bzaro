@@ -35,7 +35,10 @@ const leadSelect = {
       location: { select: { name: true } },
       category: { select: { name: true } },
       product: { select: { name: true, slug: true } },
-      buyer: { select: { phone: true, name: true, company: true } },
+      source: true,
+      refBzaro: true,
+      businessName: true,
+      buyer: { select: { phone: true, name: true } },
     },
   },
   flag: { select: { status: true, reason: true } },
@@ -274,4 +277,34 @@ export async function listPlansForSeller() {
       leadCreditsPerMonth: true,
     },
   });
+}
+
+/**
+ * Move an accepted lead along the seller's own pipeline (D35 status additions).
+ *
+ * Only from a state where the seller already has the buyer's number: marking a
+ * lead WON before accepting it would claim an outcome for a contact they never
+ * unlocked. Credits and masking are untouched — these are progress markers, not
+ * transitions that cost anything.
+ */
+export async function setLeadOutcome(
+  sellerId: string,
+  leadId: string,
+  status: "CONTACTED" | "WON" | "LOST",
+  note?: string,
+): Promise<boolean> {
+  const result = await db.lead.updateMany({
+    where: {
+      id: leadId,
+      sellerId,
+      // DIRECT leads are never "accepted", so VIEWED is a valid start for them.
+      status: { in: ["VIEWED", "ACCEPTED", "CONTACTED", "WON", "LOST"] },
+    },
+    data: {
+      status,
+      ...(status === "WON" || status === "LOST" ? { closedAt: new Date() } : {}),
+      ...(note ? { sellerNote: note } : {}),
+    },
+  });
+  return result.count === 1;
 }

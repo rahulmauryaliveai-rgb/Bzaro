@@ -6,6 +6,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "../../src/generated/prisma/client";
+import { CONSENT_VERSION } from "../../src/lib/consent";
 import { seedPlans } from "./plans";
 import { seedTemplates } from "./templates";
 import { seedTaxonomy } from "./taxonomy";
@@ -51,6 +52,7 @@ const REMOVE = process.argv.includes("--remove");
 const CREDENTIALS_FILE = process.env.DEMO_CREDENTIALS_FILE ?? "demo-credentials.txt";
 const PREFIX = "demo-";
 const DEMO_BUYER_PHONE = "+919999900001";
+const DEMO_BUYER_EMAIL = `${PREFIX}buyer@bzaro.in`;
 
 const pool = new Pool({ connectionString });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
@@ -101,11 +103,11 @@ async function remove() {
     where: { email: { startsWith: PREFIX, endsWith: "@bzaro.in" } },
     select: { id: true },
   });
-  const buyer = await prisma.buyer.findUnique({ where: { phone: DEMO_BUYER_PHONE } });
+  const buyer = await prisma.user.findUnique({ where: { email: DEMO_BUYER_EMAIL } });
 
   // Requirements cascade to leads/deliveries; sellers cascade to their catalogue.
   if (buyer) await prisma.requirement.deleteMany({ where: { buyerId: buyer.id } });
-  if (buyer) await prisma.buyer.delete({ where: { id: buyer.id } });
+  if (buyer) await prisma.user.delete({ where: { id: buyer.id } });
   for (const seller of sellers) {
     await prisma.seller.delete({ where: { id: seller.id } });
     console.log(`   removed ${seller.slug}`);
@@ -314,14 +316,15 @@ async function create() {
   }
 
   console.log("→ open buyer requirements");
-  const buyer = await prisma.buyer.upsert({
-    where: { phone: DEMO_BUYER_PHONE },
+  const buyer = await prisma.user.upsert({
+    where: { email: DEMO_BUYER_EMAIL },
     create: {
+      email: DEMO_BUYER_EMAIL,
+      emailVerified: now,
       phone: DEMO_BUYER_PHONE,
-      phoneVerifiedAt: now,
       name: "Demo Buyer",
-      company: "Demo Procurement Pvt Ltd",
-      locationId: taxonomy.locations["mumbai"],
+      role: "BUYER",
+      buyerProfile: { create: { locationId: taxonomy.locations["mumbai"] } },
     },
     update: {},
     select: { id: true },
@@ -343,6 +346,10 @@ async function create() {
           timeline: req.timeline,
           purpose: req.purpose,
           notes: req.notes,
+          trigger: "ENQUIRY",
+          source: "BZARO_MARKETPLACE",
+          consentVersion: CONSENT_VERSION,
+          consentAt: now,
           fingerprint: fingerprint(req.productName, categoryId),
           // PENDING: the lead worker matches sellers and creates the leads.
           fanoutStatus: "PENDING",

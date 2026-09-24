@@ -93,6 +93,17 @@ const serverSchema = z.object({
   // taking the whole site down over it would be worse.
   RESEND_API_KEY: z.string().optional(),
   MAIL_FROM: z.string().optional(),
+  /**
+   * Cloudflare Turnstile. Optional: unset means the captcha is not enforced at
+   * all (see src/lib/turnstile.ts for why it fails open only when unconfigured).
+   */
+  TURNSTILE_SECRET: z.string().optional(),
+  /**
+   * AES-256-GCM key for seller payment/shipping credentials, base64 of 32
+   * bytes. Required in production only once integrations are enabled; the
+   * crypto module throws a clear error if a seller tries to save without it.
+   */
+  INTEGRATIONS_ENCRYPTION_KEY: z.string().optional(),
 
   // ── Buyer OTP + lead notifications ──
   // Both providers follow the mail pattern: unset → console implementation.
@@ -105,8 +116,6 @@ const serverSchema = z.object({
    * which expire within five minutes anyway.
    */
   OTP_PEPPER: requiredInProd(nonEmpty.min(32, "must be at least 32 characters")),
-  /** Signs the buyer identity cookie minted after OTP verification. */
-  BUYER_COOKIE_SECRET: requiredInProd(nonEmpty.min(32, "must be at least 32 characters")),
   /**
    * Fixed OTP code for automated tests. Honoured only outside production, or
    * in a production build that also sets ALLOW_INSECURE_RATE_LIMIT (D26) —

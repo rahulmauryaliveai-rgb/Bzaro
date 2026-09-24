@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { pruneExpiredTokens } from "@/lib/tokens";
 import { pruneExpiredOtpChallenges } from "@/lib/otp/challenge";
+import { pruneExpiredEmailOtps } from "@/lib/otp/email-challenge";
 import { expireMarketLeads, refreshLeadStats } from "@/server/services/fanout.service";
 import { grantMonthlyCredits, periodKeyFor } from "@/server/services/credit.service";
 import { recomputeAllWebPresence } from "@/server/services/plan.service";
@@ -221,6 +222,7 @@ export async function pruneEventsJob(): Promise<JobResult> {
 
   const tokens = await pruneExpiredTokens();
   const otpChallenges = await pruneExpiredOtpChallenges();
+  const emailOtps = await pruneExpiredEmailOtps();
 
   return {
     job: "prune-events",
@@ -230,6 +232,7 @@ export async function pruneEventsJob(): Promise<JobResult> {
       partitionsDropped: stale.map((p) => p.relname),
       expiredTokensDeleted: tokens,
       expiredOtpChallengesDeleted: otpChallenges,
+      expiredEmailOtpsDeleted: emailOtps,
     },
   };
 }

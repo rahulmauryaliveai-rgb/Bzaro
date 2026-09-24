@@ -36,7 +36,10 @@ function row(overrides: Partial<LeadRow>): LeadRow {
       location: { name: "Mumbai" },
       category: { name: "LED Bulbs" },
       product: null,
-      buyer: { phone: "+919876543210", name: "Rahul", company: "Rahul Traders" },
+      source: "BZARO_MARKETPLACE",
+      refBzaro: false,
+      businessName: "Rahul Traders",
+      buyer: { phone: "+919876543210", name: "Rahul" },
     },
     flag: null,
     ...overrides,
@@ -135,5 +138,61 @@ describe("blur", () => {
     expect(blur("LED Bulb 9W B22")).toBe("LED •••• •• •••");
     expect(blur("Stainless Steel Pipes")).toBe("Sta•••• ••••• •••••");
     expect(blur("Rice")).toBe("Ric•");
+  });
+});
+
+describe("buyers without a phone", () => {
+  /**
+   * `User.phone` is nullable since buyers became full accounts (D35) — a Google
+   * sign-up may not have given one. The projection must say so rather than
+   * formatting or masking a null, which previously produced a placeholder that
+   * implied there was a number to unlock.
+   */
+  it("says so on a revealed lead rather than formatting a null", () => {
+    const view = projectLead(
+      row({
+        type: "DIRECT",
+        requirement: {
+          ...row({}).requirement,
+          buyer: { phone: null, name: "Rahul" },
+        },
+      }),
+      paid,
+    );
+
+    expect(view.revealed).toBe(true);
+    expect(view.buyer.phone).toBe("No phone provided");
+  });
+
+  it("says so on a masked lead too, without leaking a fake mask", () => {
+    const view = projectLead(
+      row({
+        type: "MARKET",
+        status: "NEW",
+        requirement: {
+          ...row({}).requirement,
+          buyer: { phone: null, name: "Rahul" },
+        },
+      }),
+      paid,
+    );
+
+    expect(view.revealed).toBe(false);
+    expect(view.buyer.phone).toBe("No phone provided");
+    expect(view.buyer.phone).not.toContain("X");
+  });
+});
+
+describe("attribution", () => {
+  it("carries source and ref through to the seller view", () => {
+    const view = projectLead(
+      row({
+        requirement: { ...row({}).requirement, source: "STOREFRONT", refBzaro: true },
+      }),
+      paid,
+    );
+
+    expect(view.source).toBe("STOREFRONT");
+    expect(view.refBzaro).toBe(true);
   });
 });

@@ -14,9 +14,16 @@ import {
 import { StatusBadge } from "@/app/(admin)/admin/sellers/page";
 import { sellerSiteUrl } from "@/lib/utils/url";
 import { changePlanAction } from "@/server/actions/billing";
-import { adminSetTemplateAction } from "@/server/actions/admin";
+import { adminSetTemplateAction, setSellerFeaturesAction } from "@/server/actions/admin";
+import { getSellerFeatures } from "@/server/services/integration.service";
 import { listActiveTemplates } from "@/server/services/seller.service";
 import { getActivePlan, listPublicPlans } from "@/server/services/plan.service";
+
+const FEATURE_SOURCE_LABEL: Record<string, string> = {
+  PLAN: "From plan",
+  ADDON: "Add-on",
+  ADMIN_OVERRIDE: "Admin override",
+};
 
 /**
  * Seller detail — the verification workstation (decision D8).
@@ -40,11 +47,12 @@ export default async function AdminSellerDetailPage({ params }: Props) {
   const seller = await getSellerForAdmin(id);
   if (!seller) notFound();
 
-  const [credits, subscription, plans, templates] = await Promise.all([
+  const [credits, subscription, plans, templates, features] = await Promise.all([
     getSellerCreditsForAdmin(seller.id),
     getActivePlan(seller.id),
     listPublicPlans(),
     listActiveTemplates(),
+    getSellerFeatures(seller.id),
   ]);
 
   const canVerify = can(user.role, "admin:seller:verify");
@@ -308,6 +316,63 @@ export default async function AdminSellerDetailPage({ params }: Props) {
           </form>
         ) : null}
       </Section>
+
+      {can(user.role, "admin:seller:features") ? (
+        <Section title="Paid features">
+          <p className="mb-3 text-sm text-neutral-400">
+            Currently:{" "}
+            <span className="text-neutral-200">
+              Payments {features.paymentsEnabled ? "on" : "off"} · Shipping{" "}
+              {features.shippingEnabled ? "on" : "off"}
+            </span>{" "}
+            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs">
+              {FEATURE_SOURCE_LABEL[features.source]}
+            </span>
+          </p>
+          <form action={setSellerFeaturesAction} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="sellerId" value={seller.id} />
+            <label className="text-sm">
+              <span className="mb-1 block text-neutral-500">Payments</span>
+              <select
+                name="payments"
+                defaultValue={features.paymentsEnabled ? "on" : "off"}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
+              >
+                <option value="off">Off</option>
+                <option value="on">On</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-neutral-500">Shipping</span>
+              <select
+                name="shipping"
+                defaultValue={features.shippingEnabled ? "on" : "off"}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
+              >
+                <option value="off">Off</option>
+                <option value="on">On</option>
+              </select>
+            </label>
+            <label className="flex-1 text-sm">
+              <span className="mb-1 block text-neutral-500">Note (audit trail)</span>
+              <input
+                name="note"
+                maxLength={1000}
+                className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2"
+              />
+            </label>
+            <button
+              type="submit"
+              className="rounded-md bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-200"
+            >
+              Apply override
+            </button>
+          </form>
+          <p className="mt-2 text-xs text-neutral-500">
+            Saving records this as an admin override, which the plan sweep will not undo.
+          </p>
+        </Section>
+      ) : null}
 
       {credits ? (
         <Section title="Lead credits">

@@ -197,7 +197,11 @@ test.describe("sitemaps", () => {
 
     // sharma-steel is verified but has not cleared the D2 gate. Advertising it
     // while it serves noindex would be a contradictory signal.
-    expect(body).not.toContain("sharma-steel");
+    //
+    // Asserted on the full host, not the bare slug: the showcase seed creates
+    // `demo-sharma-steel`, which contains "sharma-steel" as a substring and
+    // made this fail for the wrong reason whenever demo data was present.
+    expect(body).not.toContain(`//sharma-steel.${ROOT}`);
   });
 
   test("an unknown shard 404s", async ({ request }) => {

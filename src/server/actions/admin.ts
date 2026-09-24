@@ -12,6 +12,7 @@ import {
 } from "@/server/services/admin.service";
 import { db } from "@/lib/db";
 import { applyTemplate } from "@/server/services/seller.service";
+import { setSellerFeatures } from "@/server/services/integration.service";
 import {
   indexEligibilityRulesSchema,
   INDEX_ELIGIBILITY_SETTING_KEY,
@@ -220,4 +221,42 @@ export async function updateIndexEligibilityAction(formData: FormData): Promise<
   // synchronously would block the request and invalidate thousands of caches at
   // once; the nightly recompute-indexability job picks the new rules up.
   revalidatePath("/admin/settings");
+}
+
+/**
+ * Turn a seller's Payments / Shipping capability on or off.
+ *
+ * Recorded as ADMIN_OVERRIDE, which the plan sweep deliberately never revokes
+ * — an override exists precisely because someone decided the plan was wrong.
+ */
+export async function setSellerFeaturesAction(formData: FormData): Promise<void> {
+  const user = await requirePermission("admin:seller:features");
+
+  const parsed = z
+    .object({
+      sellerId: z.string().cuid(),
+      payments: z.enum(["on", "off"]),
+      shipping: z.enum(["on", "off"]),
+      note: z.string().trim().max(1000).optional(),
+    })
+    .safeParse({
+      sellerId: formData.get("sellerId"),
+      payments: formData.get("payments"),
+      shipping: formData.get("shipping"),
+      note: formData.get("note") || undefined,
+    });
+  if (!parsed.success) return;
+
+  await setSellerFeatures(
+    parsed.data.sellerId,
+    {
+      paymentsEnabled: parsed.data.payments === "on",
+      shippingEnabled: parsed.data.shipping === "on",
+    },
+    "ADMIN_OVERRIDE",
+    user.id,
+    parsed.data.note,
+  );
+
+  revalidatePath(`/admin/sellers/${parsed.data.sellerId}`);
 }

@@ -137,7 +137,9 @@ type RequirementForNotification = {
   purpose: keyof typeof PURPOSE_LABELS;
   notes: string | null;
   location: { name: string };
-  buyer: { phone: string; name: string | null };
+  /// `phone` is nullable: a buyer who signed up with Google may not have given
+  /// one yet. Sellers see "not provided" rather than a masked placeholder.
+  buyer: { phone: string | null; name: string | null };
 };
 
 /** Pure. Exported for tests: the masking rule lives here. */
@@ -150,7 +152,11 @@ export function buildNotification(input: {
 }): LeadNotification {
   const r = input.requirement;
   const masked = input.leadType === "MARKET";
-  const phone = masked ? maskPhone(r.buyer.phone) : formatPhone(r.buyer.phone);
+  const phone = r.buyer.phone
+    ? masked
+      ? maskPhone(r.buyer.phone)
+      : formatPhone(r.buyer.phone)
+    : "no phone provided";
   const who = r.buyer.name && !masked ? `${r.buyer.name} (${phone})` : phone;
 
   const summary = [

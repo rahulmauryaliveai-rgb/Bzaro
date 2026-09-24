@@ -23,6 +23,7 @@ export async function ContactIntent({
     id: string;
     businessName: string;
     whatsapp: string | null;
+    phone?: string | null;
     /** Primary category id, for seller-level contact. */
     primaryCategoryId?: string | null;
   };
@@ -50,6 +51,7 @@ export async function ContactIntent({
         productName: product?.name,
         categoryId: seller.primaryCategoryId ?? undefined,
         sellerHasWhatsApp: isValidWhatsAppNumber(seller.whatsapp),
+        sellerHasPhone: Boolean(seller.phone),
       }}
     />
   );

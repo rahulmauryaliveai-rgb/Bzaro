@@ -48,6 +48,13 @@ export const TENANT_MODELS = [
   "creditLedger",
   "leadFlag",
   "sellerServiceArea",
+  // Commerce (Phase 5/6). Each carries `sellerId`; the line-item tables
+  // (orderItem, cartItem) are reached only through their scoped parent.
+  "cart",
+  "order",
+  "demandAlert",
+  "sellerIntegration",
+  "sellerFeature",
 ] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];

@@ -1,10 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { requireSeller } from "@/lib/auth/guards";
 import { can } from "@/lib/auth/permissions";
 import { closeLeadSchema, flagLeadSchema, leadIdSchema } from "@/lib/validation/lead";
-import { acceptLead, closeLead, flagLead } from "@/server/services/lead-inbox.service";
+import {
+  acceptLead,
+  closeLead,
+  flagLead,
+  setLeadOutcome,
+} from "@/server/services/lead-inbox.service";
 
 /**
  * Seller-side lead actions (docs/LEADS.md §2, §4).
@@ -105,4 +111,27 @@ export async function flagLeadAction(
 
   revalidatePath(`/dashboard/leads/${parsed.data.leadId}`);
   return { ok: true };
+}
+
+export async function setLeadOutcomeAction(formData: FormData): Promise<void> {
+  const scope = await requireSeller();
+  if (!can(scope.role, "lead:manage")) return;
+
+  const parsed = z
+    .object({
+      leadId: z.string().cuid(),
+      status: z.enum(["CONTACTED", "WON", "LOST"]),
+      note: z.string().trim().max(1000).optional(),
+    })
+    .safeParse({
+      leadId: formData.get("leadId"),
+      status: formData.get("status"),
+      note: formData.get("note") || undefined,
+    });
+  if (!parsed.success) return;
+
+  await setLeadOutcome(scope.sellerId, parsed.data.leadId, parsed.data.status, parsed.data.note);
+
+  revalidatePath("/dashboard/leads");
+  revalidatePath(`/dashboard/leads/${parsed.data.leadId}`);
 }

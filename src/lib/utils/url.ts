@@ -153,6 +153,19 @@ export function sellerSiteUrl(seller: SellerSurface, sitePath = "/"): string {
   return tenantUrl(seller.slug, sitePath);
 }
 
+/**
+ * A "Visit store" link from the marketplace, tagged so the storefront can set
+ * the first-touch attribution cookie (`?ref=bzaro`, see src/proxy.ts).
+ *
+ * Only tagged when the destination actually leaves the apex — a CATALOGUE-tier
+ * seller's page IS the marketplace, so there is no referral to record.
+ */
+export function sellerVisitUrl(seller: SellerSurface, sitePath = "/"): string {
+  const url = sellerSiteUrl(seller, sitePath);
+  if (seller.webPresence === "CATALOGUE") return url;
+  return `${url}${url.includes("?") ? "&" : "?"}ref=bzaro`;
+}
+
 function normalizePath(path: string): string {
   if (!path || path === "/") return "/";
   return path.startsWith("/") ? path : `/${path}`;

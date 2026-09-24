@@ -6,12 +6,12 @@ import { discoveryTags } from "@/lib/cache/tags";
 
 describe("requestOtpSchema", () => {
   it("normalises the phone as part of parsing", () => {
-    const parsed = requestOtpSchema.parse({ phone: "98765 43210", purpose: "BUYER_CONTACT" });
+    const parsed = requestOtpSchema.parse({ phone: "98765 43210", purpose: "SELLER_SIGNUP" });
     expect(parsed.phone).toBe("+919876543210");
   });
 
   it("rejects an unparseable phone with buyer-facing copy", () => {
-    const result = requestOtpSchema.safeParse({ phone: "12345", purpose: "BUYER_CONTACT" });
+    const result = requestOtpSchema.safeParse({ phone: "12345", purpose: "SELLER_SIGNUP" });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0]?.message).toMatch(/valid mobile number/);
@@ -20,32 +20,23 @@ describe("requestOtpSchema", () => {
 
   it("rejects a filled honeypot", () => {
     expect(
-      requestOtpSchema.safeParse({ phone: "9876543210", purpose: "BUYER_CONTACT", website: "x" })
+      requestOtpSchema.safeParse({ phone: "9876543210", purpose: "SELLER_SIGNUP", website: "x" })
         .success,
     ).toBe(false);
   });
 });
 
 describe("verifyOtpSchema", () => {
-  it("requires exactly six digits and records consent as a boolean", () => {
+  it("requires exactly six digits", () => {
     const ok = verifyOtpSchema.parse({
       phone: "9876543210",
-      purpose: "BUYER_CONTACT",
+      purpose: "SELLER_SIGNUP",
       code: " 004213 ",
-      consent: "on",
     });
     expect(ok.code).toBe("004213");
-    expect(ok.consent).toBe(true);
-
-    const noConsent = verifyOtpSchema.parse({
-      phone: "9876543210",
-      purpose: "SELLER_SIGNUP",
-      code: "123456",
-    });
-    expect(noConsent.consent).toBe(false);
 
     expect(
-      verifyOtpSchema.safeParse({ phone: "9876543210", purpose: "BUYER_CONTACT", code: "12345" })
+      verifyOtpSchema.safeParse({ phone: "9876543210", purpose: "SELLER_SIGNUP", code: "12345" })
         .success,
     ).toBe(false);
   });
@@ -59,6 +50,8 @@ describe("requirementSchema", () => {
     locationId: "loc_1",
     timeline: "WITHIN_WEEK",
     purpose: "RESALE",
+    trigger: "ENQUIRY",
+    source: "BZARO_MARKETPLACE",
   };
 
   it("coerces quantity from form strings and blanks optional fields", () => {

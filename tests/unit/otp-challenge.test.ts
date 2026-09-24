@@ -109,7 +109,7 @@ vi.mock("@/lib/otp", () => ({
 const { issueOtp, verifyOtp, OTP_MAX_ATTEMPTS, OTP_TTL_MS } = await import("@/lib/otp/challenge");
 
 const PHONE = "+919876543210";
-const PURPOSE = "BUYER_CONTACT" as const;
+const PURPOSE = "SELLER_SIGNUP" as const;
 
 beforeEach(() => {
   rows.length = 0;
@@ -157,14 +157,9 @@ describe("verifyOtp", () => {
     });
   });
 
-  it("does not accept the code for a different purpose", async () => {
-    await issueOtp({ phone: PHONE, purpose: PURPOSE });
-    const code = sent[0]!.code;
-    expect(await verifyOtp({ phone: PHONE, purpose: "SELLER_SIGNUP", code })).toEqual({
-      ok: false,
-      reason: "invalid",
-    });
-  });
+  // The "code issued for one purpose cannot verify another" case is not
+  // expressible while OtpPurpose has a single value. `verifyOtp` still filters
+  // on purpose; restore this test when a second purpose is added.
 
   it("counts down attempts and locks after the third wrong guess", async () => {
     await issueOtp({ phone: PHONE, purpose: PURPOSE });

@@ -51,6 +51,8 @@ export type Permission =
   | "admin:lead:refund"
   | "admin:credit:adjust"
   | "admin:subscription:manage"
+  /** Turn a seller's Payments / Shipping features on or off (Phase 6). */
+  | "admin:seller:features"
   | "admin:plan:manage"
   | "admin:user:read"
   | "admin:user:role"
@@ -137,6 +139,7 @@ const ADMIN: Permission[] = [
   "admin:lead:refund",
   "admin:credit:adjust",
   "admin:subscription:manage",
+  "admin:seller:features",
   "admin:plan:manage",
   "admin:user:read",
   "admin:audit:read",

@@ -134,6 +134,48 @@ Pulls, installs, runs new migrations, builds and reloads pm2. Takes 2–4
 minutes; the site may error for ~30 s while `.next` is rebuilt. Everything in
 `.env` and `public/uploads` survives.
 
+### The destructive-migration guard
+
+`prisma migrate deploy` never prompts, so `deploy.sh` checks the **pending**
+migrations first and refuses if any of them drops a table or deletes rows:
+
+```
+✗ a pending migration destroys data:
+  20260923120000_buyer_email_auth_and_commerce
+      25:DELETE FROM "Requirement";
+      62:DROP TABLE "Buyer";
+```
+
+That is not a bug to work around. Take the backup it prints, confirm you are
+willing to lose those rows, then re-run with the override:
+
+```bash
+docker exec bzaro-postgres pg_dump -U bzaro bzaro > ~/bzaro-$(date +%F-%H%M).sql
+ALLOW_DESTRUCTIVE_MIGRATION=1 bash /srv/bzaro/app/deploy/deploy.sh
+```
+
+A brand-new database has nothing to lose, so the guard skips itself entirely on
+a first deploy. Migrations that are already applied are never re-checked.
+
+### Before the buyer-accounts release
+
+That release replaces the phone-OTP buyer with a full account (decision D35),
+and it needs two values in `.env` that older installs do not have:
+
+| Variable                      | Why it matters                                                            |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `RESEND_API_KEY` + `MAIL_FROM` | Signup codes are emailed. **Without these nobody can create an account**, so the lead funnel is dead — this is a hard blocker, not a degradation |
+| `INTEGRATIONS_ENCRYPTION_KEY`  | Encrypts each seller's Razorpay/Shiprocket keys. Without it no seller can switch payments on. Must decode to exactly 32 bytes: `openssl rand -base64 32` |
+
+`setup-vps.sh` generates the encryption key on a fresh install. On an existing
+box, add it by hand — and never rotate it once sellers have saved credentials,
+because it makes every stored credential unreadable.
+
+Turnstile (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET`) is optional:
+unset means the signup captcha is simply not enforced. Once the secret is set
+it fails **closed**.
+
+
 ---
 
 ## 6. Private repository

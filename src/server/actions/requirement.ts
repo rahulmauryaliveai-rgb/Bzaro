@@ -1,8 +1,8 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { REFERRAL_COOKIE } from "@/proxy";
 import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
-import { readBuyerIdFromCookie } from "@/lib/buyer/cookie";
 import { PURPOSE_LABELS, TIMELINE_LABELS, requirementSchema } from "@/lib/validation/requirement";
 import { whatsAppHref } from "@/lib/whatsapp/link";
 import { getBuyerSession } from "@/server/services/buyer.service";
@@ -11,18 +11,21 @@ import { createRequirement } from "@/server/services/requirement.service";
 /**
  * Requirement submission — the last step of the contact modal.
  *
- * Identity comes from the buyer cookie set by `verifyOtpAction`, never from
- * the form. A request without a valid cookie is sent back to the OTP step.
+ * Identity comes from the Auth.js session, never from the form. A request
+ * without one is sent back to the sign-in step, where the modal keeps the
+ * drafted requirement and resubmits it once the account exists.
  */
 
 export type RequirementState = {
   ok?: boolean;
   error?: string;
-  /** "session" tells the modal to restart at the phone step. */
+  /** "session" tells the modal to show the sign-in step. */
   errorKind?: "session" | "generic";
   fieldErrors?: Record<string, string>;
   /** Present when the direct seller has WhatsApp; the modal opens it. */
   whatsappUrl?: string;
+  /** Revealed after a CALL requirement, which is what the buyer pressed for. */
+  sellerPhone?: string;
   sellerName?: string;
 };
 
@@ -30,21 +33,17 @@ export async function submitRequirementAction(
   _previous: RequirementState,
   formData: FormData,
 ): Promise<RequirementState> {
-  const buyerId = await readBuyerIdFromCookie();
-  if (!buyerId) {
+  const buyer = await getBuyerSession();
+  if (!buyer) {
     return {
-      error: "Your session has expired. Please verify your number again.",
+      error: "Please sign in or create an account to send your requirement.",
       errorKind: "session",
     };
   }
-
-  const buyer = await getBuyerSession(buyerId);
-  if (!buyer || buyer.isBlocked) {
-    return {
-      error: "Your session has expired. Please verify your number again.",
-      errorKind: "session",
-    };
+  if (buyer.isBlocked) {
+    return { error: "This account can't be used to contact suppliers." };
   }
+  const buyerId = buyer.id;
 
   const parsed = requirementSchema.safeParse({
     productName: formData.get("productName"),
@@ -58,6 +57,11 @@ export async function submitRequirementAction(
     sellerId: formData.get("sellerId") ?? undefined,
     categoryId: formData.get("categoryId") ?? undefined,
     name: formData.get("name") ?? undefined,
+    trigger: formData.get("trigger"),
+    source: formData.get("source"),
+    businessName: formData.get("businessName") ?? undefined,
+    gstin: formData.get("gstin") ?? undefined,
+    pincode: formData.get("pincode") ?? undefined,
     website: formData.get("website") ?? undefined,
   });
   if (!parsed.success) {
@@ -74,12 +78,13 @@ export async function submitRequirementAction(
     return { error: "You've sent several requirements recently. Please try again later." };
   }
 
-  const requestHeaders = await headers();
+  const [requestHeaders, cookieStore] = await Promise.all([headers(), cookies()]);
   const result = await createRequirement({
     buyerId,
     input: parsed.data,
     ip: getClientIp(requestHeaders),
     userAgent: requestHeaders.get("user-agent"),
+    refBzaro: cookieStore.get(REFERRAL_COOKIE)?.value === "bzaro",
   });
 
   if (!result.ok) {
@@ -113,5 +118,12 @@ export async function submitRequirementAction(
       })
     : undefined;
 
-  return { ok: true, whatsappUrl, sellerName: result.direct.sellerName };
+  return {
+    ok: true,
+    whatsappUrl,
+    // Only for the trigger that asked for it — an ENQUIRY does not reveal a
+    // number the buyer never pressed for.
+    sellerPhone: parsed.data.trigger === "CALL" ? (result.direct.phone ?? undefined) : undefined,
+    sellerName: result.direct.sellerName,
+  };
 }

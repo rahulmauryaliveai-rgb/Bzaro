@@ -5,6 +5,7 @@ import {
   acceptLeadAction,
   closeLeadAction,
   flagLeadAction,
+  setLeadOutcomeAction,
   type AcceptLeadState,
   type FlagLeadState,
 } from "@/server/actions/lead";
@@ -174,5 +175,41 @@ export function FlagLead({ leadId, refundable }: { leadId: string; refundable: b
         </p>
       ) : null}
     </form>
+  );
+}
+
+/**
+ * Pipeline markers for a lead whose buyer details are already visible.
+ *
+ * Distinct from Close, which means "not relevant". These record what actually
+ * happened, and Won is what the monthly summary counts.
+ */
+export function LeadOutcome({ leadId, status }: { leadId: string; status: string }) {
+  const options: Array<{ value: "CONTACTED" | "WON" | "LOST"; label: string }> = [
+    { value: "CONTACTED", label: "Contacted" },
+    { value: "WON", label: "Won" },
+    { value: "LOST", label: "Lost" },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {options.map((option) => (
+        <form key={option.value} action={setLeadOutcomeAction}>
+          <input type="hidden" name="leadId" value={leadId} />
+          <input type="hidden" name="status" value={option.value} />
+          <button
+            type="submit"
+            aria-pressed={status === option.value}
+            className={`min-h-11 rounded-md border px-3 text-sm ${
+              status === option.value
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-300 hover:bg-neutral-50"
+            }`}
+          >
+            {option.label}
+          </button>
+        </form>
+      ))}
+    </div>
   );
 }

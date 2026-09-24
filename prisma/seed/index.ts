@@ -5,6 +5,7 @@ import { PrismaClient } from "../../src/generated/prisma/client";
 import { seedPlans } from "./plans";
 import { seedTemplates } from "./templates";
 import { seedTaxonomy } from "./taxonomy";
+import { seedPincodes } from "./pincodes";
 import { seedSellers } from "./sellers";
 import { seedCatalog } from "./catalog";
 import { seedIndexability } from "./indexability";
@@ -53,6 +54,9 @@ async function main() {
 
   console.log("→ seeding categories and locations");
   const taxonomy = await seedTaxonomy(prisma);
+
+  const pincodes = await seedPincodes(prisma);
+  console.log(`→ seeding PIN codes (${pincodes})`);
 
   console.log("→ seeding sellers and fixture tenants");
   await seedSellers(prisma, { plans, templates, taxonomy });

@@ -27,7 +27,7 @@ const phoneInput = z
     return normalized;
   });
 
-export const otpPurposeSchema = z.enum(["BUYER_CONTACT", "SELLER_SIGNUP"]);
+export const otpPurposeSchema = z.enum(["SELLER_SIGNUP"]);
 
 export const requestOtpSchema = z.object({
   phone: phoneInput,
@@ -43,20 +43,7 @@ export const verifyOtpSchema = z.object({
     .string()
     .trim()
     .regex(/^\d{6}$/, "Enter the 6-digit code"),
-  /**
-   * Buyer-facing consent, required for BUYER_CONTACT. The text lives in the
-   * component; the schema only records that it was ticked.
-   */
-  consent: z
-    .union([z.literal("on"), z.literal("true"), z.literal(true), z.literal(""), z.literal(false)])
-    .optional()
-    .transform((value) => value === "on" || value === "true" || value === true),
 });
 
 export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
-
-/** Wording shown next to the consent checkbox. Kept here so tests and the
- * privacy page quote the same string. */
-export const BUYER_CONSENT_TEXT =
-  "I agree to share my requirement with the selected supplier and up to 10 other verified suppliers.";

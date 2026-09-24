@@ -25,13 +25,14 @@ us revisit it.
 | [D21](#d21--per-surface-root-layouts)               | Per-surface root layouts                              | Accepted                            | 0     |
 | [D22](#d22--analytics-partitioned-from-day-one)     | AnalyticsEvent partitioned from day one               | Accepted                            | 0     |
 | [D23](#d23--prisma-7-with-a-driver-adapter)         | Prisma 7 with an explicit `pg` driver adapter         | Accepted                            | 0     |
-| [D28](#d28--buyers-are-phone-first-identities-not-users) | Buyers are phone-first identities, not users          | Accepted                            | L1    |
+| [D28](#d28--buyers-are-phone-first-identities-not-users) | Buyers are phone-first identities, not users          | **Superseded by D35**               | L1    |
 | [D29](#d29--market-fan-out-is-a-database-polled-outbox-not-a-queue) | Market fan-out is a DB-polled outbox, not a queue     | Accepted                            | L3    |
 | [D30](#d30--a-guarded-root-level-city-segment-for-discovery-pages) | Guarded root-level `[city]` segment for discovery  | Accepted                            | L5    |
 | [D31](#d31--the-proxy-resolves-a-loopback-host-through-x-forwarded-host) | Proxy resolves loopback Host via `x-forwarded-host`  | Accepted                            | L6    |
 | [D32](#d32--web-presence-is-a-plan-tier)            | Web presence is a plan tier: catalogue → subdomain → custom domain | Accepted               | L7    |
 | [D33](#d33--storefront-templates-are-compositions-of-shared-sections) | Storefront templates are compositions of shared sections | Accepted           | L8    |
 | [D34](#d34--indiamart-style-category-tree-chosen-at-registration) | IndiaMART-style category tree, chosen at registration | Accepted               | L8    |
+| [D35](#d35--buyers-are-full-accounts-superseding-d28)   | Buyers are full accounts on `User`, not phone identities | Accepted                | L9    |
 
 ---
 
@@ -538,6 +539,11 @@ CDN, a row without one is hosted somewhere we do not control.
 
 ## D28 — Buyers are phone-first identities, not users
 
+> **Superseded by [D35](#d35--buyers-are-full-accounts-superseding-d28)
+> (2026-09-23).** Kept for the reasoning, which still explains what the
+> conversion cost of the reversal is. The `Buyer` table and the `bz_buyer`
+> cookie described below no longer exist.
+
 **Decision.** A buyer is a verified phone number (`Buyer.phone`, E.164), created
 the moment an OTP is confirmed. No password, no email, no Auth.js session.
 A signed, host-only cookie (`bz_buyer`) carrying only the buyer id lets a
@@ -785,3 +791,45 @@ seller who cannot find their trade gets no market leads.
 **Cost.** The catalogue forms' flat `<select>` now holds ~400 rows, ordered
 by materialised path so it reads as a tree; a cascading picker there is a
 follow-up. Re-seeding upserts by path, so extending the tree is additive.
+
+---
+
+## D35 — Buyers are full accounts, superseding D28
+
+**Decision.** A buyer is a `User` row: email + password verified by a six-digit
+email OTP (`EmailOtp`, delivered by Resend), or Google. `BuyerProfile` hangs off
+`User` and holds only buying-specific state — last city, pincode, optional
+lat/lng. `Requirement.buyerId` references `User`. The `Buyer` table, the
+`bz_buyer` cookie and the buyer phone-OTP path are gone; `OtpChallenge` survives
+for seller onboarding alone.
+
+**Why.** D28's own "revisit at" condition fired: the roadmap now calls for
+buyer state well beyond one requirement — My Requirements with status, My
+Orders with tracking, saved sellers, re-post — plus carts and checkout, which
+need a durable, authenticated identity that survives a cleared cookie and works
+across devices. A thirty-day host-only cookie holding a buyer id cannot carry
+an order history.
+
+**What it costs.** This is the expensive direction of the trade D28 named: an
+email and a password now sit between the click and the lead, so some buyers
+will leave who would otherwise have sent a requirement. That is accepted
+deliberately in exchange for orders and a buyer who can come back.
+
+**Migration.** Destructive, by explicit decision. Old `Buyer` rows had a
+required phone but a nullable email and no password, so they could not become
+login-capable accounts; every `Requirement` — and so every `Lead`,
+`LeadDelivery` and `LeadFlag` — was deleted in
+`20260923120000_buyer_email_auth_and_commerce`. `CreditLedger` survives
+(`leadId` is `ON DELETE SET NULL`), so no seller lost credit balance.
+
+**Consequence for masking.** `User.phone` is nullable where `Buyer.phone` was
+not — a Google sign-up may have no number yet. Lead projections show
+"no phone provided" rather than a masked placeholder, and buyer signup asks for
+a phone so this stays the exception.
+
+**Still open.** The plan calls for one session across `bzaro.in` and every
+`*.bzaro.in` subdomain (`AUTH_COOKIE_DOMAIN=.bzaro.in`). That directly
+contradicts the host-only cookie rule in `src/lib/auth/config.ts` and
+docs/SECURITY.md §Sessions, which exists so a stored XSS on one seller's
+storefront cannot lift a platform session. Not decided here — it must be
+settled before buyer auth ships on subdomains.

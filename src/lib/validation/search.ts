@@ -68,6 +68,20 @@ export const searchParamsSchema = z.object({
     .transform((value) => value !== undefined)
     .catch(false),
 
+  /**
+   * Opt out of the visitor's remembered city.
+   *
+   * Without an explicit `location`, search narrows to whatever city the
+   * visitor chose (the `bz_loc` cookie). This is the escape hatch, and it has
+   * to be explicit: the ABSENCE of `location` cannot mean "everywhere",
+   * because that is exactly the case the cookie fills in.
+   */
+  everywhere: z
+    .enum(["1", "true"])
+    .optional()
+    .transform((value) => value !== undefined)
+    .catch(false),
+
   sort: z.enum(SORT_OPTIONS).catch("relevance"),
 
   page: z.coerce.number().int().min(1).max(MAX_PAGE).catch(1),
@@ -119,6 +133,7 @@ export function buildSearchQuery(
   if (merged.maxPrice !== undefined) search.set("maxPrice", String(merged.maxPrice));
   if (merged.pricedOnly) search.set("pricedOnly", "1");
   if (merged.verifiedOnly) search.set("verifiedOnly", "1");
+  if (merged.everywhere) search.set("everywhere", "1");
   if (merged.sort && merged.sort !== "relevance") search.set("sort", merged.sort);
   if (merged.page && merged.page > 1) search.set("page", String(merged.page));
 

@@ -5,7 +5,7 @@ import { requireSeller } from "@/lib/auth/guards";
 import { can } from "@/lib/auth/permissions";
 import { getSellerLead, markLeadViewed } from "@/server/services/lead-inbox.service";
 import { TypeBadge, formatRelative } from "@/components/dashboard/LeadCard";
-import { AcceptLead, CloseLead, FlagLead } from "@/components/dashboard/LeadActions";
+import { AcceptLead, CloseLead, FlagLead, LeadOutcome } from "@/components/dashboard/LeadActions";
 
 export const metadata: Metadata = {
   title: "Lead",
@@ -138,6 +138,13 @@ export default async function LeadDetailPage({ params }: Props) {
         <section className="mt-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-5">
           {lead.sellerNote ? (
             <p className="text-sm text-neutral-600">Your note: {lead.sellerNote}</p>
+          ) : null}
+          {/* Only once the buyer's details are actually visible. */}
+          {["VIEWED", "ACCEPTED", "CONTACTED", "WON", "LOST"].includes(lead.status) ? (
+            <div>
+              <p className="mb-2 text-xs font-medium text-neutral-600">How did it go?</p>
+              <LeadOutcome leadId={lead.id} status={lead.status} />
+            </div>
           ) : null}
           {lead.status !== "CLOSED" ? <CloseLead leadId={lead.id} /> : null}
           {!lead.flag && lead.status !== "NEW" ? (

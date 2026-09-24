@@ -7,7 +7,8 @@ import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
-import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
+import { SaveSellerButton } from "@/components/buyer/SaveSellerButton";
 
 /**
  * Seller profile on the marketplace.
@@ -139,12 +140,13 @@ export default async function MarketplaceSellerPage({ params }: Props) {
         ) : null}
         {seller.webPresence !== "CATALOGUE" ? (
           <a
-            href={sellerSiteUrl(seller)}
+            href={sellerVisitUrl(seller)}
             className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
           >
             Visit website ↗
           </a>
         ) : null}
+        <SaveSellerButton sellerId={seller.id} />
       </div>
 
       {seller.description ? (
@@ -187,7 +189,7 @@ export default async function MarketplaceSellerPage({ params }: Props) {
             <h2 className="text-lg font-semibold">Products</h2>
             {seller.webPresence !== "CATALOGUE" ? (
               <a
-                href={sellerSiteUrl(seller, "/products")}
+                href={sellerVisitUrl(seller, "/products")}
                 className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900"
               >
                 View full catalogue ↗

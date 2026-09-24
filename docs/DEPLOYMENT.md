@@ -146,7 +146,11 @@ as `undefined` in a request handler weeks later.
 | `MAIL_FROM`                         | all   | e.g. `no-reply@bzaro.in`                                               |
 | `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | all   | Optional until uploads ship                                            |
 | `OTP_PEPPER`                        | all   | **Required in production.** ≥32 chars, keys OTP hashes (docs/LEADS.md) |
-| `BUYER_COOKIE_SECRET`               | all   | **Required in production.** ≥32 chars, distinct from `OTP_PEPPER`      |
+| `RESEND_API_KEY`                    | all   | Buyer signup codes and password resets. Unset → codes print to the server log |
+| `MAIL_FROM`                         | all   | e.g. `Bzaro <no-reply@mail.bzaro.in>`. Required alongside `RESEND_API_KEY`   |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`    | all   | Signup captcha. Unset → captcha not enforced at all                        |
+| `TURNSTILE_SECRET`                  | all   | Once set, a missing or failed token is **rejected** (fails closed)          |
+| `INTEGRATIONS_ENCRYPTION_KEY`       | all   | base64 of 32 bytes. Protects each seller's Razorpay/Shiprocket credentials. Rotating it makes every stored credential unreadable |
 | `WHATSAPP_ACCESS_TOKEN`             | all   | Optional; OTP + lead alerts fall back to console logging               |
 | `WHATSAPP_PHONE_NUMBER_ID`          | all   | Optional; as above                                                     |
 
@@ -268,7 +272,6 @@ report it as data loss.
 - [ ] Upstash configured — the app throws on first rate-limited action without it
 - [ ] `AUTH_SECRET` is not the development value
 - [ ] `IP_HASH_SALT` set, and a rotation reminder scheduled
-- [ ] `OTP_PEPPER` and `BUYER_COOKIE_SECRET` set — the app refuses to boot in production without them
 - [ ] PITR backups on, and **a restore actually rehearsed** (see RUNBOOK.md)
 - [ ] `npm run test:isolation` green against staging
 - [ ] `/api/health` returns 200 from the deployed app

@@ -103,6 +103,15 @@ const LIMITS = {
    * so "request, guess three times, request again" is bounded too.
    */
   otpVerify: { tokens: 12, window: "1 h" },
+  /**
+   * Email OTP sends. Per email address. Cheaper than SMS, but a mailbox we
+   * flood is a domain reputation we lose, so this stays tight.
+   */
+  emailOtp: { tokens: 5, window: "1 h" },
+  /** Email OTP sends. Per IP — an office NAT is many buyers. */
+  emailOtpIp: { tokens: 15, window: "1 h" },
+  /** Email OTP verification attempts. Per email. Caps codes burned through. */
+  emailOtpVerify: { tokens: 20, window: "1 h" },
   /** Requirement submission (lead creation). Per buyer. */
   requirement: { tokens: 10, window: "1 h" },
   /** Upload signature requests. Per seller. */
