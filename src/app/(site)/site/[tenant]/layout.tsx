@@ -7,6 +7,7 @@ import { resolveTenant } from "@/lib/tenant/resolve";
 import { themeToCssVars, type ThemeTokens } from "@/lib/validation/theme";
 import { marketplacePathFor, marketplaceUrl, tenantUrl } from "@/lib/utils/url";
 import "../../../globals.css";
+import { DemoBanner } from "@/components/shared/DemoBanner";
 
 /**
  * Root layout for every seller microsite ({slug}.bzaro.in).
@@ -182,6 +183,7 @@ export default async function SiteLayout({ children, params }: Props) {
           color: "var(--site-foreground)",
         }}
       >
+        <DemoBanner />
         {/* The template's own footer carries the "Powered by" line (SiteFooter
             and the storefront footers both honour theme.showPlatformBranding). */}
         {children}

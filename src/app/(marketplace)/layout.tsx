@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/marketplace/SiteHeader";
 import { LocationBar } from "@/components/marketplace/LocationBar";
 import { SiteFooter } from "@/components/marketplace/SiteFooter";
 import "../globals.css";
+import { DemoBanner } from "@/components/shared/DemoBanner";
 
 /**
  * Root layout for the public marketplace (bzaro.in).
@@ -39,6 +40,7 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
   return (
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-white text-neutral-900">
+        <DemoBanner />
         <SiteHeader />
         <LocationBar />
         <main className="flex-1">{children}</main>

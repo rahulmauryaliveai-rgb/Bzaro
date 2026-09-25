@@ -49,13 +49,15 @@
 	}
 }
 
+# `import app <port> <uploads dir>` — the live site passes 3000 /srv/uploads,
+# the sales demo (deploy/setup-demo.sh) 3001 /srv/uploads-demo.
 (app) {
 	encode zstd gzip
 
 	# Seller media uploaded through the app lives on the host disk
 	# (public/uploads). Files are UUID-named, so they can be cached forever.
 	handle_path /uploads/* {
-		root * /srv/uploads
+		root * {args[1]}
 		header Cache-Control "public, max-age=31536000, immutable"
 		file_server
 	}
@@ -63,7 +65,7 @@
 	# Everything else is the Next.js server (pm2 "bzaro-web"). The Host header
 	# is passed through untouched — src/proxy.ts resolves the tenant from it.
 	handle {
-		reverse_proxy 127.0.0.1:3000 {
+		reverse_proxy 127.0.0.1:{args[0]} {
 			header_up X-Forwarded-Proto https
 			# OVERWRITE, never append: a client-supplied X-Real-IP or
 			# X-Forwarded-For must not reach the rate limiter
@@ -87,7 +89,7 @@
 	tls /data/cloudflare/bzaro-origin.pem /data/cloudflare/bzaro-origin.key {
 		import cloudflare_mtls
 	}
-	import app
+	import app 3000 /srv/uploads
 }
 
 # Every seller website: certificate obtained at first request, gated by /api/tls/ask.
@@ -104,5 +106,10 @@
 	}
 	@www host www.{$ROOT_DOMAIN}
 	redir @www https://{$ROOT_DOMAIN}{uri} permanent
-	import app
+	import app 3000 /srv/uploads
 }
+
+# Extra sites that live outside this repo's release cycle — today the sales
+# demo, written by deploy/setup-demo.sh into /srv/bzaro/shared/caddy-sites/.
+# No files is fine: Caddy only warns.
+import /etc/caddy/sites/*.caddy

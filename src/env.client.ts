@@ -27,6 +27,13 @@ const clientSchema = z.object({
   NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: z.string().optional(),
   /** Turnstile site key. Public by design; the secret stays server-side. */
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
+  /**
+   * "1" on the sales-demo copy of the platform (its own domain and database,
+   * deploy/setup-demo.sh). Shows the demo banner and hides Google sign-in,
+   * whose only redirect URI is the live domain. Build-time, like every
+   * NEXT_PUBLIC_ value.
+   */
+  NEXT_PUBLIC_DEMO_MODE: z.enum(["0", "1"]).optional(),
 });
 
 /**
@@ -40,6 +47,7 @@ const values = {
   NEXT_PUBLIC_PLATFORM_NAME: process.env.NEXT_PUBLIC_PLATFORM_NAME,
   NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+  NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
 };
 
 const parsed = clientSchema.safeParse(values);

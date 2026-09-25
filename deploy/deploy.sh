@@ -27,10 +27,26 @@
 #   KEEP_RELEASES=5                  releases kept on disk (min 2)
 #   ALLOW_DESTRUCTIVE_MIGRATION=1    see the migration guard below
 #   FORCE=1                          redeploy even if that commit is already live
+#   BZARO_ENV=demo                   deploy the sales demo instead (below)
+#
+# The sales demo (deploy/setup-demo.sh) is a second copy of the app on this
+# server: /srv/bzaro-demo, database bzaro_demo, pm2 apps bzaro-demo-* on port
+# 3001. It shares the git clone and Caddy with the live site; Caddy stays
+# owned by the live deploy.
 set -euo pipefail
 
-BASE=${BZARO_BASE:-/srv/bzaro}   # overridable only for testing the scripts
-REPO=$BASE/repo
+ENVIRONMENT=${BZARO_ENV:-live}
+case "$ENVIRONMENT" in
+  live) DEFAULT_BASE=/srv/bzaro; APP_PORT=3000; DB_NAME=bzaro; ECOSYSTEM=deploy/ecosystem.config.cjs; MANAGE_CADDY=1 ;;
+  demo) DEFAULT_BASE=/srv/bzaro-demo; APP_PORT=3001; DB_NAME=bzaro_demo; ECOSYSTEM=deploy/ecosystem.demo.config.cjs; MANAGE_CADDY=0 ;;
+  *) echo "✗ BZARO_ENV must be live or demo" >&2; exit 2 ;;
+esac
+BASE=${BZARO_BASE:-$DEFAULT_BASE}   # BZARO_BASE: only for testing the scripts
+if [[ "$ENVIRONMENT" == demo ]]; then
+  REPO=${BZARO_REPO:-/srv/bzaro/repo}
+else
+  REPO=${BZARO_REPO:-$BASE/repo}
+fi
 RELEASES=$BASE/releases
 SHARED=$BASE/shared
 CURRENT=$BASE/app
@@ -46,9 +62,12 @@ if [[ -e "$CURRENT" && ! -L "$CURRENT" ]]; then
   die "$CURRENT is a plain directory (old layout) — convert it once with deploy/migrate-to-releases.sh"
 fi
 [[ -d "$REPO/.git" ]] || die "$REPO is missing — see deploy/migrate-to-releases.sh"
-for f in .env deploy.env Caddyfile; do
-  [[ -f "$SHARED/$f" ]] || die "$SHARED/$f is missing"
-done
+[[ -f "$SHARED/.env" ]] || die "$SHARED/.env is missing"
+if (( MANAGE_CADDY )); then
+  for f in deploy.env Caddyfile; do
+    [[ -f "$SHARED/$f" ]] || die "$SHARED/$f is missing"
+  done
+fi
 [[ -d "$SHARED/uploads" ]] || die "$SHARED/uploads is missing"
 
 # Empty on the very first deploy of a fresh server (deploy/setup-vps.sh).
@@ -94,7 +113,7 @@ git -C "$REPO" archive "origin/$BRANCH" | tar -x -C "$NEW"
 echo "$SHA $SUBJECT" > "$NEW/REVISION"
 
 ln -s "$SHARED/.env"       "$NEW/.env"
-ln -s "$SHARED/deploy.env" "$NEW/deploy/.env"
+[[ -f "$SHARED/deploy.env" ]] && ln -s "$SHARED/deploy.env" "$NEW/deploy/.env"
 # public/uploads is linked to shared/uploads only AFTER the build. Turbopack
 # aborts on a symlink that leaves the project root ("points out of the
 # filesystem root") when it traces the upload route, so it builds against an
@@ -118,12 +137,12 @@ npx prisma generate
 echo "→ checking pending migrations"
 DESTRUCTIVE_RE='DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM'
 
-HAS_TABLE=$(docker exec "$PG" psql -U bzaro -d bzaro -tAc \
+HAS_TABLE=$(docker exec "$PG" psql -U bzaro -d "$DB_NAME" -tAc \
   "SELECT to_regclass('public._prisma_migrations') IS NOT NULL" 2>/dev/null || echo "unreachable")
 [[ "$HAS_TABLE" == "unreachable" ]] && die "cannot reach $PG to check which migrations are applied"
 
 if [[ "$HAS_TABLE" == "t" ]]; then
-  APPLIED=$(docker exec "$PG" psql -U bzaro -d bzaro -tAc \
+  APPLIED=$(docker exec "$PG" psql -U bzaro -d "$DB_NAME" -tAc \
     'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL' 2>/dev/null || true)
 
   OFFENDERS=""
@@ -143,7 +162,7 @@ if [[ "$HAS_TABLE" == "t" ]]; then
     echo "✗ a pending migration destroys data:" >&2
     echo "$OFFENDERS" >&2
     echo "  Back up first:" >&2
-    echo "    docker exec $PG pg_dump -U bzaro -Fc bzaro > /root/backups/bzaro-\$(date +%Y%m%d-%H%M).dump" >&2
+    echo "    docker exec $PG pg_dump -U bzaro -Fc $DB_NAME > /root/backups/$DB_NAME-\$(date +%Y%m%d-%H%M).dump" >&2
     echo "  Then re-run:  ALLOW_DESTRUCTIVE_MIGRATION=1 bash $CURRENT/deploy/deploy.sh" >&2
     exit 1
   fi
@@ -161,6 +180,7 @@ rmdir "$NEW/public/uploads" 2>/dev/null \
 ln -s "$SHARED/uploads" "$NEW/public/uploads"
 
 # Validate against the running Caddy: it has ROOT_DOMAIN and /data/cloudflare/*.
+if (( MANAGE_CADDY )); then
 echo "→ validating Caddyfile"
 if [[ "$(docker inspect -f '{{.State.Running}}' bzaro-caddy 2>/dev/null)" == "true" ]]; then
   docker exec -i bzaro-caddy caddy validate --adapter caddyfile --config /dev/stdin \
@@ -168,6 +188,7 @@ if [[ "$(docker inspect -f '{{.State.Running}}' bzaro-caddy 2>/dev/null)" == "tr
     || die "deploy/Caddyfile does not validate — nothing switched. Check: docker exec -i bzaro-caddy caddy validate --adapter caddyfile --config /dev/stdin < $NEW/deploy/Caddyfile"
 else
   echo "   ⚠ bzaro-caddy is not running — skipped (first deploy?)"
+fi
 fi
 
 # ── Switch ───────────────────────────────────────────────────────────────────
@@ -178,7 +199,7 @@ switch_to() {
 
 reload_processes() {
   mkdir -p "${BZARO_LOG_DIR:-/var/log/bzaro}"
-  (cd "$CURRENT" && pm2 startOrReload deploy/ecosystem.config.cjs --update-env)
+  (cd "$CURRENT" && pm2 startOrReload "$ECOSYSTEM" --update-env)
   pm2 save >/dev/null
 }
 
@@ -186,7 +207,7 @@ smoke_test() {
   local host
   host=$(grep -E '^NEXT_PUBLIC_ROOT_DOMAIN=' "$SHARED/.env" | cut -d= -f2 | tr -d "\"'")
   for _ in $(seq 1 30); do
-    curl -fsS -o /dev/null -H "Host: $host" http://127.0.0.1:3000/ && return 0
+    curl -fsS -o /dev/null -H "Host: $host" "http://127.0.0.1:$APP_PORT/" && return 0
     sleep 2
   done
   return 1
@@ -196,6 +217,7 @@ echo "→ switching $CURRENT → releases/$ID"
 switch_to "$NEW"
 SWITCHED=1
 
+if (( MANAGE_CADDY )); then
 # Caddy mounts shared/Caddyfile. Rewrite it in place (same inode, so the bind
 # mount sees it) and reload gracefully; no container restart, no TLS blip.
 if ! cmp -s deploy/Caddyfile "$SHARED/Caddyfile"; then
@@ -207,6 +229,7 @@ if ! cmp -s deploy/Caddyfile "$SHARED/Caddyfile"; then
 fi
 # Only recreates Caddy if compose.yml changed its definition; a no-op otherwise.
 docker compose --env-file "$SHARED/deploy.env" -f "$NEW/deploy/compose.yml" up -d --no-deps caddy --quiet-pull >/dev/null
+fi
 
 echo "→ reloading processes"
 reload_processes
@@ -214,12 +237,12 @@ reload_processes
 echo "→ smoke test"
 if ! smoke_test; then
   if [[ -z "$PREV" ]]; then
-    echo "✗ new release did not answer on :3000 and there is no previous release — check: pm2 logs bzaro-web" >&2
+    echo "✗ new release did not answer on :$APP_PORT and there is no previous release — check: pm2 logs bzaro-web" >&2
     exit 1
   fi
-  echo "✗ new release did not answer on :3000 — rolling back to $(basename "$PREV")" >&2
+  echo "✗ new release did not answer on :$APP_PORT — rolling back to $(basename "$PREV")" >&2
   switch_to "$PREV"
-  if [[ -f "$SHARED/Caddyfile.prev" ]] && ! cmp -s "$PREV/deploy/Caddyfile" "$SHARED/Caddyfile"; then
+  if (( MANAGE_CADDY )) && [[ -f "$SHARED/Caddyfile.prev" ]] && ! cmp -s "$PREV/deploy/Caddyfile" "$SHARED/Caddyfile"; then
     cat "$PREV/deploy/Caddyfile" > "$SHARED/Caddyfile"
     docker exec bzaro-caddy caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile || true
   fi

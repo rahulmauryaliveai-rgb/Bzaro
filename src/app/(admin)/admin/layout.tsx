@@ -6,6 +6,7 @@ import { IBM_Plex_Sans } from "next/font/google";
 import { requireAdmin } from "@/lib/auth/guards";
 import { can } from "@/lib/auth/permissions";
 import "../../globals.css";
+import { DemoBanner } from "@/components/shared/DemoBanner";
 
 /**
  * Admin shell.
@@ -50,6 +51,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
       <body className="min-h-full bg-neutral-900 text-neutral-100">
+        <DemoBanner />
         <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8">
           <aside className="w-56 shrink-0">
             <div className="mb-6">

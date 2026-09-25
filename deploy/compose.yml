@@ -90,6 +90,10 @@ services:
       # shared/uploads outlives every release; each release's public/uploads
       # is a symlink to it (deploy/deploy.sh).
       - /srv/bzaro/shared/uploads:/srv/uploads:ro
+      # Sales demo (deploy/setup-demo.sh): its Caddy site file and its uploads.
+      # Docker creates both folders empty if the demo was never set up.
+      - /srv/bzaro/shared/caddy-sites:/etc/caddy/sites:ro
+      - /srv/bzaro-demo/shared/uploads:/srv/uploads-demo:ro
 
 volumes:
   postgres-data:

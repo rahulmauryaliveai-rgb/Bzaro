@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BrandLogo } from "@/components/shared/BrandLogo";
 import { IBM_Plex_Sans } from "next/font/google";
 import "../globals.css";
+import { DemoBanner } from "@/components/shared/DemoBanner";
 
 /**
  * Authentication shell.
@@ -27,6 +28,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-neutral-50 text-neutral-900">
+        <DemoBanner />
         {/*
           The layout centres; each PAGE chooses its own width. Sign-in wants a
           narrow column, business registration needs room for a category

@@ -6,6 +6,7 @@ import { sellerSiteUrl } from "@/lib/utils/url";
 import { DashboardNav } from "@/components/dashboard/DashboardNav";
 import { SignOutButton } from "@/components/shared/SignOutButton";
 import "../../globals.css";
+import { DemoBanner } from "@/components/shared/DemoBanner";
 
 /**
  * Seller dashboard shell.
@@ -42,6 +43,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
       <body className="min-h-full bg-neutral-50 text-neutral-900">
+        <DemoBanner />
         <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8">
           <aside className="w-56 shrink-0">
             <div className="mb-6">

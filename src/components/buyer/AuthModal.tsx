@@ -22,6 +22,7 @@ import {
 import { Field } from "@/components/dashboard/fields";
 import { Turnstile } from "@/components/buyer/Turnstile";
 import { getSubdomain, marketplaceUrl, normalizeHost, ROOT_DOMAIN } from "@/lib/utils/url";
+import { IS_DEMO } from "@/components/shared/DemoBanner";
 
 /**
  * Buyer sign-up / sign-in (D35).
@@ -423,6 +424,10 @@ function useHostKind(): "apex" | "store" | "other" | null {
 function GoogleButton() {
   const next = useContext(GoogleNextContext);
   const hostKind = useHostKind();
+
+  // The demo copy has no Google client of its own (its redirect URI would be
+  // on the demo domain); email sign-in covers everything a prospect tries.
+  if (IS_DEMO) return null;
 
   // On a seller's store: Google's only redirect URI is on bzaro.in, and the
   // platform session never leaves bzaro.in (D36). Sign in there, then come
