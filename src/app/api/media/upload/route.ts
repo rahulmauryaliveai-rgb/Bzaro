@@ -70,8 +70,10 @@ export async function POST(request: NextRequest) {
   const leaf = `${randomUUID()}.${extension}`;
   const publicId = `${folder}/${leaf.replace(extname(leaf), "")}`;
 
-  // Under public/, so Next serves it statically in development.
-  const directory = join(process.cwd(), "public", "uploads", folder);
+  // Under public/, so Next serves it statically in development. Runtime data,
+  // not a build input: turbopackIgnore stops the build from tracing (and, on
+  // the VPS, following the shared/uploads symlink out of the project root).
+  const directory = join(/* turbopackIgnore: true */ process.cwd(), "public", "uploads", folder);
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, leaf), Buffer.from(await file.arrayBuffer()));
 

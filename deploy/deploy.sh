@@ -95,9 +95,11 @@ echo "$SHA $SUBJECT" > "$NEW/REVISION"
 
 ln -s "$SHARED/.env"       "$NEW/.env"
 ln -s "$SHARED/deploy.env" "$NEW/deploy/.env"
-mkdir -p "$NEW/public"
-rm -rf "$NEW/public/uploads"
-ln -s "$SHARED/uploads"    "$NEW/public/uploads"
+# public/uploads is linked to shared/uploads only AFTER the build. Turbopack
+# aborts on a symlink that leaves the project root ("points out of the
+# filesystem root") when it traces the upload route, so it builds against an
+# empty directory.
+mkdir -p "$NEW/public/uploads"
 
 cd "$NEW"
 
@@ -153,6 +155,10 @@ npx prisma migrate deploy
 
 echo "→ building (the live release keeps serving meanwhile)"
 NODE_OPTIONS="--max-old-space-size=3072" npm run build
+
+rmdir "$NEW/public/uploads" 2>/dev/null \
+  || die "the build wrote files into public/uploads — not replacing it with the shared link"
+ln -s "$SHARED/uploads" "$NEW/public/uploads"
 
 # Validate against the running Caddy: it has ROOT_DOMAIN and /data/cloudflare/*.
 echo "→ validating Caddyfile"
