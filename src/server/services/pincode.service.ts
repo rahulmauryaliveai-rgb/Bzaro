@@ -56,6 +56,7 @@ export async function lookupPincode(pincode: string): Promise<PincodeMatch | nul
 export async function nearestPincode(
   latitude: number,
   longitude: number,
+  options: { mappedOnly?: boolean } = {},
 ): Promise<PincodeMatch | null> {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
@@ -68,6 +69,7 @@ export async function nearestPincode(
     FROM "Pincode"
     WHERE "latitude" IS NOT NULL
       AND "longitude" IS NOT NULL
+      AND (${!options.mappedOnly}::boolean OR "locationId" IS NOT NULL)
       AND "latitude"  BETWEEN ${latitude - DELTA}  AND ${latitude + DELTA}
       AND "longitude" BETWEEN ${longitude - DELTA} AND ${longitude + DELTA}
     ORDER BY

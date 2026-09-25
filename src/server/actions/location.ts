@@ -84,7 +84,9 @@ export async function chooseCoordinatesAction(
   latitude: number,
   longitude: number,
 ): Promise<LocationState> {
-  const match = await nearestPincode(latitude, longitude);
+  // Only PIN codes linked to a city: the table holds every Indian PIN code
+  // now, and the nearest one is often a village we have no sellers for.
+  const match = await nearestPincode(latitude, longitude, { mappedOnly: true });
   if (!match?.locationId) {
     return { error: "We couldn't find a city near you. Try a PIN code instead." };
   }

@@ -1,20 +1,198 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { PrismaClient } from "../../src/generated/prisma/client";
 
 /**
- * PIN codes, NCR first (Phase 3).
+ * PIN codes: every Indian PIN code, mapped to our cities where we have them.
  *
- * A representative sample, not the full India Post dataset — enough for the
- * picker and the nearest-pincode lookup to work end to end in every city the
- * taxonomy seeds. Importing all ~19,000 rows is a data task, not a code one:
- * drop the CSV in and extend `ROWS`, the shape is the same.
+ * 1. `data/in-pincodes.csv` — all ~19,300 PIN codes from India Post's
+ *    directory (Government Open Data License - India), one row each with
+ *    district, state and a cleaned coordinate. Built and documented by
+ *    scripts/pincodes/build-in-pincodes.py; coordinates the source got wrong
+ *    are dropped, not guessed.
+ * 2. Each PIN code is linked to a `Location` city by CITY_RULES below:
+ *    same state, one of the city's districts, and within `maxKm` of the city
+ *    centre. When two cities share a district (Noida / Greater Noida) the
+ *    nearer centre wins. A PIN code outside every rule falls back to a city
+ *    whose slug equals its district's, in the same state. Anything else keeps
+ *    a null `locationId`: it still resolves ("we know Anantapur, but have no
+ *    sellers there yet"), it just is not a marketplace city.
+ * 3. CURATED rows (hand-checked, NCR first) are applied last and win.
  *
- * `citySlug` maps to a `Location` row; a pincode whose city we do not model
- * yet is still useful for the lookup, and simply carries a null `locationId`.
- *
- * Coordinates are the post office's locality centre, rounded to 4 decimals
- * (~11 m) — far finer than the accuracy anything here needs.
+ * Idempotent: an upsert keyed on `pincode`. Re-run after adding a city to the
+ * taxonomy (and a rule here if its name differs from its district's).
  */
 
+type CityRule = {
+  /** Location slugs to try, first match wins (covers renames and typos). */
+  slugs: string[];
+  state: string;
+  /** Upper-case India Post district names, or "*" for the whole state. */
+  districts: string[] | "*";
+  centre: [number, number];
+  maxKm?: number;
+};
+
+const DEFAULT_MAX_KM = 60;
+
+const CITY_RULES: CityRule[] = [
+  { slugs: ["new-delhi", "delhi"], state: "DELHI", districts: "*", centre: [28.6139, 77.209] },
+  { slugs: ["noida"], state: "UTTAR PRADESH", districts: ["GAUTAM BUDDHA NAGAR"], centre: [28.5355, 77.391] },
+  { slugs: ["greater-noida"], state: "UTTAR PRADESH", districts: ["GAUTAM BUDDHA NAGAR"], centre: [28.4744, 77.504] },
+  { slugs: ["ghaziabad"], state: "UTTAR PRADESH", districts: ["GHAZIABAD"], centre: [28.6692, 77.4538] },
+  { slugs: ["meerut", "meetut"], state: "UTTAR PRADESH", districts: ["MEERUT"], centre: [28.9845, 77.7064] },
+  { slugs: ["lucknow"], state: "UTTAR PRADESH", districts: ["LUCKNOW"], centre: [26.8467, 80.9462] },
+  { slugs: ["ayodhya", "faizabad"], state: "UTTAR PRADESH", districts: ["AYODHYA", "FAIZABAD"], centre: [26.773, 82.1458] },
+  { slugs: ["gurugram", "gurgaon"], state: "HARYANA", districts: ["GURUGRAM", "GURGAON"], centre: [28.4595, 77.0266] },
+  { slugs: ["faridabad"], state: "HARYANA", districts: ["FARIDABAD"], centre: [28.4089, 77.3178] },
+  {
+    // Mumbai Metropolitan Region: Thane and Navi Mumbai buyers shop Mumbai sellers.
+    slugs: ["mumbai"],
+    state: "MAHARASHTRA",
+    districts: ["MUMBAI", "MUMBAI SUBURBAN", "THANE", "RAIGAD", "RAIGARH", "PALGHAR"],
+    centre: [19.076, 72.8777],
+    maxKm: 40,
+  },
+  { slugs: ["pune"], state: "MAHARASHTRA", districts: ["PUNE"], centre: [18.5204, 73.8567] },
+  { slugs: ["nagpur"], state: "MAHARASHTRA", districts: ["NAGPUR"], centre: [21.1458, 79.0882] },
+  { slugs: ["ahmedabad"], state: "GUJARAT", districts: ["AHMADABAD", "AHMEDABAD"], centre: [23.0225, 72.5714] },
+  { slugs: ["surat"], state: "GUJARAT", districts: ["SURAT"], centre: [21.1702, 72.8311] },
+  {
+    slugs: ["chennai"],
+    state: "TAMIL NADU",
+    districts: ["CHENNAI", "CHENGALPATTU", "KANCHIPURAM", "TIRUVALLUR", "THIRUVALLUR"],
+    centre: [13.0827, 80.2707],
+    maxKm: 35,
+  },
+];
+
+type IndiaRow = {
+  pincode: string;
+  district: string;
+  state: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+function readIndiaRows(): IndiaRow[] {
+  const file = join(process.cwd(), "prisma", "seed", "data", "in-pincodes.csv");
+  const lines = readFileSync(file, "utf8").split(/\r?\n/).slice(1);
+  const rows: IndiaRow[] = [];
+  for (const line of lines) {
+    if (!line) continue;
+    const [pincode, district, state, lat, lng] = line.split(",");
+    if (!pincode || !district || !state) continue;
+    rows.push({
+      pincode,
+      district,
+      state,
+      latitude: lat ? Number(lat) : null,
+      longitude: lng ? Number(lng) : null,
+    });
+  }
+  return rows;
+}
+
+function km(a: [number, number], b: [number, number]): number {
+  const mid = (((a[0] + b[0]) / 2) * Math.PI) / 180;
+  return Math.hypot((a[0] - b[0]) * 111.2, (a[1] - b[1]) * 111.2 * Math.cos(mid));
+}
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+type City = { id: string; slug: string; name: string; path: string };
+
+/** The Location city a PIN code belongs to, or null. Exported for tests. */
+export function matchCity(row: IndiaRow, citiesBySlug: Map<string, City>): City | null {
+  const state = row.state.toUpperCase();
+  const district = row.district.toUpperCase();
+  const point: [number, number] | null =
+    row.latitude !== null && row.longitude !== null ? [row.latitude, row.longitude] : null;
+
+  let best: { city: City; distance: number } | null = null;
+  let covered = false;
+  for (const rule of CITY_RULES) {
+    if (rule.state !== state) continue;
+    if (rule.districts !== "*" && !rule.districts.includes(district)) continue;
+    const city = rule.slugs.map((slug) => citiesBySlug.get(slug)).find(Boolean);
+    if (!city) continue;
+    covered = true;
+    // No trustworthy coordinate: the district alone decides, first rule wins.
+    const distance = point ? km(point, rule.centre) : 0;
+    if (distance > (rule.maxKm ?? DEFAULT_MAX_KM)) continue;
+    if (!best || distance < best.distance) best = { city, distance };
+  }
+  if (best) return best.city;
+  // A rule knew this district and judged it too far out: no fallback.
+  if (covered) return null;
+
+  const sameName = citiesBySlug.get(slugify(row.district));
+  if (sameName && sameName.path.startsWith(`/in/${slugify(row.state)}/`)) return sameName;
+  return null;
+}
+
+async function seedIndiaPincodes(prisma: PrismaClient): Promise<number> {
+  const cities = await prisma.location.findMany({
+    where: { type: "CITY" },
+    select: { id: true, slug: true, name: true, path: true },
+  });
+  const citiesBySlug = new Map(cities.map((city) => [city.slug.toLowerCase(), city]));
+
+  const rows = readIndiaRows();
+  const mapped = new Map<string, number>();
+  const CHUNK = 2000;
+
+  for (let start = 0; start < rows.length; start += CHUNK) {
+    const chunk = rows.slice(start, start + CHUNK);
+    const pins: string[] = [];
+    const names: string[] = [];
+    const districts: string[] = [];
+    const states: string[] = [];
+    const locationIds: (string | null)[] = [];
+    const lats: (number | null)[] = [];
+    const lngs: (number | null)[] = [];
+
+    for (const row of chunk) {
+      const city = matchCity(row, citiesBySlug);
+      if (city) mapped.set(city.name, (mapped.get(city.name) ?? 0) + 1);
+      pins.push(row.pincode);
+      names.push(city?.name ?? row.district);
+      districts.push(row.district);
+      states.push(row.state);
+      locationIds.push(city?.id ?? null);
+      lats.push(row.latitude);
+      lngs.push(row.longitude);
+    }
+
+    await prisma.$executeRaw`
+      INSERT INTO "Pincode" ("pincode", "city", "district", "state", "locationId", "latitude", "longitude")
+      SELECT * FROM unnest(
+        ${pins}::text[], ${names}::text[], ${districts}::text[], ${states}::text[],
+        ${locationIds}::text[], ${lats}::float8[], ${lngs}::float8[]
+      )
+      ON CONFLICT ("pincode") DO UPDATE SET
+        "city" = EXCLUDED."city",
+        "district" = EXCLUDED."district",
+        "state" = EXCLUDED."state",
+        "locationId" = EXCLUDED."locationId",
+        "latitude" = EXCLUDED."latitude",
+        "longitude" = EXCLUDED."longitude"
+    `;
+  }
+
+  const summary = [...mapped.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => `${name} ${count}`)
+    .join(", ");
+  console.log(`   ${rows.length} India Post PIN codes; linked to a city: ${summary || "none"}`);
+  return rows.length;
+}
+
+/** Hand-checked rows (NCR first). Applied after the India Post import and win. */
 type PincodeRow = {
   pincode: string;
   city: string;
@@ -25,7 +203,7 @@ type PincodeRow = {
   longitude: number;
 };
 
-const ROWS: PincodeRow[] = [
+const CURATED: PincodeRow[] = [
   // ── Delhi ──────────────────────────────────────────────────────────────────
   {
     pincode: "110001",
@@ -408,6 +586,37 @@ const ROWS: PincodeRow[] = [
     longitude: 80.21,
   },
 
+  // ── Greater Noida ─────────────────────────────────────────────────────────
+  // India Post puts 201306's offices nearer Noida's centre, and has no 201308
+  // at all; both are Greater Noida.
+  {
+    pincode: "201306",
+    city: "Greater Noida",
+    district: "Gautam Buddha Nagar",
+    state: "Uttar Pradesh",
+    citySlug: "greater-noida",
+    latitude: 28.5,
+    longitude: 77.49,
+  },
+  {
+    pincode: "201308",
+    city: "Greater Noida",
+    district: "Gautam Buddha Nagar",
+    state: "Uttar Pradesh",
+    citySlug: "greater-noida",
+    latitude: 28.47,
+    longitude: 77.51,
+  },
+  {
+    pincode: "201310",
+    city: "Greater Noida",
+    district: "Gautam Buddha Nagar",
+    state: "Uttar Pradesh",
+    citySlug: "greater-noida",
+    latitude: 28.46,
+    longitude: 77.49,
+  },
+
   // ── Lucknow ────────────────────────────────────────────────────────────────
   {
     pincode: "226001",
@@ -430,13 +639,15 @@ const ROWS: PincodeRow[] = [
 ];
 
 export async function seedPincodes(prisma: PrismaClient): Promise<number> {
+  const total = await seedIndiaPincodes(prisma);
+
   const cities = await prisma.location.findMany({
     where: { type: "CITY" },
     select: { id: true, slug: true },
   });
   const idBySlug = new Map(cities.map((city) => [city.slug.toLowerCase(), city.id]));
 
-  for (const row of ROWS) {
+  for (const row of CURATED) {
     const locationId = row.citySlug ? (idBySlug.get(row.citySlug) ?? null) : null;
     const data = {
       city: row.city,
@@ -454,5 +665,5 @@ export async function seedPincodes(prisma: PrismaClient): Promise<number> {
     });
   }
 
-  return ROWS.length;
+  return total;
 }

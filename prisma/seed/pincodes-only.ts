@@ -5,7 +5,7 @@ import { PrismaClient } from "../../src/generated/prisma/client";
 import { seedPincodes } from "./pincodes";
 
 /**
- * Seed ONLY the PIN-code table (NCR first) — safe to run on production.
+ * Seed ONLY the PIN-code table (all India, NCR hand-checked) — safe to run on production.
  *
  *   npm run db:seed:pincodes
  *
