@@ -8,6 +8,13 @@
 #
 # Every port is bound to 127.0.0.1 except Caddy, which owns 80/443.
 
+# Pinned project name. Compose otherwise derives it from the directory holding
+# this file, and the named volumes below are prefixed with it (deploy_caddy-data,
+# deploy_postgres-data…). Since deploys moved to /srv/bzaro/releases/<id>/deploy
+# the directory is still "deploy", but pinning it means a rename can never make
+# compose start Postgres or Caddy on a fresh, empty volume.
+name: deploy
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -72,12 +79,17 @@ services:
       ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN in deploy/.env}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # A stable copy, not ./Caddyfile: a bind mount pins the path it was
+      # created with, and that path must survive old releases being pruned.
+      # deploy.sh rewrites this file in place and runs `caddy reload`.
+      - /srv/bzaro/shared/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
       # Seller uploads are written by the app to the host disk; Caddy serves
       # them straight from there (see MEDIA_LOCAL_UPLOADS in src/env.ts).
-      - /srv/bzaro/app/public/uploads:/srv/uploads:ro
+      # shared/uploads outlives every release; each release's public/uploads
+      # is a symlink to it (deploy/deploy.sh).
+      - /srv/bzaro/shared/uploads:/srv/uploads:ro
 
 volumes:
   postgres-data:

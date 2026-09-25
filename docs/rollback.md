@@ -5,9 +5,11 @@ Written for the real setup: Caddy (Docker, host network) in front of pm2
 Cloudflare proxied DNS. **Do not run any of this without a reason** — each step
 says when it applies. Work top-down and stop at the first step that fixes it.
 
-> Paths below assume the release layout (`/srv/bzaro/current` → a folder in
-> `/srv/bzaro/releases/`). Until that migration is done the app lives in
-> `/srv/bzaro/app` and step 1 is "redeploy the previous commit" instead.
+> Layout (deploy/deploy.sh): `/srv/bzaro/app` is a **symlink** to the live
+> folder in `/srv/bzaro/releases/`. Secrets, uploads and the Caddyfile Caddy
+> mounts live in `/srv/bzaro/shared/`. `/srv/bzaro/repo` is the git clone.
+> The last 5 releases stay on disk. `/srv/bzaro/app` has no `.git` — use
+> `cat /srv/bzaro/app/REVISION` to see what is live.
 
 ## 0. First, look
 
@@ -20,18 +22,19 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Host: bzaro.in" http://127.0.0.1:30
 
 ## 1. Bad code (app errors, site 500s) — seconds
 
-Release layout:
 ```bash
-APP=/srv/bzaro
-PREV=$(ls -1dt $APP/releases/* | sed -n 2p)      # the release before current
-ln -sfn "$PREV" $APP/current.new && mv -Tf $APP/current.new $APP/current
-pm2 startOrReload $APP/shared/ecosystem.config.cjs --update-env && pm2 save
+bash /srv/bzaro/app/deploy/rollback.sh --list    # → marks the live one
+bash /srv/bzaro/app/deploy/rollback.sh           # back one release (seconds, no rebuild)
+bash /srv/bzaro/app/deploy/rollback.sh <id>      # or a specific one
 ```
+It switches the symlink, restores that release's Caddyfile if it differs,
+reloads pm2 and smoke-tests. deploy.sh already does this automatically when a
+new release fails its smoke test. Moving forward again = the next deploy.sh.
 
-Current in-place layout (`/srv/bzaro/app`):
+By hand, if the script itself is broken:
 ```bash
-cd /srv/bzaro/app && git log --oneline -5          # pick the last good commit
-git reset --hard <good-sha> && npm ci && npm run build && pm2 reload all --update-env
+ln -sfn /srv/bzaro/releases/<id> /srv/bzaro/.app.next && mv -Tf /srv/bzaro/.app.next /srv/bzaro/app
+cd /srv/bzaro/app && pm2 startOrReload deploy/ecosystem.config.cjs --update-env && pm2 save
 ```
 
 A migration that already ran is NOT undone by this — see step 3. Our
@@ -39,14 +42,16 @@ migrations are additive (expand-contract), so old code runs on the new schema.
 
 ## 2. Bad Caddy config (every host down, TLS errors, 502 from Cloudflare)
 
+Caddy mounts `/srv/bzaro/shared/Caddyfile`. deploy.sh keeps the previous one
+as `shared/Caddyfile.prev`.
 ```bash
-cd /srv/bzaro/app
-cp /root/backups/Caddyfile.<date> deploy/Caddyfile          # last known good
-docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  -v deploy_caddy-data:/data -e ROOT_DOMAIN=bzaro.in -e ACME_EMAIL=x@y.z \
-  caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
-docker compose --env-file deploy/.env -f deploy/compose.yml up -d --force-recreate caddy
+F=/root/backups/Caddyfile.<date>      # or /srv/bzaro/shared/Caddyfile.prev
+docker exec -i bzaro-caddy caddy validate --adapter caddyfile --config /dev/stdin < "$F"
+cat "$F" > /srv/bzaro/shared/Caddyfile            # in place: the mount keeps working
+docker exec bzaro-caddy caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile
 ```
+If Caddy is not running at all:
+`docker compose --env-file /srv/bzaro/shared/deploy.env -f /srv/bzaro/app/deploy/compose.yml up -d --force-recreate caddy`
 
 If Authenticated Origin Pulls was just switched on and bzaro.in shows
 Cloudflare 525/526 errors: turn AOP **off** in Cloudflare (SSL/TLS → Origin
@@ -55,7 +60,7 @@ Server) first — that alone restores traffic — then fix the Caddyfile.
 ## 3. Failed migration
 
 ```bash
-cd /srv/bzaro/current   # or /srv/bzaro/app
+cd /srv/bzaro/app
 npx prisma migrate status
 # Partially applied: fix forward with a new migration, or mark it rolled back
 # (only after reverting its SQL by hand):
@@ -81,9 +86,9 @@ EMPTY database.)
 ## 5. Environment
 
 ```bash
-cp ~/backups/env.<date> /srv/bzaro/shared/.env   # or /srv/bzaro/app/.env
+cp ~/backups/env.<date> /srv/bzaro/shared/.env   # every release links to this file
 chmod 600 /srv/bzaro/shared/.env
-pm2 reload all --update-env
+pm2 restart bzaro-web bzaro-worker --update-env
 ```
 `NEXT_PUBLIC_*` values are baked in at build time — changing them needs a rebuild.
 

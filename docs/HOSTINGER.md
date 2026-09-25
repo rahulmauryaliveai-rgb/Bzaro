@@ -75,9 +75,9 @@ It asks for four things — the domain, an email for certificate notices, and
 the email + password of the first administrator — then:
 
 1. installs Docker, Node 22 and pm2; opens ports 22/80/443 in the firewall;
-2. clones the repo to `/srv/bzaro/app`;
-3. generates every secret and writes `/srv/bzaro/app/.env` and
-   `deploy/.env` (never overwritten on re-runs);
+2. clones the repo to `/srv/bzaro/repo`;
+3. generates every secret and writes `/srv/bzaro/shared/.env` and
+   `/srv/bzaro/shared/deploy.env` (never overwritten on re-runs);
 4. starts PostgreSQL, Redis and Caddy in Docker (`deploy/compose.yml`);
 5. installs, migrates, builds and starts the app + lead worker under pm2;
 6. seeds plans, storefront templates, the 412-category taxonomy and your admin
@@ -130,9 +130,29 @@ Push to `main` on GitHub, then on the VPS:
 bash /srv/bzaro/app/deploy/deploy.sh
 ```
 
-Pulls, installs, runs new migrations, builds and reloads pm2. Takes 2–4
-minutes; the site may error for ~30 s while `.next` is rebuilt. Everything in
-`.env` and `public/uploads` survives.
+Builds `origin/main` as a **new release** next to the live one, then switches
+to it. Takes 3–5 minutes; the live site keeps serving throughout and only
+blinks for the few seconds pm2 needs to restart.
+
+```
+/srv/bzaro/
+  repo/                  git clone — fetched, never built in
+  releases/<utc>-<sha>/  one per deploy; newest 5 kept
+  shared/.env            app secrets        (linked into every release)
+  shared/deploy.env      compose secrets    (→ releases/<id>/deploy/.env)
+  shared/uploads/        seller uploads     (→ releases/<id>/public/uploads)
+  shared/Caddyfile       what Caddy mounts  (rewritten + reloaded on change)
+  app  →  releases/<id>  the live release; every script and cron uses this path
+```
+
+Order: export → `npm ci` → migrate → build → validate Caddyfile → switch the
+symlink → reload Caddy (only if the Caddyfile changed) + pm2 → smoke test →
+prune. If the smoke test fails, the symlink goes back to the previous release
+by itself. `cat /srv/bzaro/app/REVISION` shows what is live.
+
+Roll back without rebuilding: `bash /srv/bzaro/app/deploy/rollback.sh`
+(see docs/rollback.md). Servers set up before the release layout are
+converted once with `deploy/migrate-to-releases.sh`.
 
 ### The destructive-migration guard
 
@@ -150,7 +170,7 @@ That is not a bug to work around. Take the backup it prints, confirm you are
 willing to lose those rows, then re-run with the override:
 
 ```bash
-docker exec bzaro-postgres pg_dump -U bzaro bzaro > ~/bzaro-$(date +%F-%H%M).sql
+docker exec bzaro-postgres pg_dump -U bzaro -Fc bzaro > /root/backups/bzaro-$(date +%Y%m%d-%H%M).dump
 ALLOW_DESTRUCTIVE_MIGRATION=1 bash /srv/bzaro/app/deploy/deploy.sh
 ```
 

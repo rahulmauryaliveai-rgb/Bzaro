@@ -1,57 +1,124 @@
 #!/usr/bin/env bash
-# Deploy the current origin/main to this VPS (docs/HOSTINGER.md §5).
+# Deploy origin/main to this VPS as a new release (docs/HOSTINGER.md §5).
 #
 #   bash /srv/bzaro/app/deploy/deploy.sh
 #
-# Pull → install → migrate → build → reload pm2 → smoke test. Migrations run
-# BEFORE the new code starts (expand-contract, docs/DEPLOYMENT.md §5). The
-# build writes .next in place, so expect a short blip while it runs.
+# Layout (one-time conversion: deploy/migrate-to-releases.sh):
+#
+#   /srv/bzaro/repo              git clone; fetched, never built in
+#   /srv/bzaro/releases/<id>     one exported commit each, built in place
+#   /srv/bzaro/shared/.env       app secrets        → releases/<id>/.env
+#   /srv/bzaro/shared/deploy.env compose secrets    → releases/<id>/deploy/.env
+#   /srv/bzaro/shared/uploads    seller uploads     → releases/<id>/public/uploads
+#   /srv/bzaro/shared/Caddyfile  the file Caddy mounts (copied from the release)
+#   /srv/bzaro/app               symlink → the live release
+#
+# Everything that says /srv/bzaro/app (pm2 cwd, cron, docs) keeps working
+# because that path is now the symlink.
+#
+# Order: export → install → migrate → build (old release still serving) →
+# validate Caddyfile → switch symlink → reload Caddy + pm2 → smoke test →
+# prune. If the smoke test fails the symlink goes back to the previous release
+# automatically. Migrations are NOT reversed by that — they are expand-contract
+# (docs/DEPLOYMENT.md §5), so the previous code runs on the new schema.
+#
+# Env knobs:
+#   BRANCH=main                      branch to deploy
+#   KEEP_RELEASES=5                  releases kept on disk (min 2)
+#   ALLOW_DESTRUCTIVE_MIGRATION=1    see the migration guard below
+#   FORCE=1                          redeploy even if that commit is already live
 set -euo pipefail
 
-APP=/srv/bzaro/app
+BASE=${BZARO_BASE:-/srv/bzaro}   # overridable only for testing the scripts
+REPO=$BASE/repo
+RELEASES=$BASE/releases
+SHARED=$BASE/shared
+CURRENT=$BASE/app
 BRANCH=${BRANCH:-main}
+KEEP=${KEEP_RELEASES:-5}
+(( KEEP < 2 )) && KEEP=2
+PG=bzaro-postgres
 
-cd "$APP"
+die() { echo "✗ $*" >&2; exit 1; }
 
-if [[ ! -f .env ]]; then
-  echo "✗ $APP/.env is missing — copy deploy/env.production.example and fill it in" >&2
-  exit 1
+# ── Preconditions ────────────────────────────────────────────────────────────
+if [[ -e "$CURRENT" && ! -L "$CURRENT" ]]; then
+  die "$CURRENT is a plain directory (old layout) — convert it once with deploy/migrate-to-releases.sh"
 fi
+[[ -d "$REPO/.git" ]] || die "$REPO is missing — see deploy/migrate-to-releases.sh"
+for f in .env deploy.env Caddyfile; do
+  [[ -f "$SHARED/$f" ]] || die "$SHARED/$f is missing"
+done
+[[ -d "$SHARED/uploads" ]] || die "$SHARED/uploads is missing"
+
+# Empty on the very first deploy of a fresh server (deploy/setup-vps.sh).
+PREV=""
+[[ -L "$CURRENT" ]] && PREV=$(readlink -f "$CURRENT")
 
 echo "→ fetching origin/$BRANCH"
-git fetch --quiet origin "$BRANCH"
-git checkout --quiet "$BRANCH"
-git reset --quiet --hard "origin/$BRANCH"
-echo "   at $(git log -1 --format='%h %s')"
+git -C "$REPO" fetch --quiet origin "$BRANCH"
+SHA=$(git -C "$REPO" rev-parse --short=7 "origin/$BRANCH")
+SUBJECT=$(git -C "$REPO" log -1 --format='%s' "origin/$BRANCH")
+echo "   origin/$BRANCH = $SHA $SUBJECT"
+
+if [[ -n "$PREV" && -f "$PREV/REVISION" && "$(cut -d' ' -f1 "$PREV/REVISION")" == "$SHA" && "${FORCE:-}" != "1" ]]; then
+  echo "✓ $SHA is already live ($(basename "$PREV")). FORCE=1 to rebuild it anyway."
+  exit 0
+fi
+
+# Release ids sort by time. Never reuse the newest one's second, or the two
+# would sort by sha instead (possible right after migrate-to-releases.sh).
+LATEST=$(ls -1 "$RELEASES" | sort | tail -1)
+ID="$(date -u +%Y%m%d-%H%M%S)-$SHA"
+if [[ -n "$LATEST" && "${ID:0:15}" == "${LATEST:0:15}" ]]; then
+  sleep 1
+  ID="$(date -u +%Y%m%d-%H%M%S)-$SHA"
+fi
+NEW="$RELEASES/$ID"
+mkdir -p "$NEW"
+
+# A failed build must not leave a half-built directory that prune could later
+# mistake for a good release.
+SWITCHED=0
+cleanup() {
+  local code=$?
+  if (( code != 0 && SWITCHED == 0 )); then
+    echo "   removing unfinished release $ID" >&2
+    rm -rf "$NEW"
+  fi
+}
+trap cleanup EXIT
+
+echo "→ exporting $SHA to releases/$ID"
+git -C "$REPO" archive "origin/$BRANCH" | tar -x -C "$NEW"
+echo "$SHA $SUBJECT" > "$NEW/REVISION"
+
+ln -s "$SHARED/.env"       "$NEW/.env"
+ln -s "$SHARED/deploy.env" "$NEW/deploy/.env"
+mkdir -p "$NEW/public"
+rm -rf "$NEW/public/uploads"
+ln -s "$SHARED/uploads"    "$NEW/public/uploads"
+
+cd "$NEW"
 
 echo "→ installing dependencies"
-npm ci --no-audit --no-fund
+HUSKY=0 npm ci --no-audit --no-fund
 
 echo "→ generating Prisma client"
 npx prisma generate
 
 # ── Destructive-migration guard ─────────────────────────────────────────────
 # `prisma migrate deploy` never asks. A migration that drops a table or deletes
-# rows is therefore one keystroke away from being irreversible on live data,
-# and deploy/env.production.example ships with no backup configured.
-#
-# So: work out which migrations are pending, look for destructive SQL in them,
-# and refuse unless the operator has said they mean it. Override with
-#   ALLOW_DESTRUCTIVE_MIGRATION=1 bash deploy/deploy.sh
+# rows is therefore one keystroke away from being irreversible on live data.
+# Work out which migrations are pending, look for destructive SQL in them, and
+# refuse unless the operator has said they mean it:
+#   ALLOW_DESTRUCTIVE_MIGRATION=1 bash /srv/bzaro/app/deploy/deploy.sh
 echo "→ checking pending migrations"
 DESTRUCTIVE_RE='DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM'
-PG=bzaro-postgres
 
-# A database with no _prisma_migrations table is a fresh one: nothing to lose,
-# so the guard stays out of the way of a first deploy.
 HAS_TABLE=$(docker exec "$PG" psql -U bzaro -d bzaro -tAc \
   "SELECT to_regclass('public._prisma_migrations') IS NOT NULL" 2>/dev/null || echo "unreachable")
-
-if [[ "$HAS_TABLE" == "unreachable" ]]; then
-  echo "✗ cannot reach $PG to check which migrations are already applied." >&2
-  echo "  The deploy would fail at the migrate step anyway — fix the database first." >&2
-  exit 1
-fi
+[[ "$HAS_TABLE" == "unreachable" ]] && die "cannot reach $PG to check which migrations are applied"
 
 if [[ "$HAS_TABLE" == "t" ]]; then
   APPLIED=$(docker exec "$PG" psql -U bzaro -d bzaro -tAc \
@@ -61,7 +128,6 @@ if [[ "$HAS_TABLE" == "t" ]]; then
   for dir in prisma/migrations/*/; do
     name=$(basename "$dir")
     if grep -qxF "$name" <<<"$APPLIED"; then continue; fi
-
     hits=$(grep -inE "$DESTRUCTIVE_RE" "$dir/migration.sql" 2>/dev/null || true)
     if [[ -n "$hits" ]]; then
       OFFENDERS+="  $name"$'\n'"$(sed 's/^/      /' <<<"$hits")"$'\n'
@@ -75,39 +141,96 @@ if [[ "$HAS_TABLE" == "t" ]]; then
     echo "✗ a pending migration destroys data:" >&2
     echo "$OFFENDERS" >&2
     echo "  Back up first:" >&2
-    echo "    docker exec $PG pg_dump -U bzaro bzaro > ~/bzaro-\$(date +%F-%H%M).sql" >&2
-    echo "" >&2
-    echo "  Then re-run:  ALLOW_DESTRUCTIVE_MIGRATION=1 bash deploy/deploy.sh" >&2
+    echo "    docker exec $PG pg_dump -U bzaro -Fc bzaro > /root/backups/bzaro-\$(date +%Y%m%d-%H%M).dump" >&2
+    echo "  Then re-run:  ALLOW_DESTRUCTIVE_MIGRATION=1 bash $CURRENT/deploy/deploy.sh" >&2
     exit 1
   fi
-
-  if [[ -n "$OFFENDERS" ]]; then
-    echo "   ⚠ applying a DESTRUCTIVE migration because ALLOW_DESTRUCTIVE_MIGRATION=1"
-  fi
+  [[ -n "$OFFENDERS" ]] && echo "   ⚠ applying a DESTRUCTIVE migration because ALLOW_DESTRUCTIVE_MIGRATION=1"
 fi
 
 echo "→ applying migrations"
 npx prisma migrate deploy
 
-echo "→ building (this is the slow step)"
+echo "→ building (the live release keeps serving meanwhile)"
 NODE_OPTIONS="--max-old-space-size=3072" npm run build
 
-echo "→ refreshing infrastructure (picks up Caddyfile/compose changes; no-op otherwise)"
-docker compose --env-file deploy/.env -f deploy/compose.yml up -d --force-recreate caddy --quiet-pull >/dev/null 2>&1 || echo "   (caddy not recreated — run compose up manually)"
+# Validate against the running Caddy: it has ROOT_DOMAIN and /data/cloudflare/*.
+echo "→ validating Caddyfile"
+if [[ "$(docker inspect -f '{{.State.Running}}' bzaro-caddy 2>/dev/null)" == "true" ]]; then
+  docker exec -i bzaro-caddy caddy validate --adapter caddyfile --config /dev/stdin \
+    < deploy/Caddyfile >/dev/null 2>&1 \
+    || die "deploy/Caddyfile does not validate — nothing switched. Check: docker exec -i bzaro-caddy caddy validate --adapter caddyfile --config /dev/stdin < $NEW/deploy/Caddyfile"
+else
+  echo "   ⚠ bzaro-caddy is not running — skipped (first deploy?)"
+fi
+
+# ── Switch ───────────────────────────────────────────────────────────────────
+switch_to() {
+  ln -sfn "$1" "$BASE/.app.next"
+  mv -Tf "$BASE/.app.next" "$CURRENT"
+}
+
+reload_processes() {
+  mkdir -p "${BZARO_LOG_DIR:-/var/log/bzaro}"
+  (cd "$CURRENT" && pm2 startOrReload deploy/ecosystem.config.cjs --update-env)
+  pm2 save >/dev/null
+}
+
+smoke_test() {
+  local host
+  host=$(grep -E '^NEXT_PUBLIC_ROOT_DOMAIN=' "$SHARED/.env" | cut -d= -f2 | tr -d "\"'")
+  for _ in $(seq 1 30); do
+    curl -fsS -o /dev/null -H "Host: $host" http://127.0.0.1:3000/ && return 0
+    sleep 2
+  done
+  return 1
+}
+
+echo "→ switching $CURRENT → releases/$ID"
+switch_to "$NEW"
+SWITCHED=1
+
+# Caddy mounts shared/Caddyfile. Rewrite it in place (same inode, so the bind
+# mount sees it) and reload gracefully; no container restart, no TLS blip.
+if ! cmp -s deploy/Caddyfile "$SHARED/Caddyfile"; then
+  echo "→ Caddyfile changed — reloading Caddy"
+  cp "$SHARED/Caddyfile" "$SHARED/Caddyfile.prev"
+  cat deploy/Caddyfile > "$SHARED/Caddyfile"
+  docker exec bzaro-caddy caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile \
+    || echo "   ⚠ caddy reload failed — check: docker logs --tail 50 bzaro-caddy" >&2
+fi
+# Only recreates Caddy if compose.yml changed its definition; a no-op otherwise.
+docker compose --env-file "$SHARED/deploy.env" -f "$NEW/deploy/compose.yml" up -d --no-deps caddy --quiet-pull >/dev/null
 
 echo "→ reloading processes"
-mkdir -p /var/log/bzaro public/uploads
-pm2 startOrReload deploy/ecosystem.config.cjs --update-env
-pm2 save >/dev/null
+reload_processes
 
 echo "→ smoke test"
-for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null -H "Host: $(grep -E '^NEXT_PUBLIC_ROOT_DOMAIN=' .env | cut -d= -f2 | tr -d '"')" http://127.0.0.1:3000/; then
-    echo "✓ live: $(git log -1 --format='%h')"
-    exit 0
+if ! smoke_test; then
+  if [[ -z "$PREV" ]]; then
+    echo "✗ new release did not answer on :3000 and there is no previous release — check: pm2 logs bzaro-web" >&2
+    exit 1
   fi
-  sleep 2
-done
+  echo "✗ new release did not answer on :3000 — rolling back to $(basename "$PREV")" >&2
+  switch_to "$PREV"
+  if [[ -f "$SHARED/Caddyfile.prev" ]] && ! cmp -s "$PREV/deploy/Caddyfile" "$SHARED/Caddyfile"; then
+    cat "$PREV/deploy/Caddyfile" > "$SHARED/Caddyfile"
+    docker exec bzaro-caddy caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile || true
+  fi
+  reload_processes
+  smoke_test && echo "   previous release is serving again" >&2 || echo "   ✗ previous release is not answering either — check: pm2 logs bzaro-web" >&2
+  touch "$NEW/FAILED"   # rollback.sh never picks it
+  echo "   failed release kept for inspection: $NEW" >&2
+  exit 1
+fi
+echo "✓ live: $SHA ($ID)"
 
-echo "✗ app did not answer on :3000 — check: pm2 logs bzaro-web" >&2
-exit 1
+# ── Prune ────────────────────────────────────────────────────────────────────
+# Keep the newest $KEEP releases, and never the live one or the one before it.
+mapfile -t ALL < <(ls -1 "$RELEASES" | sort -r)
+for (( i = KEEP; i < ${#ALL[@]}; i++ )); do
+  dir="$RELEASES/${ALL[$i]}"
+  [[ "$dir" == "$NEW" || "$dir" == "$PREV" ]] && continue
+  echo "   pruning ${ALL[$i]}"
+  rm -rf "$dir"
+done

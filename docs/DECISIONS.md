@@ -866,3 +866,33 @@ buyer's session on one store they chose to sign in to.
 were handed to (each store session ends on its own sign-out, on expiry, or
 platform-wide via "sign out everywhere", which bumps `sessionsInvalidAfter`).
 Custom domains get no hand-off yet — email sign-in only.
+
+## D37 — Release-folder deploys on the VPS
+
+**Decision.** Each deploy builds `origin/main` into its own folder,
+`/srv/bzaro/releases/<utc>-<sha>`, next to the live one. `/srv/bzaro/app`
+becomes a symlink that is switched atomically once the build, migrations and a
+Caddyfile validation have succeeded. Secrets, uploads and the Caddyfile Caddy
+mounts live once in `/srv/bzaro/shared/` and are linked into every release.
+The last five releases stay on disk (`deploy/deploy.sh`, `deploy/rollback.sh`,
+one-time conversion `deploy/migrate-to-releases.sh`).
+
+**Why.** The in-place deploy rebuilt `.next` under the running server (errors
+for ~30 s every deploy), and the only way back from a bad release was another
+full rebuild. Now the live site keeps serving during the build, a failed smoke
+test flips back automatically, and a manual rollback takes seconds.
+
+**Kept path.** `/srv/bzaro/app` stays the path everything uses — pm2's cwd,
+cron, the docs — so none of it had to change.
+
+**Pinned compose project (`name: deploy`).** Volume names are prefixed with the
+compose project name, which compose would otherwise derive from the directory.
+A drift there would start Postgres and Caddy on new, empty volumes.
+
+**Caddy mounts `shared/Caddyfile`, not the release's copy.** A bind mount
+pins its source path; old releases get pruned. deploy.sh rewrites the shared
+file in place and runs `caddy reload` (no restart) only when it changed.
+
+**Cost.** ≈1.6 GB per release (node_modules + .next), so ≈8 GB for five, and
+`npm ci` on every deploy. Migrations are still not reversed by a rollback:
+they stay expand-contract (docs/DEPLOYMENT.md §5).
