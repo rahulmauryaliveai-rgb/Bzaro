@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ChevronDown, FileText, LayoutGrid, Store, UserRound } from "lucide-react";
+import { ChevronDown, FileText, LayoutGrid, Store } from "lucide-react";
 import { BrandLogo } from "@/components/shared/BrandLogo";
 import { SearchBar } from "@/components/marketplace/SearchBar";
+import { AccountMenu } from "@/components/marketplace/AccountMenu";
 import { getAllCities, getRootCategories } from "@/server/services/taxonomy.service";
 
 /**
@@ -50,13 +51,7 @@ export async function SiteHeader() {
             <Store className="h-4 w-4" aria-hidden="true" />
             Sell on Bzaro
           </Link>
-          <Link
-            href="/login"
-            className="hover:text-brand-800 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
-          >
-            <UserRound className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Sign in</span>
-          </Link>
+          <AccountMenu />
         </nav>
       </div>
 

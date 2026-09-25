@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth/guards";
+import { requireBuyerPage } from "@/lib/buyer/guard";
+import { AccountShell } from "@/components/account/AccountShell";
 import { db } from "@/lib/db";
 import { sellerVisitUrl } from "@/lib/utils/url";
 
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
  * the row is cascaded away with the seller, so there is nothing to clean up.
  */
 export default async function SavedSellersPage() {
-  const user = await requireUser("/account/saved");
+  const user = await requireBuyerPage("/account/saved");
 
   const saved = await db.savedSeller.findMany({
     where: { buyerId: user.id, seller: { status: "VERIFIED", deletedAt: null } },
@@ -41,19 +42,7 @@ export default async function SavedSellersPage() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <nav className="mb-6 flex flex-wrap gap-4 border-b border-neutral-200 pb-3 text-sm">
-        <Link href="/account/requirements" className="hover:underline">
-          My requirements
-        </Link>
-        <Link href="/account/orders" className="hover:underline">
-          My orders
-        </Link>
-        <Link href="/account/saved" className="hover:underline">
-          Saved suppliers
-        </Link>
-      </nav>
-
+    <AccountShell userId={user.id} active="saved">
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Saved suppliers</h1>
 
       {saved.length === 0 ? (
@@ -71,10 +60,7 @@ export default async function SavedSellersPage() {
               className="flex flex-wrap items-baseline justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-4 text-sm"
             >
               <div>
-                <Link
-                  href={`/seller/${seller.slug}`}
-                  className="font-medium hover:underline"
-                >
+                <Link href={`/seller/${seller.slug}`} className="font-medium hover:underline">
                   {seller.businessName}
                 </Link>
                 {seller.tagline ? (
@@ -106,6 +92,6 @@ export default async function SavedSellersPage() {
           ))}
         </ul>
       )}
-    </div>
+    </AccountShell>
   );
 }

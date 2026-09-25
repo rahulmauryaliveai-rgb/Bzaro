@@ -11,6 +11,7 @@ import {
   flagLead,
   setLeadOutcome,
 } from "@/server/services/lead-inbox.service";
+import { notifyBuyerOfResponse } from "@/server/services/buyer-account.service";
 
 /**
  * Seller-side lead actions (docs/LEADS.md §2, §4).
@@ -54,6 +55,9 @@ export async function acceptLeadAction(
     };
     return { error: copy[result.reason] };
   }
+
+  // Best effort, never throws: the accept already succeeded.
+  await notifyBuyerOfResponse(parsed.data.leadId);
 
   revalidatePath("/dashboard/leads");
   revalidatePath(`/dashboard/leads/${parsed.data.leadId}`);

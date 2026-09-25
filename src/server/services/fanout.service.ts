@@ -46,7 +46,7 @@ export async function claimNextRequirement(): Promise<string | null> {
 
 export type FanoutOutcome =
   | { status: "DONE"; leads: number }
-  | { status: "SKIPPED"; reason: "duplicate" | "no_candidates" | "not_found" };
+  | { status: "SKIPPED"; reason: "duplicate" | "no_candidates" | "not_found" | "closed" };
 
 /** Run the matcher for one claimed requirement and write the MARKET leads. */
 export async function processRequirement(requirementId: string): Promise<FanoutOutcome> {
@@ -60,9 +60,16 @@ export async function processRequirement(requirementId: string): Promise<FanoutO
       directSellerId: true,
       fingerprint: true,
       createdAt: true,
+      closedAt: true,
     },
   });
   if (!requirement) return { status: "SKIPPED", reason: "not_found" };
+
+  // The buyer already marked it filled: no seller should get (or pay for) it.
+  if (requirement.closedAt) {
+    await markFanout(requirement.id, "SKIPPED", "closed by buyer");
+    return { status: "SKIPPED", reason: "closed" };
+  }
 
   const settings = await getLeadSettings();
 

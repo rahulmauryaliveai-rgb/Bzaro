@@ -117,3 +117,28 @@ export function sellerWelcomeEmail(params: {
     ].join("\n"),
   };
 }
+
+/** A supplier accepted the buyer's requirement (buyer account, email alerts). */
+export function supplierRespondedEmail(params: {
+  to: string;
+  buyerName: string | null;
+  sellerName: string;
+  productName: string;
+  url: string;
+}): MailMessage {
+  const greeting = params.buyerName ? `Hi ${params.buyerName.split(" ")[0]},` : "Hi,";
+  return {
+    to: params.to,
+    subject: `${params.sellerName} responded to your requirement for ${params.productName}`,
+    text: [
+      greeting,
+      ``,
+      `${params.sellerName} has accepted your requirement for "${params.productName}" on ${platform} and will contact you shortly.`,
+      ``,
+      `See their details and reach them on WhatsApp or phone:`,
+      params.url,
+      ``,
+      `You can turn these emails off in Profile & settings on ${platform}.`,
+    ].join("\n"),
+  };
+}

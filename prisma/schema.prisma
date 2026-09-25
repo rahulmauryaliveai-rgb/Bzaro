@@ -1002,6 +1002,9 @@ model BuyerProfile {
   latitude   Float?
   longitude  Float?
 
+  /// Email the buyer when a supplier accepts one of their requirements.
+  notifyOnResponse Boolean @default(true)
+
   isBlocked Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1098,6 +1101,9 @@ model Requirement {
   /// see src/lib/consent.ts.
   consentVersion String
   consentAt      DateTime
+
+  /// The buyer marked it filled ("I found a supplier"). Null = still open.
+  closedAt DateTime?
 
   /// sha256 of normalised productName + categoryId. Together with buyerId and
   /// createdAt this is the 7-day "same buyer, same requirement" dedupe key.

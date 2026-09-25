@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { requireUser } from "@/lib/auth/guards";
+import { requireBuyerPage } from "@/lib/buyer/guard";
+import { AccountShell } from "@/components/account/AccountShell";
 import { db } from "@/lib/db";
 import { formatMoney } from "@/lib/utils/money";
 
@@ -26,7 +26,7 @@ const SHIPPING_COPY: Record<string, string> = {
 };
 
 export default async function MyOrdersPage() {
-  const user = await requireUser("/account/orders");
+  const user = await requireBuyerPage("/account/orders");
 
   const orders = await db.order.findMany({
     where: { buyerId: user.id },
@@ -48,19 +48,7 @@ export default async function MyOrdersPage() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <nav className="mb-6 flex flex-wrap gap-4 border-b border-neutral-200 pb-3 text-sm">
-        <Link href="/account/requirements" className="hover:underline">
-          My requirements
-        </Link>
-        <Link href="/account/orders" className="hover:underline">
-          My orders
-        </Link>
-        <Link href="/account/saved" className="hover:underline">
-          Saved suppliers
-        </Link>
-      </nav>
-
+    <AccountShell userId={user.id} active="orders">
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">My orders</h1>
 
       {orders.length === 0 ? (
@@ -70,7 +58,10 @@ export default async function MyOrdersPage() {
       ) : (
         <ul className="space-y-3">
           {orders.map((order) => (
-            <li key={order.id} className="rounded-lg border border-neutral-200 bg-white p-4 text-sm">
+            <li
+              key={order.id}
+              className="rounded-lg border border-neutral-200 bg-white p-4 text-sm"
+            >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="font-medium">{order.seller.businessName}</span>
                 <span className="font-mono text-xs text-neutral-500">{order.orderNumber}</span>
@@ -102,6 +93,6 @@ export default async function MyOrdersPage() {
           ))}
         </ul>
       )}
-    </div>
+    </AccountShell>
   );
 }

@@ -9,9 +9,7 @@ export function ContinueAfterSignIn() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace(
-      loadPendingRequirement() ? "/post-requirement?resume=1" : "/account/requirements",
-    );
+    router.replace(loadPendingRequirement() ? "/post-requirement?resume=1" : "/account");
   }, [router]);
 
   return (
