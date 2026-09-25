@@ -188,7 +188,18 @@ export function ContactIntentSteps({
   // first — signing in is the step between "Send" and the lead.
   useEffect(() => {
     let cancelled = false;
-    const pending = resume ? loadPendingRequirement() : null;
+    // Resume explicitly (bzaro.in after Google), or implicitly when the kept
+    // draft was for this very seller/product — a buyer back on a store after
+    // the Google hand-off reopens the same modal and finds it filled in.
+    const kept = loadPendingRequirement();
+    const pending =
+      kept &&
+      (resume ||
+        (target.sellerId &&
+          kept.target.sellerId === target.sellerId &&
+          kept.target.productId === target.productId))
+        ? kept
+        : null;
     resolveBuyerSessionAction()
       .then((result) => {
         if (cancelled) return;
@@ -204,7 +215,7 @@ export function ContactIntentSteps({
     return () => {
       cancelled = true;
     };
-  }, [resume]);
+  }, [resume, target.sellerId, target.productId]);
 
   return (
     <>
@@ -368,7 +379,7 @@ function RequirementStep({
       className="space-y-4"
     >
       <Honeypot />
-      {resumed ? (
+      {resumed && buyer ? (
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-900" role="status">
           You&apos;re signed in. Your requirement is ready — check the details and press send.
         </p>

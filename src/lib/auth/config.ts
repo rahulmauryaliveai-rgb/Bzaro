@@ -41,7 +41,7 @@ import type { UserRole } from "@/generated/prisma/enums";
  */
 
 const REVALIDATE_AFTER_SECONDS = 300;
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -60,10 +60,12 @@ const isProduction = env.NODE_ENV === "production";
  * absent we fall back to NODE_ENV, so a misconfigured production deploy still
  * fails closed (secure) rather than open.
  */
-const isSecureOrigin = env.AUTH_URL ? env.AUTH_URL.startsWith("https://") : isProduction;
+export const isSecureOrigin = env.AUTH_URL ? env.AUTH_URL.startsWith("https://") : isProduction;
 
 /** `__Host-` requires Secure, Path=/ and NO Domain — exactly our requirement. */
-const sessionCookieName = isSecureOrigin ? "__Host-authjs.session-token" : "authjs.session-token";
+export const sessionCookieName = isSecureOrigin
+  ? "__Host-authjs.session-token"
+  : "authjs.session-token";
 
 const providers: NextAuthConfig["providers"] = [
   Credentials({

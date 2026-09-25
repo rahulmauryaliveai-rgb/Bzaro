@@ -1,6 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import {
+  createContext,
+  useActionState,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import {
   buyerGoogleSignInAction,
@@ -14,6 +21,7 @@ import {
 } from "@/server/actions/buyer";
 import { Field } from "@/components/dashboard/fields";
 import { Turnstile } from "@/components/buyer/Turnstile";
+import { getSubdomain, marketplaceUrl, normalizeHost, ROOT_DOMAIN } from "@/lib/utils/url";
 
 /**
  * Buyer sign-up / sign-in (D35).
@@ -28,51 +36,59 @@ import { Turnstile } from "@/components/buyer/Turnstile";
 
 export type AuthView = "signup" | "login" | "otp" | "forgot" | "reset";
 
+/** Where "Continue with Google" lands after sign-in (a same-site path). */
+const GoogleNextContext = createContext<string | undefined>(undefined);
+
 export function BuyerAuth({
   initialView = "signup",
   onDone,
+  next,
 }: {
   initialView?: AuthView;
   /** Called once the buyer is authenticated. The modal resumes its flow. */
   onDone?: () => void;
+  /** Destination after a Google sign-in (Google always returns via bzaro.in). */
+  next?: string;
 }) {
   const [view, setView] = useState<AuthView>(initialView);
   const [email, setEmail] = useState("");
 
   return (
-    <div>
-      {view === "signup" ? (
-        <SignupForm
-          onSent={(sentTo) => {
-            setEmail(sentTo);
-            setView("otp");
-          }}
-          onSwitchToLogin={() => setView("login")}
-        />
-      ) : null}
+    <GoogleNextContext.Provider value={next}>
+      <div>
+        {view === "signup" ? (
+          <SignupForm
+            onSent={(sentTo) => {
+              setEmail(sentTo);
+              setView("otp");
+            }}
+            onSwitchToLogin={() => setView("login")}
+          />
+        ) : null}
 
-      {view === "login" ? (
-        <LoginForm
-          onDone={onDone}
-          onSwitchToSignup={() => setView("signup")}
-          onForgot={() => setView("forgot")}
-        />
-      ) : null}
+        {view === "login" ? (
+          <LoginForm
+            onDone={onDone}
+            onSwitchToSignup={() => setView("signup")}
+            onForgot={() => setView("forgot")}
+          />
+        ) : null}
 
-      {view === "otp" ? <OtpForm email={email} onDone={onDone} /> : null}
+        {view === "otp" ? <OtpForm email={email} onDone={onDone} /> : null}
 
-      {view === "forgot" ? (
-        <ForgotForm
-          onSent={(sentTo) => {
-            setEmail(sentTo);
-            setView("reset");
-          }}
-          onBack={() => setView("login")}
-        />
-      ) : null}
+        {view === "forgot" ? (
+          <ForgotForm
+            onSent={(sentTo) => {
+              setEmail(sentTo);
+              setView("reset");
+            }}
+            onBack={() => setView("login")}
+          />
+        ) : null}
 
-      {view === "reset" ? <ResetForm email={email} onDone={() => setView("login")} /> : null}
-    </div>
+        {view === "reset" ? <ResetForm email={email} onDone={() => setView("login")} /> : null}
+      </div>
+    </GoogleNextContext.Provider>
   );
 }
 
@@ -386,13 +402,60 @@ function ResetForm({ email, onDone }: { email: string; onDone: () => void }) {
  * Its own form: nesting a second submit inside the credentials form would post
  * the credentials when the buyer meant to use Google.
  */
+const googleButtonClass =
+  "flex min-h-11 w-full items-center justify-center rounded-md border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50";
+
+const noopSubscribe = () => () => {};
+
+/** Which kind of host this runs on — decided in the browser, null during SSR. */
+function useHostKind(): "apex" | "store" | "other" | null {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      const host = normalizeHost(window.location.host);
+      if (!host || host === ROOT_DOMAIN) return "apex";
+      return getSubdomain(host) ? "store" : "other";
+    },
+    () => null,
+  );
+}
+
 function GoogleButton() {
+  const next = useContext(GoogleNextContext);
+  const hostKind = useHostKind();
+
+  // On a seller's store: Google's only redirect URI is on bzaro.in, and the
+  // platform session never leaves bzaro.in (D36). Sign in there, then come
+  // back with a one-time hand-off that signs the buyer in on THIS store.
+  if (hostKind === "store") {
+    const to = encodeURIComponent(window.location.href);
+    return (
+      <div className="space-y-2">
+        <a
+          href={marketplaceUrl(`/account/handoff?to=${to}&google=1`)}
+          className={googleButtonClass}
+        >
+          Continue with Google
+        </a>
+        <p className="text-center text-xs text-neutral-500">
+          Already signed in on bzaro.in?{" "}
+          <a
+            href={marketplaceUrl(`/account/handoff?to=${to}`)}
+            className="underline hover:text-neutral-800"
+          >
+            Continue with that account
+          </a>
+        </p>
+      </div>
+    );
+  }
+  // A seller's own custom domain: no hand-off there yet, email sign-in only.
+  if (hostKind === "other") return null;
+
   return (
     <form action={buyerGoogleSignInAction}>
-      <button
-        type="submit"
-        className="min-h-11 w-full rounded-md border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
-      >
+      {next ? <input type="hidden" name="next" value={next} /> : null}
+      <button type="submit" className={googleButtonClass}>
         Continue with Google
       </button>
     </form>

@@ -24,6 +24,8 @@ import { db } from "@/lib/db";
 export const TOKEN_PURPOSES = {
   emailVerification: "verify",
   passwordReset: "reset",
+  /** Store sign-in hand-off (src/server/services/handoff.service.ts). */
+  storeHandoff: "handoff",
 } as const;
 
 export type TokenPurpose = (typeof TOKEN_PURPOSES)[keyof typeof TOKEN_PURPOSES];
@@ -31,6 +33,8 @@ export type TokenPurpose = (typeof TOKEN_PURPOSES)[keyof typeof TOKEN_PURPOSES];
 export const TOKEN_TTL_MS = {
   verify: 24 * 60 * 60 * 1000,
   reset: 60 * 60 * 1000,
+  // Redeemed by an immediate redirect; anything slower is not a browser.
+  handoff: 2 * 60 * 1000,
 } as const;
 
 function identifierFor(purpose: TokenPurpose, email: string): string {

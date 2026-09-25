@@ -22,6 +22,7 @@ import {
   setBuyerPhone,
 } from "@/server/services/auth.service";
 import { getBuyerSession } from "@/server/services/buyer.service";
+import { safeNextPath } from "@/lib/buyer/guard";
 
 /**
  * Buyer authentication (D35).
@@ -296,10 +297,16 @@ export async function setBuyerPhoneAction(
  * a name but never a phone number, and a seller's whole reason to answer a lead
  * is a number to call. That page asks once and then gets out of the way.
  */
-export async function buyerGoogleSignInAction(): Promise<void> {
+export async function buyerGoogleSignInAction(formData?: FormData): Promise<void> {
   // /account/continue asks for a phone if missing, then resumes any
-  // requirement the buyer was sending when they chose Google.
-  await signIn("google", { redirectTo: "/account/continue" });
+  // requirement the buyer was sending when they chose Google — or goes to
+  // `next` (e.g. the store hand-off). Only same-site relative paths survive.
+  const raw = formData?.get("next");
+  const next = typeof raw === "string" ? safeNextPath(raw, "") : "";
+  const continueTo = next
+    ? `/account/continue?next=${encodeURIComponent(next)}`
+    : "/account/continue";
+  await signIn("google", { redirectTo: continueTo });
 }
 
 /**

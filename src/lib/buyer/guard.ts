@@ -6,9 +6,17 @@ import { getSessionUser, type SessionUser } from "@/lib/auth/guards";
  * Require a signed-in user on a buyer account page. Unlike `requireUser`,
  * sends guests to the BUYER sign-in (/account/signin), not the seller login.
  */
-export async function requireBuyerPage(returnTo: string): Promise<SessionUser> {
+export async function requireBuyerPage(
+  returnTo: string,
+  options: { google?: boolean } = {},
+): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) redirect(`/account/signin?next=${encodeURIComponent(returnTo)}`);
+  if (!user) {
+    // `google` = the buyer already chose "Continue with Google" (on a store):
+    // the sign-in page goes straight on to Google instead of asking again.
+    const google = options.google ? "&google=1" : "";
+    redirect(`/account/signin?next=${encodeURIComponent(returnTo)}${google}`);
+  }
   return user;
 }
 

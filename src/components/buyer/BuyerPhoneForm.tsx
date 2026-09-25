@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { setBuyerPhoneAction, type BuyerAuthState } from "@/server/actions/buyer";
 import { Field } from "@/components/dashboard/fields";
 
-export function BuyerPhoneForm() {
+export function BuyerPhoneForm({ continueTo = "/account/continue" }: { continueTo?: string }) {
   const router = useRouter();
   const [state, action, pending] = useActionState<BuyerAuthState, FormData>(
     setBuyerPhoneAction,
@@ -14,7 +14,7 @@ export function BuyerPhoneForm() {
 
   useEffect(() => {
     // /account/continue resumes an unsent requirement, else shows the list.
-    if (state.step === "done") router.push("/account/continue");
+    if (state.step === "done") router.push(continueTo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.step]);
 

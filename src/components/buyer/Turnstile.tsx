@@ -19,6 +19,7 @@ declare global {
     turnstile?: {
       render: (el: HTMLElement, options: Record<string, unknown>) => string;
       remove: (id: string) => void;
+      reset: (id: string) => void;
     };
   }
 }
@@ -41,8 +42,24 @@ export function Turnstile() {
         sitekey: siteKey,
         // The widget manages the hidden input itself under this name.
         "response-field-name": "cf-turnstile-response",
+        // Tokens expire after 300 s; a buyer who leaves the form open longer
+        // gets a fresh one silently instead of a failed submit.
+        "refresh-expired": "auto",
       });
     }
+
+    // A token is single-use. After every submit — success or a validation
+    // error the buyer then fixes — fetch a fresh one, or the retry is rejected
+    // as "already spent". The form data is captured synchronously on submit,
+    // so resetting on the next tick cannot blank the token being sent.
+    const form = containerRef.current?.closest("form") ?? null;
+    function onSubmit() {
+      window.setTimeout(() => {
+        const id = widgetIdRef.current;
+        if (id && window.turnstile) window.turnstile.reset(id);
+      }, 0);
+    }
+    form?.addEventListener("submit", onSubmit);
 
     if (window.turnstile) {
       render();
@@ -62,6 +79,7 @@ export function Turnstile() {
 
     return () => {
       cancelled = true;
+      form?.removeEventListener("submit", onSubmit);
       const id = widgetIdRef.current;
       if (id && window.turnstile) {
         window.turnstile.remove(id);

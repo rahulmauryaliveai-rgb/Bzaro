@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { BuyerPhoneForm } from "@/components/buyer/BuyerPhoneForm";
+import { safeNextPath } from "@/lib/buyer/guard";
 
 export const metadata: Metadata = {
   title: "Add your number",
@@ -17,7 +18,12 @@ export const metadata: Metadata = {
  * skipped entirely for anyone who already has one, so it can be linked to
  * unconditionally as a post-login destination.
  */
-export default async function BuyerPhonePage() {
+type Props = { searchParams: Promise<{ next?: string }> };
+
+export default async function BuyerPhonePage({ searchParams }: Props) {
+  const { next: rawNext } = await searchParams;
+  const next = safeNextPath(rawNext, "/account");
+  const continueTo = `/account/continue?next=${encodeURIComponent(next)}`;
   const user = await requireUser("/account/phone");
 
   const row = await db.user.findUnique({
@@ -25,7 +31,7 @@ export default async function BuyerPhonePage() {
     select: { phone: true },
   });
 
-  if (row?.phone) redirect("/account/continue");
+  if (row?.phone) redirect(continueTo);
 
   return (
     <div className="mx-auto max-w-md px-4 py-12">
@@ -36,7 +42,7 @@ export default async function BuyerPhonePage() {
       </p>
 
       <div className="mt-6">
-        <BuyerPhoneForm />
+        <BuyerPhoneForm continueTo={continueTo} />
       </div>
     </div>
   );

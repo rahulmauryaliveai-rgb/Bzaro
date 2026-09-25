@@ -44,7 +44,10 @@ const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "on" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    // geolocation=(self): the location bar's "Use my current location" needs
+    // it on our own pages; "()" blocked the API outright. Still no third-party
+    // frame may ask.
+    value: "camera=(), microphone=(), geolocation=(self), interest-cohort=()",
   },
   // Tenant microsites must never be framed — a seller site inside an attacker's
   // iframe is a clickjacking surface against that seller's customers.
@@ -55,7 +58,10 @@ const productionHeaders = [
   ...securityHeaders,
   {
     key: "Strict-Transport-Security",
-    value: "max-age=63072000; includeSubDomains; preload",
+    // No "preload" until the setup has been stable for a few weeks: preload
+    // list inclusion is hard to undo. max-age and includeSubDomains are safe —
+    // every *.bzaro.in host has TLS (Cloudflare edge + origin cert).
+    value: "max-age=63072000; includeSubDomains",
   },
 ];
 

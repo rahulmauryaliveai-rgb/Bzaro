@@ -18,6 +18,7 @@
     "db:seed": "tsx prisma/seed/index.ts",
     "db:seed:prod": "tsx prisma/seed/production.ts",
     "db:seed:showcase": "tsx prisma/seed/showcase.ts",
+    "db:seed:pincodes": "tsx prisma/seed/pincodes-only.ts",
     "db:studio": "prisma studio",
     "db:start": "node scripts/db-start.mjs",
     "db:start:raw": "prisma dev -d -n bzaro",

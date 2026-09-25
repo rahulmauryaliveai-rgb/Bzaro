@@ -10,11 +10,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type Props = { searchParams: Promise<{ next?: string; view?: string }> };
+type Props = { searchParams: Promise<{ next?: string; view?: string; google?: string }> };
 
 /** Buyer sign-in / sign-up — the page version of the popup. Sellers use /login. */
 export default async function BuyerSignInPage({ searchParams }: Props) {
-  const { next, view } = await searchParams;
+  const { next, view, google } = await searchParams;
   const destination = safeNextPath(next);
   if (await getSessionUser()) redirect(destination);
 
@@ -25,7 +25,11 @@ export default async function BuyerSignInPage({ searchParams }: Props) {
         <p className="mb-6 text-sm text-neutral-600">
           Track your requirements and reach the suppliers who respond.
         </p>
-        <BuyerSignIn next={destination} initialView={view === "signup" ? "signup" : "login"} />
+        <BuyerSignIn
+          next={destination}
+          initialView={view === "signup" ? "signup" : "login"}
+          autoGoogle={google === "1"}
+        />
       </div>
       <p className="mt-4 text-center text-sm text-neutral-600">
         Selling on Bzaro?{" "}

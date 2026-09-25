@@ -264,13 +264,20 @@ export function hashIp(ip: string): string {
  * more reason the origin must not be publicly reachable in production.
  */
 export function getClientIp(headers: Headers): string {
-  const cf = headers.get("cf-connecting-ip");
-  if (cf) return cf;
+  // Production: Caddy computes the client IP itself — CF-Connecting-IP only
+  // when the connection comes from a Cloudflare range (trusted_proxies in
+  // deploy/Caddyfile), else the TCP peer — and OVERWRITES X-Real-IP with it.
+  // So this header cannot be forged by the client. CF-Connecting-IP and
+  // X-Forwarded-For are NOT trusted first: anyone reaching the origin directly
+  // (a seller's custom domain, or the raw IP) can set them to anything.
+  const real = headers.get("x-real-ip");
+  if (real) return real.trim();
 
+  // Local development / tests only: no proxy in front.
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]!.trim();
 
-  return headers.get("x-real-ip") ?? "0.0.0.0";
+  return "0.0.0.0";
 }
 
 export { LIMITS };

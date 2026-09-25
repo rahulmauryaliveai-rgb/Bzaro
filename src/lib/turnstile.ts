@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "@/env";
+import { ROOT_DOMAIN } from "@/lib/utils/url";
 
 /**
  * Cloudflare Turnstile verification.
@@ -20,6 +21,18 @@ import { env } from "@/env";
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 export type TurnstileResult = { ok: true } | { ok: false; reason: "missing" | "rejected" };
+
+/** bzaro.in itself or any seller subdomain of it. */
+function isOurHostname(hostname: string | undefined): boolean {
+  if (!hostname) return false;
+  const host = hostname.toLowerCase();
+  return host === ROOT_DOMAIN || host.endsWith(`.${ROOT_DOMAIN}`);
+}
+
+/** Cloudflare's documented dummy secrets ("1x000…AA", "2x000…AA", "3x000…AA"). */
+function isTestSecret(secret: string): boolean {
+  return /^[123]x0{20,}AA$/.test(secret);
+}
 
 export async function verifyTurnstile(
   token: string | null | undefined,
@@ -43,9 +56,21 @@ export async function verifyTurnstile(
       return { ok: false, reason: "rejected" };
     }
 
-    const result = (await response.json()) as { success?: boolean; "error-codes"?: string[] };
+    const result = (await response.json()) as {
+      success?: boolean;
+      hostname?: string;
+      "error-codes"?: string[];
+    };
     if (!result.success) {
       console.warn(`[turnstile] rejected: ${(result["error-codes"] ?? []).join(", ")}`);
+      return { ok: false, reason: "rejected" };
+    }
+
+    // A token solved on someone else's site (same widget key lifted into a
+    // scraper page) must not pass here. Cloudflare's published test secrets
+    // always answer "example.com", so they are exempt.
+    if (!isTestSecret(env.TURNSTILE_SECRET) && !isOurHostname(result.hostname)) {
+      console.warn(`[turnstile] rejected: token issued for "${result.hostname ?? "?"}"`);
       return { ok: false, reason: "rejected" };
     }
 

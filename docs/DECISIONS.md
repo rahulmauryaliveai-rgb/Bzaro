@@ -831,5 +831,38 @@ a phone so this stays the exception.
 `*.bzaro.in` subdomain (`AUTH_COOKIE_DOMAIN=.bzaro.in`). That directly
 contradicts the host-only cookie rule in `src/lib/auth/config.ts` and
 docs/SECURITY.md §Sessions, which exists so a stored XSS on one seller's
-storefront cannot lift a platform session. Not decided here — it must be
-settled before buyer auth ships on subdomains.
+storefront cannot lift a platform session. Settled by
+[D36](#d36--store-sign-in-is-a-one-time-hand-off-not-a-shared-cookie).
+
+---
+
+## D36 — Store sign-in is a one-time hand-off, not a shared cookie
+
+**Decision.** The platform session stays host-only on `bzaro.in` (`__Host-`
+prefix, no `Domain`). There is no `AUTH_COOKIE_DOMAIN`. A buyer who needs to be
+signed in on a seller's store — its cart, or "Continue with Google", whose only
+redirect URI is on the apex — is handed across explicitly
+(`src/server/services/handoff.service.ts`):
+
+1. The store links to `bzaro.in/account/handoff?to=<store url>`; the buyer
+   signs in on bzaro.in if needed (Google included).
+2. bzaro.in issues a one-time, 256-bit token bound to (user, store host),
+   valid for two minutes, stored hashed in `VerificationToken`.
+3. The store's `/api/account/handoff` redeems it and sets a **host-only**
+   session cookie for that store alone, with the same claims the Auth.js jwt
+   callback writes — so revocation (`sessionsInvalidAfter`), expiry and role
+   refresh behave exactly as for a normal login.
+
+Only `BUYER` accounts are handed off. Seller and staff sessions never leave
+bzaro.in. Email/password sign-in inside a store's own modal already works
+per-host and is unchanged.
+
+**Why not `.bzaro.in`.** A domain cookie is sent to every tenant subdomain, so
+one seller's stored XSS would expose the session of every visitor — admins
+included — across the platform. With the hand-off, the worst case is one
+buyer's session on one store they chose to sign in to.
+
+**Cost.** Signing out on bzaro.in does not sign the buyer out of stores they
+were handed to (each store session ends on its own sign-out, on expiry, or
+platform-wide via "sign out everywhere", which bumps `sessionsInvalidAfter`).
+Custom domains get no hand-off yet — email sign-in only.
