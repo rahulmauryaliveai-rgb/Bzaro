@@ -34,6 +34,21 @@
 	}
 }
 
+# Authenticated Origin Pulls (mTLS): only Cloudflare can complete a TLS
+# handshake for bzaro.in hosts, so the origin cannot be reached around
+# Cloudflare (its WAF, the Turnstile/rate-limit edge, spoofed CF-* headers).
+# The CA is Cloudflare's public origin-pull CA, stored in the caddy-data volume.
+# ORDER MATTERS: switch AOP on in Cloudflare (SSL/TLS → Origin Server) BEFORE
+# deploying this, or Cloudflare presents no client certificate and every
+# bzaro.in host fails with 525. Seller custom domains (on-demand TLS) are
+# not behind Cloudflare and do not use this.
+(cloudflare_mtls) {
+	client_auth {
+		mode require_and_verify
+		trust_pool file /data/cloudflare/origin-pull-ca.pem
+	}
+}
+
 (app) {
 	encode zstd gzip
 
@@ -65,8 +80,13 @@
 	}
 }
 
-# The marketplace: certificate obtained at startup.
+# The marketplace. Same Cloudflare Origin Certificate as the subdomains:
+# browsers only ever see Cloudflare's edge certificate, and this removes the
+# Let's Encrypt renewal (HTTP-01 through the proxy) the apex used to depend on.
 {$ROOT_DOMAIN} {
+	tls /data/cloudflare/bzaro-origin.pem /data/cloudflare/bzaro-origin.key {
+		import cloudflare_mtls
+	}
 	import app
 }
 
@@ -79,7 +99,9 @@
 	# valid to 2041). On-demand Let's Encrypt cannot complete behind the Cloudflare
 	# proxy and left every subdomain on error 525. Files live in the caddy-data
 	# volume at /data/cloudflare/ (copied from /etc/ssl/cloudflare/ on the VPS).
-	tls /data/cloudflare/bzaro-origin.pem /data/cloudflare/bzaro-origin.key
+	tls /data/cloudflare/bzaro-origin.pem /data/cloudflare/bzaro-origin.key {
+		import cloudflare_mtls
+	}
 	@www host www.{$ROOT_DOMAIN}
 	redir @www https://{$ROOT_DOMAIN}{uri} permanent
 	import app
