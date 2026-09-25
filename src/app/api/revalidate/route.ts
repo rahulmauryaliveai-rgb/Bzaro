@@ -79,9 +79,19 @@ export async function POST(request: NextRequest) {
       db.category.findMany({ select: { id: true } }),
       db.location.findMany({ select: { id: true } }),
     ]);
-    for (const { id } of categories) revalidateCategory(id, "background");
-    for (const { id } of locations) revalidateLocation(id, "background");
-    done.push(`${categories.length} categories`, `${locations.length} locations`);
+    for (const { id } of categories) {
+      revalidateCategory(id, "background");
+      // Listing caches (/category/[slug], /[city]/category/[slug]) carry their
+      // own discovery tags, not the category tag. Without these a seed run's
+      // removals linger in listings for up to an hour.
+      revalidateTag(cacheTags.discoveryCategory(id), "max");
+    }
+    for (const { id } of locations) {
+      revalidateLocation(id, "background");
+      revalidateTag(cacheTags.discoveryCity(id), "max");
+      revalidateTag(cacheTags.popularInCity(id), "max");
+    }
+    done.push(`${categories.length} categories`, `${locations.length} locations`, "discovery listings");
   }
 
   if (scope === "sellers" || scope === "all") {
