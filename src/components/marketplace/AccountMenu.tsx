@@ -7,7 +7,7 @@ import { signOutAction } from "@/server/actions/auth";
 
 /**
  * Header account entry. The header is cached for everyone, so who is signed in
- * is asked from the browser after load (`/api/auth/session`, never cached).
+ * is asked from the browser after load (`/api/account/me`, never cached).
  * Until then — and for guests — it renders the signed-out "Sign in" menu,
  * which splits buyers from sellers instead of sending everyone to /login.
  */
@@ -21,10 +21,10 @@ export function AccountMenu() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" })
+    fetch("/api/account/me", { cache: "no-store", credentials: "same-origin" })
       .then((response) => (response.ok ? response.json() : null))
-      .then((session: { user?: SessionUser } | null) => {
-        if (!cancelled && session?.user) setUser(session.user);
+      .then((body: { user?: SessionUser | null } | null) => {
+        if (!cancelled && body?.user) setUser(body.user);
       })
       .catch(() => {});
     return () => {

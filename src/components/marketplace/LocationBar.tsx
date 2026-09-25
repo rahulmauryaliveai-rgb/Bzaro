@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   chooseCityAction,
   chooseCoordinatesAction,
@@ -22,7 +22,30 @@ import {
 
 export type City = { id: string; name: string };
 
+/**
+ * Pages where "sellers near you" means nothing: the buyer's own account, the
+ * requirement form (it has its own city field), a single seller's profile, and
+ * the static pages. Everywhere else — home, search, categories, city and
+ * product listings — the bar stays.
+ */
+const HIDDEN_PREFIXES = [
+  "/account",
+  "/post-requirement",
+  "/seller/",
+  "/privacy",
+  "/terms",
+  "/pricing",
+];
+
 export function LocationBar() {
+  const pathname = usePathname() ?? "/";
+  if (HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) {
+    return null;
+  }
+  return <LocationBarInner />;
+}
+
+function LocationBarInner() {
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState<City | null>(null);
   const [cities, setCities] = useState<City[]>([]);
