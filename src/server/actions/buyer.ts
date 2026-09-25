@@ -297,7 +297,9 @@ export async function setBuyerPhoneAction(
  * is a number to call. That page asks once and then gets out of the way.
  */
 export async function buyerGoogleSignInAction(): Promise<void> {
-  await signIn("google", { redirectTo: "/account/phone" });
+  // /account/continue asks for a phone if missing, then resumes any
+  // requirement the buyer was sending when they chose Google.
+  await signIn("google", { redirectTo: "/account/continue" });
 }
 
 /**

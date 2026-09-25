@@ -23,10 +23,10 @@ export const metadata: Metadata = {
   alternates: { canonical: marketplaceUrl("/post-requirement") },
 };
 
-type Props = { searchParams: Promise<{ repost?: string; q?: string }> };
+type Props = { searchParams: Promise<{ repost?: string; q?: string; resume?: string }> };
 
 export default async function PostRequirementPage({ searchParams }: Props) {
-  const { repost, q } = await searchParams;
+  const { repost, q, resume } = await searchParams;
   const [cities, categories] = await Promise.all([getAllCities(), getRootCategories()]);
 
   /**
@@ -112,6 +112,7 @@ export default async function PostRequirementPage({ searchParams }: Props) {
             cities={cities.map((c) => ({ id: c.id, name: c.name }))}
             categories={categories.map((c) => ({ id: c.id, name: c.name }))}
             prefill={prefill}
+            resume={resume === "1"}
           />
         </div>
       </div>

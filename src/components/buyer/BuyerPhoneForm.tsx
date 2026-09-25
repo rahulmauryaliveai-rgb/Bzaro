@@ -13,7 +13,8 @@ export function BuyerPhoneForm() {
   );
 
   useEffect(() => {
-    if (state.step === "done") router.push("/account/requirements");
+    // /account/continue resumes an unsent requirement, else shows the list.
+    if (state.step === "done") router.push("/account/continue");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.step]);
 

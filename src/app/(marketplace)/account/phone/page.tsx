@@ -25,7 +25,7 @@ export default async function BuyerPhonePage() {
     select: { phone: true },
   });
 
-  if (row?.phone) redirect("/account/requirements");
+  if (row?.phone) redirect("/account/continue");
 
   return (
     <div className="mx-auto max-w-md px-4 py-12">

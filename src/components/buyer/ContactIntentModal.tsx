@@ -8,6 +8,12 @@ import { CONSENT_TEXT } from "@/lib/consent";
 import { BuyerAuth } from "@/components/buyer/AuthModal";
 import { PURPOSE_LABELS, QUANTITY_UNITS, TIMELINE_LABELS } from "@/lib/validation/requirement";
 import { Field, Select, TextArea } from "@/components/dashboard/fields";
+import {
+  clearPendingRequirement,
+  loadPendingRequirement,
+  savePendingRequirement,
+  type PendingRequirement,
+} from "@/lib/buyer/pending-requirement";
 
 /**
  * The contact-intent modal (docs/LEADS.md §1).
@@ -60,6 +66,8 @@ export type RequirementPrefill = {
   timeline?: string;
   purpose?: string;
   notes?: string;
+  /** Only when resuming an unsent draft; a re-post uses the account name. */
+  name?: string;
 };
 
 /** Which trigger the buyer pressed. Recorded on the Requirement. */
@@ -153,12 +161,15 @@ export function ContactIntentSteps({
   categories,
   intent = "price",
   prefill,
+  resume = false,
 }: {
   target: ContactTarget;
   cities: CityOption[];
   categories?: CategoryOption[];
   intent?: ContactIntentKind;
   prefill?: RequirementPrefill;
+  /** Back from "Continue with Google": offer the unsent draft, if one is kept. */
+  resume?: boolean;
 }) {
   const [step, setStep] = useState<Step>("checking");
   const [buyer, setBuyer] = useState<{ name: string | null; locationId: string | null } | null>(
@@ -170,24 +181,30 @@ export function ContactIntentSteps({
    * shown — losing it would mean retyping everything after verifying an email.
    */
   const [draft, setDraft] = useState<FormData | null>(null);
+  /** The unsent requirement recovered after the Google round-trip. */
+  const [resumed, setResumed] = useState<PendingRequirement | null>(null);
 
   // On mount: is anyone signed in? Either way the buyer fills the requirement
   // first — signing in is the step between "Send" and the lead.
   useEffect(() => {
     let cancelled = false;
+    const pending = resume ? loadPendingRequirement() : null;
     resolveBuyerSessionAction()
       .then((result) => {
         if (cancelled) return;
         if (result.buyer) setBuyer(result.buyer);
+        if (pending) setResumed(pending);
         setStep("requirement");
       })
       .catch(() => {
-        if (!cancelled) setStep("requirement");
+        if (cancelled) return;
+        if (pending) setResumed(pending);
+        setStep("requirement");
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [resume]);
 
   return (
     <>
@@ -199,14 +216,17 @@ export function ContactIntentSteps({
 
       {step === "requirement" ? (
         <RequirementStep
-          target={target}
+          // Resuming restores the original seller/product context too, so the
+          // hidden fields — and the DIRECT lead — match what the buyer started.
+          target={resumed?.target ?? target}
           cities={cities}
           categories={categories}
           buyer={buyer}
           draft={draft}
           onDraft={setDraft}
-          intent={intent}
-          prefill={prefill}
+          intent={resumed?.intent ?? intent}
+          prefill={resumed ? prefillFromFields(resumed.fields) : prefill}
+          resumed={resumed !== null}
           onSessionLost={() => setStep("signin")}
         />
       ) : null}
@@ -241,6 +261,7 @@ function RequirementStep({
   onDraft,
   intent,
   prefill,
+  resumed,
   onSessionLost,
 }: {
   target: ContactTarget;
@@ -251,6 +272,7 @@ function RequirementStep({
   onDraft: (draft: FormData) => void;
   intent: ContactIntentKind;
   prefill?: RequirementPrefill;
+  resumed: boolean;
   onSessionLost: () => void;
 }) {
   const [state, action, pending] = useActionState<RequirementState, FormData>(
@@ -282,6 +304,7 @@ function RequirementStep({
 
   useEffect(() => {
     if (!state.ok) return;
+    clearPendingRequirement();
     if (state.whatsappUrl && !openedRef.current) {
       openedRef.current = true;
       // Best effort; the button below is the reliable path.
@@ -335,13 +358,21 @@ function RequirementStep({
   return (
     <form
       action={(formData) => {
-        // Kept so an unauthenticated submit can be replayed after sign-up.
+        // Kept so an unauthenticated submit can be replayed after sign-up —
+        // in memory for email sign-up, in sessionStorage for the Google
+        // round-trip, which reloads the page. Cleared once sent.
         onDraft(formData);
+        savePendingRequirement(formData, target, intent);
         return action(formData);
       }}
       className="space-y-4"
     >
       <Honeypot />
+      {resumed ? (
+        <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-900" role="status">
+          You&apos;re signed in. Your requirement is ready — check the details and press send.
+        </p>
+      ) : null}
       <input
         type="hidden"
         name="trigger"
@@ -428,7 +459,7 @@ function RequirementStep({
       <Field
         label="Your name (optional)"
         name="name"
-        defaultValue={buyer?.name ?? ""}
+        defaultValue={prefill?.name ?? buyer?.name ?? ""}
         maxLength={120}
         error={state.fieldErrors?.name}
       />
@@ -457,6 +488,22 @@ function RequirementStep({
       </PrimaryButton>
     </form>
   );
+}
+
+/** Rebuild form defaults from a kept draft. Unknown keys are ignored. */
+function prefillFromFields(fields: Record<string, string>): RequirementPrefill {
+  const quantity = Number(fields.quantity);
+  return {
+    productName: fields.productName || undefined,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : undefined,
+    quantityUnit: fields.quantityUnit || undefined,
+    categoryId: fields.categoryId || undefined,
+    locationId: fields.locationId || undefined,
+    timeline: fields.timeline || undefined,
+    purpose: fields.purpose || undefined,
+    notes: fields.notes || undefined,
+    name: fields.name || undefined,
+  };
 }
 
 // ── Bits ─────────────────────────────────────────────────────────────────────
