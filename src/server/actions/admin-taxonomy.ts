@@ -93,7 +93,9 @@ export async function createLocationAction(formData: FormData): Promise<void> {
       name,
       parentId: z.string().max(40).optional(),
       type: z.enum(["STATE", "CITY"]),
-      clusterKey: z.string().trim().max(40).optional(),
+      // Matched exactly by the lead scorer: "NCR" and "ncr" are different
+      // clusters, so store one spelling.
+      clusterKey: z.string().trim().toLowerCase().max(40).optional(),
     })
     .safeParse({
       name: formData.get("name"),
@@ -120,7 +122,9 @@ export async function updateLocationAction(formData: FormData): Promise<void> {
     .object({
       id,
       name: name.optional(),
-      clusterKey: z.string().trim().max(40).optional(),
+      // Matched exactly by the lead scorer: "NCR" and "ncr" are different
+      // clusters, so store one spelling.
+      clusterKey: z.string().trim().toLowerCase().max(40).optional(),
       isActive: z.enum(["0", "1"]).optional(),
     })
     .safeParse({

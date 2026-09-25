@@ -123,6 +123,25 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 60 * 60 * 24 * 30,
   },
 
+  // City taxonomy clean-up (2026-09): typo'd, renamed and merged city slugs.
+  // Apex only — a store's own paths are its business.
+  async redirects() {
+    const moved: Array<[from: string, to: string]> = [
+      ["/meetut", "/meerut"],
+      ["/location/in/uttar-pradesh/meetut", "/location/in/uttar-pradesh/meerut"],
+      ["/faizabad", "/ayodhya"],
+      ["/location/in/uttar-pradesh/faizabad", "/location/in/uttar-pradesh/ayodhya"],
+      ["/mayur-vihar", "/new-delhi"],
+      ["/location/in/delhi/mayur-vihar", "/location/in/delhi/new-delhi"],
+    ];
+    return moved.map(([from, to]) => ({
+      source: `${from}/:path*`,
+      destination: `${to}/:path*`,
+      permanent: true,
+      has: [{ type: "host" as const, value: bareDomain }],
+    }));
+  },
+
   async headers() {
     return [
       {
