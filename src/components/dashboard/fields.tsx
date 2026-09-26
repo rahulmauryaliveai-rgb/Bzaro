@@ -76,6 +76,7 @@ export function Field({
   maxLength,
   error,
   inputMode,
+  autoComplete,
 }: {
   label: string;
   name: string;
@@ -86,7 +87,8 @@ export function Field({
   hint?: string;
   maxLength?: number;
   error?: string;
-  inputMode?: "text" | "numeric" | "decimal";
+  inputMode?: "text" | "numeric" | "decimal" | "tel";
+  autoComplete?: string;
 }) {
   return (
     <Wrapper label={label} name={name} hint={hint} error={error}>
@@ -95,6 +97,7 @@ export function Field({
         name={name}
         type={type}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         required={required}
         maxLength={maxLength}
         placeholder={placeholder}

@@ -53,13 +53,20 @@ describe("businessRegistrationSchema", () => {
     if (result.success) expect(result.data.slug).toBe("abc-electronics");
   });
 
-  it("requires a phone number in international format", () => {
-    // wa.me needs E.164; a local-format number produces a dead WhatsApp link.
-    const result = businessRegistrationSchema.safeParse({
-      ...VALID_REGISTRATION,
-      phone: "9876543210",
-    });
-    expect(result.success).toBe(false);
+  it("accepts a phone typed the local way and stores it as E.164", () => {
+    // wa.me needs E.164, but sellers type "98765 43210" — normalise, don't nag.
+    for (const typed of ["9876543210", "98765 43210", "09876543210", "+91 98765-43210"]) {
+      const result = businessRegistrationSchema.safeParse({ ...VALID_REGISTRATION, phone: typed });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.phone).toBe("+919876543210");
+    }
+  });
+
+  it("rejects something that cannot be a mobile number", () => {
+    for (const typed of ["12345", "5876543210", "abc"]) {
+      const result = businessRegistrationSchema.safeParse({ ...VALID_REGISTRATION, phone: typed });
+      expect(result.success).toBe(false);
+    }
   });
 
   it("requires at least one category", () => {

@@ -117,7 +117,9 @@ export function PhoneForm({ phone }: { phone: string | null }) {
         name="phone"
         type="tel"
         defaultValue={phone ?? ""}
-        placeholder="+919876543210"
+        placeholder="98765 43210"
+        inputMode="tel"
+        autoComplete="tel"
         required
         error={state.fieldErrors?.phone}
       />

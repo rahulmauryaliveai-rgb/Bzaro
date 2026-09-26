@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { checkSlug } from "@/lib/tenant/reserved";
+import { normalizePhone } from "@/lib/buyer/phone";
 
 /**
  * Authentication and registration schemas.
@@ -34,11 +35,43 @@ export const credentialsSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
-/** E.164, which is what wa.me links and every SMS gateway expect. */
+const PHONE_HINT = "Enter a 10-digit mobile number, e.g. 98765 43210";
+
+/**
+ * A mobile number typed the way people type it — "98765 43210",
+ * "09876543210", "+91 98765-43210" — stored as E.164 ("+919876543210"),
+ * which is what wa.me links and every SMS gateway expect. A bare 10-digit
+ * number is taken as Indian; other countries need their "+" code.
+ */
 export const phoneSchema = z
   .string()
   .trim()
-  .regex(/^\+[1-9]\d{7,14}$/, "Enter a phone number in international format, e.g. +919876543210");
+  .min(1, PHONE_HINT)
+  .max(24, PHONE_HINT)
+  .transform((raw, ctx) => {
+    const normalized = normalizePhone(raw);
+    if (!normalized) {
+      ctx.addIssue({ code: "custom", message: PHONE_HINT });
+      return z.NEVER;
+    }
+    return normalized;
+  });
+
+/** Same, for fields that may be left empty (returns "" when empty). */
+export const optionalPhoneSchema = z
+  .string()
+  .trim()
+  .max(24, PHONE_HINT)
+  .optional()
+  .transform((raw, ctx) => {
+    if (!raw) return "";
+    const normalized = normalizePhone(raw);
+    if (!normalized) {
+      ctx.addIssue({ code: "custom", message: PHONE_HINT });
+      return z.NEVER;
+    }
+    return normalized;
+  });
 
 export const registerSchema = z
   .object({

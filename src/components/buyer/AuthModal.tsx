@@ -137,7 +137,9 @@ function SignupForm({
           name="phone"
           type="tel"
           required
-          placeholder="+919876543210"
+          placeholder="98765 43210"
+          inputMode="tel"
+          autoComplete="tel"
           hint="Sellers call or WhatsApp you on this number."
           error={state.fieldErrors?.phone}
         />

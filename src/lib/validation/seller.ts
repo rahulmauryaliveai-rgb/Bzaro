@@ -6,7 +6,7 @@ import {
   TURNOVER_BANDS,
 } from "@/lib/validation/business-lists";
 import { checkSlug } from "@/lib/tenant/reserved";
-import { phoneSchema } from "@/lib/validation/auth";
+import { optionalPhoneSchema, phoneSchema } from "@/lib/validation/auth";
 import { IMAGE_REFERENCE_MESSAGE, isUsableImageReference } from "@/lib/validation/image-reference";
 
 /**
@@ -83,8 +83,8 @@ export const sellerProfileSchema = z.object({
     .email("Enter a valid email")
     .optional()
     .or(z.literal("")),
-  phone: z.string().trim().max(20).optional().or(z.literal("")),
-  whatsapp: z.string().trim().max(20).optional().or(z.literal("")),
+  phone: optionalPhoneSchema,
+  whatsapp: optionalPhoneSchema,
   websiteUrl: z
     .string()
     .trim()

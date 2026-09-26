@@ -131,7 +131,7 @@ export function ProfileForm({
           name="whatsapp"
           type="tel"
           defaultValue={profile.whatsapp ?? ""}
-          hint="With country code, e.g. +919876543210. Powers your WhatsApp buttons."
+          hint="10-digit mobile number, e.g. 98765 43210. Powers your WhatsApp buttons."
           error={state.fieldErrors?.whatsapp}
         />
         <Field
