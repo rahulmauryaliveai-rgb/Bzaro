@@ -75,14 +75,25 @@ export default async function HomePage() {
   ]);
   const popular = topCity ? await getPopularInCity(topCity.id) : null;
 
-  const heroImages: HeroImage[] = content.products
+  // Real product photos first; category photos fill any gap, so the hero is
+  // never a row of empty panels on a young marketplace.
+  const productTiles: HeroImage[] = content.products
     .filter((product) => product.images[0]?.url)
-    .slice(0, 4)
+    .slice(0, 3)
     .map((product) => ({
       url: product.images[0]!.url,
       alt: product.images[0]!.alt ?? product.name,
       href: `/product/${product.seller.slug}/${product.slug}`,
     }));
+  const categoryTiles: HeroImage[] = categories
+    .filter((category) => category.imageUrl)
+    .map((category) => ({
+      url: category.imageUrl!,
+      alt: category.name,
+      href: `/category${category.path}`,
+      label: category.name,
+    }));
+  const heroImages = [...productTiles, ...categoryTiles].slice(0, 3);
 
   const cityOptions = allCities.map((city) => ({ path: city.path, name: city.name }));
 

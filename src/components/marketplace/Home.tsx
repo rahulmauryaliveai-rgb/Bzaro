@@ -33,7 +33,13 @@ import type { getPlatformStats } from "@/server/services/discovery.service";
 
 type Stats = Awaited<ReturnType<typeof getPlatformStats>>;
 
-export type HeroImage = { url: string; alt: string; href: string };
+export type HeroImage = { url: string; alt: string; href: string; label?: string };
+
+/**
+ * Below this, exact counts undersell the platform ("0 suppliers") — the hero
+ * then speaks in qualities rather than numbers.
+ */
+const SHOW_COUNTS_FROM = 25;
 
 const formatCount = (n: number) => new Intl.NumberFormat("en-IN").format(n);
 
@@ -76,17 +82,24 @@ export function HomeHero({
             </span>
           </h1>
 
-          <p className="mt-5 max-w-xl text-lg text-neutral-600">
-            Compare products from{" "}
-            <strong className="font-semibold text-neutral-900 tabular-nums">
-              {formatCount(stats.sellers)}
-            </strong>{" "}
-            GST-verified businesses across{" "}
-            <strong className="font-semibold text-neutral-900 tabular-nums">
-              {formatCount(stats.cities)}
-            </strong>{" "}
-            cities. Get quotes on WhatsApp — free for buyers.
-          </p>
+          {stats.sellers >= SHOW_COUNTS_FROM ? (
+            <p className="mt-5 max-w-xl text-lg text-neutral-600">
+              Compare products from{" "}
+              <strong className="font-semibold text-neutral-900 tabular-nums">
+                {formatCount(stats.sellers)}
+              </strong>{" "}
+              GST-verified businesses across{" "}
+              <strong className="font-semibold text-neutral-900 tabular-nums">
+                {formatCount(stats.cities)}
+              </strong>{" "}
+              cities. Get quotes on WhatsApp — free for buyers.
+            </p>
+          ) : (
+            <p className="mt-5 max-w-xl text-lg text-neutral-600">
+              Tell us what you need once — matched, GST-verified suppliers near you send quotes
+              straight to your WhatsApp. Free for buyers.
+            </p>
+          )}
 
           <div className="mt-8">
             <SearchBar
@@ -172,6 +185,11 @@ function HeroCollage({ images, stats }: { images: HeroImage[]; stats: Stats }) {
               decoding="async"
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
+            {image.label ? (
+              <span className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/70 to-transparent px-3 pt-8 pb-2.5 text-sm font-semibold text-white">
+                {image.label}
+              </span>
+            ) : null}
           </Link>
         ))}
         {tiles.length < 3
@@ -189,10 +207,19 @@ function HeroCollage({ images, stats }: { images: HeroImage[]; stats: Stats }) {
           <ShieldCheck className="h-6 w-6" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-xl font-bold text-neutral-900 tabular-nums">
-            {formatCount(stats.sellers)}
-          </p>
-          <p className="text-xs text-neutral-500">verified suppliers</p>
+          {stats.sellers >= SHOW_COUNTS_FROM ? (
+            <>
+              <p className="text-xl font-bold text-neutral-900 tabular-nums">
+                {formatCount(stats.sellers)}
+              </p>
+              <p className="text-xs text-neutral-500">verified suppliers</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-neutral-900">GST-verified</p>
+              <p className="text-xs text-neutral-500">every supplier checked</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -201,10 +228,19 @@ function HeroCollage({ images, stats }: { images: HeroImage[]; stats: Stats }) {
           <Package className="h-6 w-6" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-xl font-bold text-neutral-900 tabular-nums">
-            {formatCount(stats.products)}
-          </p>
-          <p className="text-xs text-neutral-500">products listed</p>
+          {stats.sellers >= SHOW_COUNTS_FROM ? (
+            <>
+              <p className="text-xl font-bold text-neutral-900 tabular-nums">
+                {formatCount(stats.products)}
+              </p>
+              <p className="text-xs text-neutral-500">products listed</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-neutral-900">Quotes on WhatsApp</p>
+              <p className="text-xs text-neutral-500">free for buyers</p>
+            </>
+          )}
         </div>
       </div>
     </div>
