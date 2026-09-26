@@ -3,7 +3,6 @@ import Link from "next/link";
 import { requireSeller } from "@/lib/auth/guards";
 import {
   getIntegrationSummary,
-  getRazorpayConfig,
   getSellerFeatures,
 } from "@/server/services/integration.service";
 import { encryptionAvailable } from "@/lib/crypto/secrets";
@@ -30,10 +29,9 @@ export const metadata: Metadata = {
 export default async function PaymentsSettingsPage() {
   const scope = await requireSeller();
 
-  const [features, integration, stored] = await Promise.all([
+  const [features, integration] = await Promise.all([
     getSellerFeatures(scope.sellerId),
     getIntegrationSummary(scope.sellerId, "RAZORPAY"),
-    getRazorpayConfig(scope.sellerId),
   ]);
 
   if (!features.paymentsEnabled) {
@@ -83,8 +81,10 @@ export default async function PaymentsSettingsPage() {
             <h2 className="text-base font-semibold">Status</h2>
             <p className="mt-1 text-sm text-neutral-600">
               {integration?.enabled
-                ? `Payments are ON (${integration.mode.toLowerCase()} mode).`
-                : "Payments are off. Buyers see “Get Quote” instead of “Add to cart”."}
+                ? `Online payment is ON (${integration.mode.toLowerCase()} mode).`
+                : features.codEnabled
+                  ? "Your store takes orders with cash on delivery. Add Razorpay keys below to also accept online payment."
+                  : "Payments are off. Buyers see “Get Quote” instead of “Add to cart” — turn on cash on delivery or add Razorpay keys."}
             </p>
             {integration?.lastTestedAt ? (
               <p className="mt-1 text-xs text-neutral-500">
@@ -99,12 +99,10 @@ export default async function PaymentsSettingsPage() {
         {integration ? <TestConnectionButton /> : null}
       </section>
 
-      {integration?.enabled ? (
-        <section className="rounded-lg border border-neutral-200 bg-white p-5">
-          <h2 className="mb-3 text-base font-semibold">Cash on delivery</h2>
-          <CodToggle codEnabled={stored?.config.codEnabled ?? false} />
-        </section>
-      ) : null}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="mb-3 text-base font-semibold">Cash on delivery</h2>
+        <CodToggle codEnabled={features.codEnabled} />
+      </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
         <h2 className="mb-4 text-base font-semibold">Razorpay keys</h2>

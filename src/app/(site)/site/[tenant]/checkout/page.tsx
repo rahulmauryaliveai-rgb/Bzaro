@@ -4,7 +4,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { getBuyerSession } from "@/server/services/buyer.service";
 import { getCart } from "@/server/services/cart.service";
-import { canAcceptPayments, getRazorpayConfig } from "@/server/services/integration.service";
+import { canAcceptPayments, getCheckoutMethods } from "@/server/services/integration.service";
 import { formatMoney } from "@/lib/utils/money";
 import { CheckoutForm } from "@/components/site/CheckoutForm";
 
@@ -41,9 +41,9 @@ export default async function CheckoutPage({ params }: Props) {
     );
   }
 
-  const [cart, razorpay] = await Promise.all([
+  const [cart, methods] = await Promise.all([
     getCart(seller.id, buyer.id),
-    getRazorpayConfig(seller.id),
+    getCheckoutMethods(seller.id),
   ]);
   if (!cart || cart.lines.length === 0) {
     return (
@@ -87,7 +87,8 @@ export default async function CheckoutPage({ params }: Props) {
           sellerName={seller.businessName}
           buyerName={buyer.name}
           buyerPhone={buyer.phone}
-          codEnabled={razorpay?.config.codEnabled ?? false}
+          onlineEnabled={methods.online}
+          codEnabled={methods.cod}
         />
       </div>
     </div>

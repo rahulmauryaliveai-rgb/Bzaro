@@ -1454,6 +1454,9 @@ model SellerFeature {
   sellerId        String        @id
   paymentsEnabled Boolean       @default(false)
   shippingEnabled Boolean       @default(false)
+  /// Seller's own choice, independent of Razorpay (D40): with orders switched
+  /// on by an admin, COD alone is enough for the cart to appear.
+  codEnabled      Boolean       @default(true)
   source          FeatureSource @default(PLAN)
   note            String?
   /// Admin who last changed it, for the audit trail.

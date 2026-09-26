@@ -316,7 +316,7 @@ export function CodToggle({ codEnabled }: { codEnabled: boolean }) {
       <p className="text-sm text-neutral-700">
         {codEnabled
           ? "Buyers can choose cash on delivery. Those orders reach you unpaid."
-          : "Buyers must pay online."}
+          : "Cash on delivery is off — buyers can only pay online (if Razorpay is connected)."}
       </p>
       <button
         type="submit"

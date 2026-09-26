@@ -44,11 +44,14 @@ export function CheckoutForm({
   sellerName,
   buyerName,
   buyerPhone,
+  onlineEnabled,
   codEnabled,
 }: {
   sellerName: string;
   buyerName: string | null;
   buyerPhone: string | null;
+  /** The seller's Razorpay is connected and enabled. */
+  onlineEnabled: boolean;
   codEnabled: boolean;
 }) {
   const [state, action, pending] = useActionState<CheckoutState, FormData>(startCheckoutAction, {});
@@ -155,13 +158,15 @@ export function CheckoutForm({
 
       <fieldset>
         <legend className="mb-2 text-sm font-medium">Payment</legend>
-        <label className="flex min-h-11 items-center gap-2 text-sm">
-          <input type="radio" name="method" value="razorpay" defaultChecked />
-          Pay online
-        </label>
+        {onlineEnabled ? (
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input type="radio" name="method" value="razorpay" defaultChecked />
+            Pay online
+          </label>
+        ) : null}
         {codEnabled ? (
           <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="radio" name="method" value="cod" />
+            <input type="radio" name="method" value="cod" defaultChecked={!onlineEnabled} />
             Cash on delivery
           </label>
         ) : null}

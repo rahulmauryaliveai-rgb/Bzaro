@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { getSubdomain, isRootHost, normalizeHost } from "@/lib/utils/url";
 import { getBuyerSession } from "@/server/services/buyer.service";
 import { beginCheckout, confirmPayment } from "@/server/services/order.service";
-import { canAcceptPayments } from "@/server/services/integration.service";
+import { canAcceptPayments, getCheckoutMethods } from "@/server/services/integration.service";
 
 /**
  * Checkout (Phase 5). Storefronts only — same host-derived guard as the cart.
@@ -94,6 +94,12 @@ export async function startCheckoutAction(
   }
 
   const { method, ...address } = parsed.data;
+
+  // The form only offers what the store accepts; the server enforces it.
+  const methods = await getCheckoutMethods(sellerId);
+  if ((method === "cod" && !methods.cod) || (method === "razorpay" && !methods.online)) {
+    return { error: "That payment option isn't available at this store." };
+  }
 
   const result = await beginCheckout({
     sellerId,

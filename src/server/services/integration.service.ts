@@ -289,12 +289,14 @@ export async function recordTestResult(
 export type SellerFeatures = {
   paymentsEnabled: boolean;
   shippingEnabled: boolean;
+  codEnabled: boolean;
   source: FeatureSource;
 };
 
 const NO_FEATURES: SellerFeatures = {
   paymentsEnabled: false,
   shippingEnabled: false,
+  codEnabled: true,
   source: "PLAN",
 };
 
@@ -305,9 +307,37 @@ const NO_FEATURES: SellerFeatures = {
 export async function getSellerFeatures(sellerId: string): Promise<SellerFeatures> {
   const row = await db.sellerFeature.findUnique({
     where: { sellerId },
-    select: { paymentsEnabled: true, shippingEnabled: true, source: true },
+    select: { paymentsEnabled: true, shippingEnabled: true, codEnabled: true, source: true },
   });
   return row ?? NO_FEATURES;
+}
+
+/** The seller's own COD switch. Only meaningful once orders are switched on. */
+export async function setCodEnabled(sellerId: string, codEnabled: boolean): Promise<void> {
+  await db.sellerFeature.upsert({
+    where: { sellerId },
+    create: { sellerId, codEnabled },
+    update: { codEnabled },
+  });
+}
+
+export type CheckoutMethods = { online: boolean; cod: boolean };
+
+/**
+ * How a buyer can pay this store right now (D40). Online needs the seller's
+ * own Razorpay keys, enabled; cash on delivery needs only the seller's COD
+ * switch. Both require orders to be switched on for the seller by an admin.
+ */
+export async function getCheckoutMethods(sellerId: string): Promise<CheckoutMethods> {
+  const [features, integration] = await Promise.all([
+    getSellerFeatures(sellerId),
+    db.sellerIntegration.findUnique({
+      where: { sellerId_type: { sellerId, type: "RAZORPAY" } },
+      select: { enabled: true },
+    }),
+  ]);
+  if (!features.paymentsEnabled) return { online: false, cod: false };
+  return { online: Boolean(integration?.enabled), cod: features.codEnabled };
 }
 
 export async function setSellerFeatures(
@@ -347,18 +377,11 @@ export async function setSellerFeatures(
 }
 
 /**
- * Whether this storefront can take money right now: the feature must be paid
- * for AND real credentials must be enabled. Either alone is not enough — a
- * plan without keys cannot charge anyone, and keys without a plan must not.
+ * Whether this storefront takes orders (shows Add to cart): an admin has
+ * switched orders on for the seller AND at least one way to pay exists —
+ * the seller's Razorpay, or cash on delivery (D40).
  */
 export async function canAcceptPayments(sellerId: string): Promise<boolean> {
-  const [features, integration] = await Promise.all([
-    getSellerFeatures(sellerId),
-    db.sellerIntegration.findUnique({
-      where: { sellerId_type: { sellerId, type: "RAZORPAY" } },
-      select: { enabled: true },
-    }),
-  ]);
-
-  return features.paymentsEnabled && Boolean(integration?.enabled);
+  const methods = await getCheckoutMethods(sellerId);
+  return methods.online || methods.cod;
 }

@@ -8,12 +8,12 @@ import { testRazorpayCredentials } from "@/lib/payments/razorpay";
 import { createShipmentForOrder } from "@/server/services/shipping.service";
 import {
   getSellerFeatures,
-  patchRazorpayConfig,
   patchShiprocketConfig,
   readRazorpayConfigUnchecked,
   recordTestResult,
   saveRazorpayConfig,
   saveShiprocketConfig,
+  setCodEnabled,
   setIntegrationEnabled,
 } from "@/server/services/integration.service";
 
@@ -301,7 +301,7 @@ export async function setCodAction(
   }
 
   const codEnabled = formData.get("codEnabled") === "true";
-  await patchRazorpayConfig(scope.sellerId, { codEnabled });
+  await setCodEnabled(scope.sellerId, codEnabled);
 
   revalidatePath("/dashboard/settings/payments");
   return {
