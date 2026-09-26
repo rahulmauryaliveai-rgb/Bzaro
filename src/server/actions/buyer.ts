@@ -107,7 +107,7 @@ export async function buyerSignupAction(
 
   if (!result.ok) {
     return result.reason === "email_taken"
-      ? { fieldErrors: { email: "An account with this email already exists. Sign in instead." } }
+      ? { fieldErrors: { email: "You already have a Bzaro account with this email (buyer or seller). Use Sign in with the same password — one account works for both." } }
       : { fieldErrors: { phone: "That number is already on another account." } };
   }
 

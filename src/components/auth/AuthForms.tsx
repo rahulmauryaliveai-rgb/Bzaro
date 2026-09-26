@@ -90,6 +90,23 @@ function SubmitButton({ pending, children }: { pending: boolean; children: React
 }
 
 function FormError({ state }: { state: ActionState }) {
+  if (state.existingAccount) {
+    return (
+      <div role="alert" className="rounded-md bg-amber-50 px-3 py-3 text-sm text-amber-900">
+        <p className="font-medium">You already have a Bzaro account.</p>
+        <p className="mt-1">
+          Buyers can sell too — sign in with the same email and password and add your business to
+          that account. Your buyer requirements and saved suppliers stay as they are.
+        </p>
+        <a
+          href="/login?next=/register/business"
+          className="mt-2 inline-block rounded-md bg-neutral-900 px-3 py-1.5 font-medium text-white hover:bg-neutral-700"
+        >
+          Sign in and add my business
+        </a>
+      </div>
+    );
+  }
   if (!state.error) return null;
   return (
     <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

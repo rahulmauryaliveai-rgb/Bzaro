@@ -112,7 +112,16 @@ export function AccountMenu() {
                 >
                   {isSeller ? "Seller dashboard" : "Admin"}
                 </Link>
-              ) : null}
+              ) : (
+                // Same account, one more role (D39): a buyer adds a business.
+                <Link
+                  role="menuitem"
+                  href="/register/business"
+                  className={`${item} text-brand-800 font-medium`}
+                >
+                  Sell on Bzaro — list your business
+                </Link>
+              )}
               <div className="my-1 h-px bg-neutral-200" />
               <form action={signOutAction}>
                 <button

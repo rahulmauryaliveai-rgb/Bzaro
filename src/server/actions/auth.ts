@@ -41,6 +41,12 @@ export type ActionState = {
   /** Per-field messages, keyed by input name. */
   fieldErrors?: Record<string, string>;
   message?: string;
+  /**
+   * Set when the email or phone already has a Bzaro account — typically a
+   * buyer who now wants to sell. One person, one account (D39): they sign in
+   * and add a business to it; the form links straight there.
+   */
+  existingAccount?: boolean;
 };
 
 async function clientIp(): Promise<string> {
@@ -164,10 +170,16 @@ export async function registerAction(
   if (!result.ok) {
     // An existing address is the one case where we cannot avoid being
     // informative — the user genuinely needs to know to sign in instead.
-    if (result.reason === "phone_taken") {
-      return { fieldErrors: { phone: "An account with this mobile number already exists." } };
-    }
-    return { fieldErrors: { email: "An account with this email already exists." } };
+    const field = result.reason === "phone_taken" ? "phone" : "email";
+    return {
+      existingAccount: true,
+      fieldErrors: {
+        [field]:
+          field === "phone"
+            ? "This mobile number already has a Bzaro account."
+            : "This email already has a Bzaro account.",
+      },
+    };
   }
 
   // Straight into onboarding. The mobile number is the seller's identity
