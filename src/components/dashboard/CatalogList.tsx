@@ -62,7 +62,7 @@ function statusBadge(row: CatalogRow) {
 
   // Published but not yet approved: live to nobody. Saying "Published" here
   // would be a lie the seller only discovers by visiting their own site.
-  if (row.moderationStatus !== "APPROVED") return <Badge tone="review">Awaiting review</Badge>;
+  if (row.moderationStatus !== "APPROVED") return <Badge tone="review">Live after verification</Badge>;
 
   return <Badge tone="live">Live</Badge>;
 }

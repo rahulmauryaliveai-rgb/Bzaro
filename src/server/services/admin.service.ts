@@ -150,6 +150,24 @@ export async function getSellerForAdmin(id: string) {
  * recompute indexability, or the site stays 404 to visitors and invisible to
  * crawlers until something else happens to bust the cache.
  */
+/**
+ * Release everything a seller added while waiting for verification (D38):
+ * the platform verifies the business, not each listing, so verifying (or
+ * reinstating) a seller approves their pending products, product images,
+ * services and gallery items in one go. Rejected and flagged items stay as
+ * they are — those were an admin's explicit call.
+ */
+async function releasePendingContent(sellerId: string): Promise<void> {
+  const pending = { sellerId, moderationStatus: "PENDING" as const };
+  const approved = { moderationStatus: "APPROVED" as const };
+  await db.$transaction([
+    db.product.updateMany({ where: pending, data: approved }),
+    db.productImage.updateMany({ where: pending, data: approved }),
+    db.service.updateMany({ where: pending, data: approved }),
+    db.galleryItem.updateMany({ where: pending, data: approved }),
+  ]);
+}
+
 export async function verifySeller(params: {
   sellerId: string;
   actorId: string;
@@ -169,6 +187,8 @@ export async function verifySeller(params: {
       after: { status: "VERIFIED", note: params.note ?? null },
     },
   });
+
+  await releasePendingContent(params.sellerId);
 
   // Order matters: recompute first so the cache is invalidated with the new
   // indexability already persisted.
@@ -287,6 +307,8 @@ export async function reinstateSeller(params: {
     },
   });
 
+  await releasePendingContent(params.sellerId);
+
   await recomputeIndexability(params.sellerId);
   revalidateTenant(seller.slug, "background");
   await revalidateSellerDiscovery(params.sellerId);
@@ -326,10 +348,17 @@ export async function moderateProduct(params: {
   approve: boolean;
   note?: string;
 }): Promise<void> {
+  const status = params.approve ? ("APPROVED" as const) : ("REJECTED" as const);
   const product = await db.product.update({
     where: { id: params.productId },
-    data: { moderationStatus: params.approve ? "APPROVED" : "REJECTED" },
+    data: { moderationStatus: status },
     select: { sellerId: true, seller: { select: { slug: true } } },
+  });
+  // The storefront only shows APPROVED images: approving a product used to
+  // leave its photos PENDING, so it went live with no pictures.
+  await db.productImage.updateMany({
+    where: { productId: params.productId },
+    data: { moderationStatus: status },
   });
 
   await db.auditLog.create({

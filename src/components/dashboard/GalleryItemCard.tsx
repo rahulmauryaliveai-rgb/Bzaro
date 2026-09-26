@@ -99,7 +99,7 @@ export function GalleryItemCard({
         <div className="min-w-0 flex-1 space-y-3">
           {awaitingReview ? (
             <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-900">
-              Awaiting review — not yet visible on your website.
+              Visible on your website once your business is verified.
             </p>
           ) : null}
 

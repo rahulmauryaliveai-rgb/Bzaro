@@ -187,64 +187,44 @@ describe("serviceSchema", () => {
 });
 
 describe("decideModeration", () => {
-  const TRUSTED = {
-    sellerStatus: "VERIFIED",
-    approvedItems: 5,
-    rejectedItems: 0,
-    flaggedItems: 0,
-  };
-
-  it("auto-approves a verified seller with a clean history", () => {
-    expect(decideModeration(TRUSTED).status).toBe("APPROVED");
-  });
-
-  it("reviews the first listing even from a verified seller", () => {
-    // D10: trust is earned by clearing review once, not granted at signup.
-    expect(decideModeration({ ...TRUSTED, approvedItems: 0 }).status).toBe("PENDING");
-  });
-
-  it("reviews everything from an unverified seller", () => {
-    expect(decideModeration({ ...TRUSTED, sellerStatus: "PENDING_VERIFICATION" }).status).toBe(
-      "PENDING",
-    );
-  });
-
-  it("withdraws trust after a single rejection or flag", () => {
-    // Asymmetric on purpose: earning trust takes several signals, losing it
-    // takes one, because a wrongly-trusted listing is paid for by every buyer
-    // who sees it.
-    expect(decideModeration({ ...TRUSTED, rejectedItems: 1 }).status).toBe("PENDING");
-    expect(decideModeration({ ...TRUSTED, flaggedItems: 1 }).status).toBe("PENDING");
-  });
-
-  it("always explains itself", () => {
-    // An invisible listing with no stated reason is the complaint this avoids.
-    expect(decideModeration({ ...TRUSTED, approvedItems: 0 }).reason.length).toBeGreaterThan(10);
-  });
-});
-
-describe("editRequiresRereview", () => {
-  const UNTRUSTED = {
+  const VERIFIED = {
     sellerStatus: "VERIFIED",
     approvedItems: 0,
     rejectedItems: 0,
     flaggedItems: 0,
   };
 
-  const TRUSTED = { ...UNTRUSTED, approvedItems: 3 };
-
-  it("returns approved content to review for an untrusted seller", () => {
-    // Without this, moderation is bypassed by publishing something innocuous,
-    // waiting for approval, then editing it into anything at all.
-    expect(editRequiresRereview(UNTRUSTED, "APPROVED")).toBe(true);
+  it("publishes a verified seller's content immediately, even the first listing (D38)", () => {
+    expect(decideModeration(VERIFIED).status).toBe("APPROVED");
+    expect(decideModeration({ ...VERIFIED, rejectedItems: 2, flaggedItems: 1 }).status).toBe(
+      "APPROVED",
+    );
   });
 
-  it("leaves a trusted seller's content approved through edits", () => {
-    expect(editRequiresRereview(TRUSTED, "APPROVED")).toBe(false);
+  it("holds content until the business itself is verified", () => {
+    for (const sellerStatus of ["PENDING_VERIFICATION", "DRAFT", "SUSPENDED"]) {
+      expect(decideModeration({ ...VERIFIED, sellerStatus }).status).toBe("PENDING");
+    }
+  });
+
+  it("always explains itself", () => {
+    expect(decideModeration({ ...VERIFIED, sellerStatus: "DRAFT" }).reason.length).toBeGreaterThan(10);
+  });
+});
+
+describe("editRequiresRereview", () => {
+  const VERIFIED = { sellerStatus: "VERIFIED", approvedItems: 0, rejectedItems: 0, flaggedItems: 0 };
+
+  it("keeps a verified seller's content live through edits", () => {
+    expect(editRequiresRereview(VERIFIED, "APPROVED")).toBe(false);
+  });
+
+  it("returns content to review once the seller is no longer verified", () => {
+    expect(editRequiresRereview({ ...VERIFIED, sellerStatus: "SUSPENDED" }, "APPROVED")).toBe(true);
   });
 
   it("does not re-review content that was never approved", () => {
-    expect(editRequiresRereview(UNTRUSTED, "PENDING")).toBe(false);
-    expect(editRequiresRereview(UNTRUSTED, "REJECTED")).toBe(false);
+    expect(editRequiresRereview(VERIFIED, "PENDING")).toBe(false);
+    expect(editRequiresRereview(VERIFIED, "REJECTED")).toBe(false);
   });
 });
