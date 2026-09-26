@@ -62,7 +62,7 @@ export default async function NewProductPage() {
           images: [],
           metaTitle: null,
           metaDescription: null,
-          status: "DRAFT",
+          status: "PUBLISHED",
         }}
       />
     </div>

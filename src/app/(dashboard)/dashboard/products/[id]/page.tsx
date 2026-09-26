@@ -62,14 +62,27 @@ export default async function EditProductPage({
       </header>
 
       {created ? (
-        <p className="mb-6 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-900">
-          Product created. It stays a draft until you set it to Published below.
-        </p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-900">
+          <span>
+            Product saved.{" "}
+            {product.status !== "PUBLISHED"
+              ? "It stays a draft until you set it to Published below."
+              : live
+                ? "It is live."
+                : "It goes live as soon as your business is verified."}
+          </span>
+          <Link
+            href="/dashboard/products/new"
+            className="rounded-md bg-teal-700 px-3 py-1.5 font-medium text-white hover:bg-teal-800"
+          >
+            + Add another product
+          </Link>
+        </div>
       ) : null}
 
       {product.status === "PUBLISHED" && product.moderationStatus === "PENDING" ? (
         <p className="mb-6 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Waiting to be reviewed before it appears publicly.
+          Saved. It appears on your website and the marketplace as soon as your business is verified.
         </p>
       ) : null}
 

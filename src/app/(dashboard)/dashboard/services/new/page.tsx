@@ -52,7 +52,7 @@ export default async function NewServicePage() {
           tags: [],
           metaTitle: null,
           metaDescription: null,
-          status: "DRAFT",
+          status: "PUBLISHED",
         }}
       />
     </div>

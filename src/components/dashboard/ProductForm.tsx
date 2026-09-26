@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { saveProductAction, type CatalogActionState } from "@/server/actions/catalog";
 import { Field, SaveBanner, Section, Select, TextArea } from "@/components/dashboard/fields";
@@ -489,6 +490,14 @@ export function ProductForm({
         >
           {pending ? "Saving…" : values.id ? "Save product" : "Create product"}
         </button>
+        {values.id ? (
+          <Link
+            href="/dashboard/products/new"
+            className="rounded-md border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50"
+          >
+            + Add another product
+          </Link>
+        ) : null}
       </div>
     </form>
   );
