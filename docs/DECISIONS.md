@@ -896,3 +896,43 @@ file in place and runs `caddy reload` (no restart) only when it changed.
 **Cost.** ≈1.6 GB per release (node_modules + .next), so ≈8 GB for five, and
 `npm ci` on every deploy. Migrations are still not reversed by a rollback:
 they stay expand-contract (docs/DEPLOYMENT.md §5).
+
+## D38 — Verify the seller, not each listing (supersedes the content half of D10)
+
+**Decision.** An admin verifies the business once. After that, every product,
+service and gallery item the seller publishes is live immediately — there is no
+per-item review queue, not even for the first listing. Before verification the
+seller can build their whole catalogue; nothing is public, and verifying (or
+reinstating) the seller releases everything that was waiting
+(`releasePendingContent` in admin.service).
+
+**Why.** Reviewing every product put the platform team in the path of every
+seller's catalogue and made new sellers wait twice. The business check is the
+one that matters (GST, identity); after it, admins moderate reactively —
+reject or flag one item, suspend a seller.
+
+**Fixed along the way.** Approving a product left its images PENDING; the
+storefront shows only APPROVED images, so approved products appeared without
+pictures. Approval now carries the images with it, and migration
+`20260926100000_release_verified_seller_content` repaired existing rows.
+
+## D39 — One person, one account: a buyer adds a business to it
+
+**Decision.** A Bzaro account is a person. Buying is something every account
+can do; selling is adding a business to the account (`/register/business`,
+which already accepted any signed-in user). There is no second "seller login".
+
+**What changed.** The seller sign-up used to answer an existing email with
+"already exists". It now explains that buyers can sell too and links to
+"Sign in and add my business" (`/login?next=/register/business`); a signed-in
+visitor opening `/register` goes straight to the business step; the account
+menu offers "Sell on Bzaro" to accounts without a business.
+
+## D40 — Orders: admin switches on, cash on delivery needs no gateway
+
+**Decision.** Taking orders on a storefront stays a per-seller switch an admin
+turns on (the Payments switch on the admin seller page). Once on, the cart
+appears if the seller has at least one way to be paid: cash on delivery (the
+seller's own switch, on by default — `SellerFeature.codEnabled`) or their own
+Razorpay keys. COD no longer depends on Razorpay being connected. Checkout
+offers only the methods the store has, and the server enforces it.
