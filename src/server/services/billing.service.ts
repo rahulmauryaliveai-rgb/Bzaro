@@ -266,34 +266,40 @@ export async function startPlanCheckout(params: {
   if (!quote) return { ok: false, error: "That billing period is not offered for this plan." };
 
   const current = await getActivePlan(params.sellerId);
-  if (
-    current?.plan.id === plan.id &&
-    current.interval === params.interval &&
-    current.gatewaySubscriptionId &&
-    !current.cancelAtPeriodEnd
-  ) {
-    return { ok: false, error: `You are already on ${plan.name}.` };
-  }
 
-  // The billing page hides these; the server refuses them too (D41).
-  const paidAutopay = Boolean(
-    current &&
-    current.plan.priceMinor > 0 &&
-    current.gatewaySubscriptionId &&
-    !current.cancelAtPeriodEnd,
+  // A paid period is running (autopay on OR cancelled-to-period-end). The
+  // billing page hides these moves; the server refuses them too (D41) —
+  // each would start a fresh charge and throw away time already paid for.
+  const paidPeriod = Boolean(
+    current && current.plan.priceMinor > 0 && current.gatewaySubscriptionId,
   );
-  if (paidAutopay && current?.interval === "YEARLY" && params.interval === "MONTHLY") {
-    return {
-      ok: false,
-      error:
-        "You are on a yearly plan, so monthly billing isn't offered. Choose yearly to upgrade.",
-    };
-  }
-  if (paidAutopay && current && plan.sortOrder < current.plan.sortOrder) {
-    return {
-      ok: false,
-      error: `To move down to ${plan.name}, cancel autopay first; you can switch when your current plan ends.`,
-    };
+  if (paidPeriod && current) {
+    const until = current.currentPeriodEnd.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    const switchingToYearly =
+      current.plan.id === plan.id &&
+      current.interval === "MONTHLY" &&
+      params.interval === "YEARLY" &&
+      !current.cancelAtPeriodEnd;
+    if (current.plan.id === plan.id && !switchingToYearly) {
+      return { ok: false, error: `You already have ${plan.name} until ${until}.` };
+    }
+    if (current.interval === "YEARLY" && params.interval === "MONTHLY") {
+      return {
+        ok: false,
+        error:
+          "You are on a yearly plan, so monthly billing isn't offered. Choose yearly to upgrade.",
+      };
+    }
+    if (plan.sortOrder < current.plan.sortOrder) {
+      return {
+        ok: false,
+        error: `${plan.name} becomes available when your current plan ends on ${until}.`,
+      };
+    }
   }
 
   const gatewayPlan = await ensureGatewayPlan(plan, params.interval, quote.totalMinor);

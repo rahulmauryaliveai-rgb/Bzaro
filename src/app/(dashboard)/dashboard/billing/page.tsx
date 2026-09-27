@@ -63,14 +63,14 @@ export default async function BillingPage({ searchParams }: Props) {
   const wanted = plans.find((plan) => plan.key === wantedKey && plan.key !== currentKey);
   const gst = settings.gstRatePercent;
   const pastDue = subscription?.status === "PAST_DUE";
-  // A plan the seller is paying for by autopay and has not cancelled (D41).
-  const paidAutopay = Boolean(
-    subscription &&
-    subscription.plan.priceMinor > 0 &&
-    subscription.gatewaySubscriptionId &&
-    !subscription.cancelAtPeriodEnd,
+  // A paid period is running — autopay on, or cancelled but paid until the
+  // period ends (D41). Either way the seller is never offered a charge that
+  // would throw that paid time away.
+  const paidPeriod = Boolean(
+    subscription && subscription.plan.priceMinor > 0 && subscription.gatewaySubscriptionId,
   );
-  const onYearly = paidAutopay && subscription?.interval === "YEARLY";
+  const autopayOn = paidPeriod && !subscription?.cancelAtPeriodEnd;
+  const onYearly = paidPeriod && subscription?.interval === "YEARLY";
   const currentRank = subscription?.plan.sortOrder ?? 0;
   const openRefund = history.payments.find((payment) =>
     payment.refunds.some((refund) => refund.status === "REQUESTED" || refund.status === "APPROVED"),
@@ -149,7 +149,7 @@ export default async function BillingPage({ searchParams }: Props) {
 
                   // The seller's own autopay plan: say what they are on, and
                   // offer only the one sensible move — monthly → yearly.
-                  if (isCurrent && paidAutopay) {
+                  if (isCurrent && paidPeriod) {
                     return (
                       <div className="space-y-2">
                         <div className="bg-accent-50 text-accent-900 rounded-lg px-4 py-2.5 text-center text-sm">
@@ -158,11 +158,13 @@ export default async function BillingPage({ searchParams }: Props) {
                           </p>
                           {subscription ? (
                             <p className="text-xs">
-                              Renews {dateFmt(subscription.currentPeriodEnd)}
+                              {autopayOn ? "Renews" : "Paid until"}{" "}
+                              {dateFmt(subscription.currentPeriodEnd)}
+                              {autopayOn ? "" : " · autopay off"}
                             </p>
                           ) : null}
                         </div>
-                        {!onYearly && yearly ? (
+                        {autopayOn && !onYearly && yearly ? (
                           <SubscribeButton
                             planKey={plan.key}
                             interval="YEARLY"
@@ -176,14 +178,15 @@ export default async function BillingPage({ searchParams }: Props) {
 
                   // A lower plan while a paid plan is running: switching now
                   // would throw away paid time, so point to cancel-at-period-end.
-                  if (paidAutopay && plan.sortOrder < currentRank) {
+                  if (paidPeriod && plan.sortOrder < currentRank) {
+                    const until = subscription
+                      ? dateFmt(subscription.currentPeriodEnd)
+                      : "the end of the period";
                     return (
                       <p className="rounded-lg bg-neutral-50 px-3 py-2.5 text-center text-xs text-neutral-600">
-                        To move to {plan.name}, cancel autopay below. Your current plan runs until{" "}
-                        {subscription
-                          ? dateFmt(subscription.currentPeriodEnd)
-                          : "the end of the period"}
-                        ; then choose {plan.name} here.
+                        {autopayOn
+                          ? `To move to ${plan.name}, cancel autopay below. Your current plan runs until ${until}; then choose ${plan.name} here.`
+                          : `Available when your current plan ends on ${until}.`}
                       </p>
                     );
                   }
@@ -206,7 +209,7 @@ export default async function BillingPage({ searchParams }: Props) {
                           variant={
                             isGold ? "gold" : onYearly || isHighlight ? "primary" : "secondary"
                           }
-                          label={`${paidAutopay ? "Upgrade" : "Pay"} yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
+                          label={`${paidPeriod ? "Upgrade" : "Pay"} yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
                         />
                       ) : null}
                       <p className="text-center text-[11px] text-neutral-500">
