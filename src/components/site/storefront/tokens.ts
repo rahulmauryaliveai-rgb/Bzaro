@@ -1,3 +1,5 @@
+import { stripRich } from "@/lib/text/rich";
+
 /**
  * Class fragments for the storefront section library.
  *
@@ -35,7 +37,7 @@ export const BTN_WHITE = `inline-flex items-center justify-center gap-2 rounded-
 /** Truncate a description for a hero standfirst. */
 export function excerpt(text: string | null | undefined, max = 180): string | null {
   if (!text) return null;
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = stripRich(text).replace(/\s+/g, " ").trim();
   if (clean.length <= max) return clean;
   return `${clean.slice(0, max).replace(/\s+\S*$/, "")}…`;
 }

@@ -1,3 +1,4 @@
+import { stripRich } from "@/lib/text/rich";
 import type { Metadata } from "next";
 import type { TenantContext } from "@/lib/tenant/context";
 import { canonical } from "@/lib/utils/url";
@@ -27,7 +28,7 @@ export function tenantPageMetadata(
   const description =
     page.description?.slice(0, 300) ??
     website.metaDescription ??
-    seller.description?.slice(0, 160) ??
+    (seller.description ? stripRich(seller.description).slice(0, 160) : null) ??
     `${seller.businessName} — products, services and contact details.`;
 
   const image = page.image ?? website.ogImageUrl ?? seller.coverImageUrl ?? seller.logoUrl;

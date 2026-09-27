@@ -1,3 +1,5 @@
+import { RichText } from "@/components/shared/RichText";
+import { stripRich } from "@/lib/text/rich";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -37,7 +39,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: `${seller.businessName}${locality ? ` — ${locality}` : ""}`,
     description:
-      seller.description?.slice(0, 160) ??
+      (seller.description ? stripRich(seller.description).slice(0, 160) : null) ??
       `${seller.businessName}: products, services and contact details.`,
     // Decision D32: canonical is the seller's highest surface — this page for
     // a catalogue-tier seller, their subdomain or domain otherwise.
@@ -164,14 +166,10 @@ export default async function MarketplaceSellerPage({ params }: Props) {
       {seller.description ? (
         <section className="mt-10 max-w-3xl">
           <h2 className="text-lg font-semibold">About</h2>
-          <div className="mt-3 space-y-4 leading-relaxed text-neutral-700">
-            {seller.description
-              .split(/\n{2,}/)
-              .filter((paragraph) => paragraph.trim().length > 0)
-              .map((paragraph, index) => (
-                <p key={index}>{paragraph.trim()}</p>
-              ))}
-          </div>
+          <RichText
+            text={seller.description}
+            className="mt-3 space-y-4 leading-relaxed text-neutral-700"
+          />
         </section>
       ) : null}
 

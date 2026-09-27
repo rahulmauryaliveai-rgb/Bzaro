@@ -1,3 +1,4 @@
+import { excerpt } from "@/components/site/storefront/tokens";
 import Link from "next/link";
 import type {
   AboutProps,
@@ -84,9 +85,7 @@ function Home({ context, data }: HomeProps) {
 
       {seller.description ? (
         <p className="mx-auto mt-16 max-w-2xl text-center text-lg leading-relaxed opacity-85">
-          {seller.description.length > 320
-            ? `${seller.description.slice(0, 320).trimEnd()}…`
-            : seller.description}
+          {excerpt(seller.description, 320)}
         </p>
       ) : null}
 

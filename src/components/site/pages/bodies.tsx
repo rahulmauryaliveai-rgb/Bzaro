@@ -1,3 +1,4 @@
+import { RichText } from "@/components/shared/RichText";
 import Link from "next/link";
 import { z } from "zod";
 import type {
@@ -58,7 +59,9 @@ export function AboutBody({ context, data }: AboutProps) {
 
       <PageHeader eyebrow="About" title={seller.businessName} description={seller.tagline} />
 
-      {seller.description ? <Prose text={seller.description} /> : null}
+      {seller.description ? (
+        <RichText text={seller.description} className="space-y-4 leading-relaxed opacity-85" />
+      ) : null}
 
       <dl className="mt-10 grid gap-4 sm:grid-cols-3">
         {seller.establishedYear ? (

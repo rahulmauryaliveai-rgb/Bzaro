@@ -1,3 +1,4 @@
+import { stripRich } from "@/lib/text/rich";
 import { z } from "zod";
 
 /**
@@ -203,7 +204,7 @@ export function evaluateEligibility(
   }
 
   // ── Description ──
-  const descriptionLength = seller.description?.trim().length ?? 0;
+  const descriptionLength = stripRich(seller.description).trim().length;
   if (descriptionLength >= rules.minDescriptionLength) {
     add(WEIGHTS.description);
   } else {

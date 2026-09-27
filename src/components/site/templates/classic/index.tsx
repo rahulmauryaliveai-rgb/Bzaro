@@ -1,3 +1,4 @@
+import { excerpt } from "@/components/site/storefront/tokens";
 import Link from "next/link";
 import type {
   AboutProps,
@@ -64,11 +65,7 @@ function Home({ context, data }: HomeProps) {
           {seller.tagline ? <p className="mt-2 text-lg opacity-75">{seller.tagline}</p> : null}
 
           {seller.description ? (
-            <p className="mt-6 leading-relaxed opacity-85">
-              {seller.description.length > 400
-                ? `${seller.description.slice(0, 400).trimEnd()}…`
-                : seller.description}
-            </p>
+            <p className="mt-6 leading-relaxed opacity-85">{excerpt(seller.description, 400)}</p>
           ) : null}
 
           <div className="mt-7 flex flex-wrap gap-3">

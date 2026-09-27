@@ -1,5 +1,7 @@
 "use client";
 
+import { RichTextEditor } from "@/components/dashboard/RichTextEditor";
+import { stripRich } from "@/lib/text/rich";
 import { useActionState, useState } from "react";
 import { updateProfileAction, type SellerActionState } from "@/server/actions/seller";
 import { ImageUpload } from "@/components/dashboard/ImageUpload";
@@ -381,17 +383,17 @@ function DescriptionField({
       <label htmlFor="description" className="mb-1 block text-sm font-medium">
         About your business
       </label>
-      <textarea
+      <RichTextEditor
         id="description"
         name="description"
-        rows={7}
+        rows={8}
         maxLength={5000}
         defaultValue={defaultValue}
         placeholder="What you make or supply, who you serve, what makes you different, certifications, capacity…"
-        onInput={(event) => {
+        onValueChange={(value) => {
           const counter = document.getElementById("description-count");
           if (!counter) return;
-          const length = event.currentTarget.value.trim().length;
+          const length = stripRich(value).trim().length;
           counter.textContent =
             length >= minLength
               ? `${length} characters — meets the minimum`
@@ -399,19 +401,23 @@ function DescriptionField({
           counter.className =
             length >= minLength ? "mt-1 text-xs text-teal-700" : "mt-1 text-xs text-amber-700";
         }}
-        className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
       />
+      <p className="mt-1 text-xs text-neutral-500">
+        Use the toolbar for <strong>bold</strong>, <em>italic</em>,{" "}
+        <span className="underline">underline</span> and bullet points. Preview shows it as buyers
+        will see it.
+      </p>
       <p
         id="description-count"
         className={
-          defaultValue.trim().length >= minLength
+          stripRich(defaultValue).trim().length >= minLength
             ? "mt-1 text-xs text-teal-700"
             : "mt-1 text-xs text-amber-700"
         }
       >
-        {defaultValue.trim().length >= minLength
-          ? `${defaultValue.trim().length} characters — meets the minimum`
-          : `${defaultValue.trim().length} of ${minLength} characters minimum`}
+        {stripRich(defaultValue).trim().length >= minLength
+          ? `${stripRich(defaultValue).trim().length} characters — meets the minimum`
+          : `${stripRich(defaultValue).trim().length} of ${minLength} characters minimum`}
       </p>
       <p className="mt-1 text-xs text-neutral-500">
         This is the biggest factor in whether search engines will index your site.

@@ -1,3 +1,4 @@
+import { stripRich } from "@/lib/text/rich";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { forbidden, notFound, permanentRedirect } from "next/navigation";
@@ -74,7 +75,7 @@ export async function generateMetadata({
     website.metaTitle ?? `${seller.businessName}${seller.tagline ? ` — ${seller.tagline}` : ""}`;
   const description =
     website.metaDescription ??
-    seller.description?.slice(0, 160) ??
+    (seller.description ? stripRich(seller.description).slice(0, 160) : null) ??
     `${seller.businessName} — products, services and contact details.`;
 
   return {

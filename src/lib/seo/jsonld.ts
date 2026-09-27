@@ -1,3 +1,4 @@
+import { stripRich } from "@/lib/text/rich";
 import type { SellerPublic } from "@/lib/tenant/context";
 import { parseBusinessHours, toSchemaOpeningHours } from "@/lib/utils/hours";
 import { priceForSchema } from "@/lib/utils/money";
@@ -75,7 +76,7 @@ export function sellerJsonLd(seller: SellerPublic, baseUrl: string): JsonLdObjec
     "@id": `${baseUrl}#business`,
     name: seller.businessName,
     legalName: seller.legalName,
-    description: seller.description,
+    description: seller.description ? stripRich(seller.description) : seller.description,
     url: baseUrl,
     telephone: seller.phone,
     email: seller.email,

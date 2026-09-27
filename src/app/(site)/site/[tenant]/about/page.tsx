@@ -1,3 +1,4 @@
+import { stripRich } from "@/lib/text/rich";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { loadPageContext } from "@/lib/tenant/page-context";
@@ -16,7 +17,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   return tenantPageMetadata(context, {
     title: `About ${context.seller.businessName}`,
-    description: context.seller.description?.slice(0, 160),
+    description: context.seller.description
+      ? stripRich(context.seller.description).slice(0, 160)
+      : undefined,
     path: "/about",
   });
 }
