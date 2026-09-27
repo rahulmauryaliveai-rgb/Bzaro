@@ -183,7 +183,9 @@ export async function findMatchedSellers(
     eligible.push(candidate);
   }
 
-  return rankCandidates(eligible, { locationId: city.id, clusterKey: city.clusterKey }, settings).map(
-    (candidate) => ({ ...candidate, slot: slots.get(candidate.sellerId) ?? "WEEKLY" }),
-  );
+  return rankCandidates(
+    eligible,
+    { locationId: city.id, clusterKey: city.clusterKey },
+    settings,
+  ).map((candidate) => ({ ...candidate, slot: slots.get(candidate.sellerId) ?? "WEEKLY" }));
 }

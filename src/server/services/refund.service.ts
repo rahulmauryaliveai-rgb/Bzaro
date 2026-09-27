@@ -33,7 +33,9 @@ export type RefundableCandidate = {
 };
 
 /** The plan payment a seller could ask to refund right now, if any. */
-export async function getRefundableCandidate(sellerId: string): Promise<RefundableCandidate | null> {
+export async function getRefundableCandidate(
+  sellerId: string,
+): Promise<RefundableCandidate | null> {
   const settings = await getBillingSettings();
   if (settings.refundWindowDays <= 0) return null;
   const since = new Date(Date.now() - settings.refundWindowDays * 86_400_000);
@@ -72,7 +74,10 @@ export async function requestRefund(params: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const candidate = await getRefundableCandidate(params.sellerId);
   if (!candidate || candidate.paymentId !== params.paymentId) {
-    return { ok: false, error: "This payment is outside the refund window or already has a request." };
+    return {
+      ok: false,
+      error: "This payment is outside the refund window or already has a request.",
+    };
   }
   if (!(REFUND_REASONS as readonly string[]).includes(params.reason)) {
     return { ok: false, error: "Choose a reason." };
@@ -151,7 +156,12 @@ export function listRefundRequests(status?: "REQUESTED" | "REFUNDED" | "REJECTED
 export async function rejectRefund(params: { id: string; adminId: string; note: string | null }) {
   const updated = await db.refundRequest.updateMany({
     where: { id: params.id, status: "REQUESTED" },
-    data: { status: "REJECTED", adminNote: params.note, reviewedById: params.adminId, reviewedAt: new Date() },
+    data: {
+      status: "REJECTED",
+      adminNote: params.note,
+      reviewedById: params.adminId,
+      reviewedAt: new Date(),
+    },
   });
   return updated.count === 1;
 }
@@ -168,7 +178,12 @@ export async function approveRefund(params: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const claimed = await db.refundRequest.updateMany({
     where: { id: params.id, status: "REQUESTED" },
-    data: { status: "APPROVED", reviewedById: params.adminId, reviewedAt: new Date(), adminNote: params.note },
+    data: {
+      status: "APPROVED",
+      reviewedById: params.adminId,
+      reviewedAt: new Date(),
+      adminNote: params.note,
+    },
   });
   if (claimed.count !== 1) return { ok: false, error: "This request was already handled." };
 
@@ -194,13 +209,20 @@ export async function approveRefund(params: {
       await db.refundRequest.update({ where: { id: request.id }, data: { status: "REQUESTED" } });
       return { ok: false, error: "Razorpay billing keys are not configured." };
     }
-    const refund = await refundGatewayPayment(request.payment.gatewayPaymentId, request.amountMinor, {
-      refundRequestId: request.id,
-    });
+    const refund = await refundGatewayPayment(
+      request.payment.gatewayPaymentId,
+      request.amountMinor,
+      {
+        refundRequestId: request.id,
+      },
+    );
     if (!refund.ok) {
       await db.refundRequest.update({
         where: { id: request.id },
-        data: { status: "FAILED", adminNote: `${params.note ?? ""}\nRazorpay: ${refund.error}`.trim() },
+        data: {
+          status: "FAILED",
+          adminNote: `${params.note ?? ""}\nRazorpay: ${refund.error}`.trim(),
+        },
       });
       return { ok: false, error: `Razorpay: ${refund.error}` };
     }
@@ -214,7 +236,9 @@ export async function approveRefund(params: {
       data: {
         status: "REFUNDED",
         gatewayRefundId,
-        ...(gatewayRefundId ? {} : { adminNote: `${params.note ?? ""}\nNo gateway payment — refund by hand.`.trim() }),
+        ...(gatewayRefundId
+          ? {}
+          : { adminNote: `${params.note ?? ""}\nNo gateway payment — refund by hand.`.trim() }),
       },
     }),
     db.payment.update({
@@ -238,9 +262,10 @@ export async function approveRefund(params: {
   ]);
 
   if (request.payment.subscription.gatewaySubscriptionId) {
-    await cancelGatewaySubscription(request.payment.subscription.gatewaySubscriptionId, false).catch(
-      () => undefined,
-    );
+    await cancelGatewaySubscription(
+      request.payment.subscription.gatewaySubscriptionId,
+      false,
+    ).catch(() => undefined);
   }
   await recomputeWebPresence(request.sellerId, db, "immediate");
   return { ok: true };

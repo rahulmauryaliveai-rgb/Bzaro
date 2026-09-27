@@ -43,12 +43,16 @@ const planSchema = z.object({
     .string()
     .trim()
     .transform((value) => (value.length === 0 ? null : Number(value)))
-    .refine((value) => value === null || (Number.isFinite(value) && value > 0 && value <= 10_000_000)),
+    .refine(
+      (value) => value === null || (Number.isFinite(value) && value > 0 && value <= 10_000_000),
+    ),
   weeklyLeadQuota: z
     .string()
     .trim()
     .transform((value) => (value.length === 0 ? null : Number(value)))
-    .refine((value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 10_000)),
+    .refine(
+      (value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 10_000),
+    ),
   dailyLeadQuota: z.coerce.number().int().min(0).max(100),
   includesPayments: z.boolean(),
   includesShipping: z.boolean(),

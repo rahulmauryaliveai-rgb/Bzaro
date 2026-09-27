@@ -32,13 +32,13 @@ browse → click "WhatsApp" / "Get Best Price"
 
 ### Email OTP rules
 
-| Rule | Value | Where |
-|---|---|---|
-| Length | 6 digits | `EmailOtp` |
-| Expiry | 10 minutes | `EmailOtp.expiresAt` |
-| Attempts per code | 5, then locked | `EmailOtp.attempts`, CHECK constraint |
-| Storage | HMAC of the code — never the code itself | same rule as `OtpChallenge` |
-| Purposes | `SIGNUP`, `RESET_PASSWORD` | `EmailOtpPurpose` |
+| Rule              | Value                                    | Where                                 |
+| ----------------- | ---------------------------------------- | ------------------------------------- |
+| Length            | 6 digits                                 | `EmailOtp`                            |
+| Expiry            | 10 minutes                               | `EmailOtp.expiresAt`                  |
+| Attempts per code | 5, then locked                           | `EmailOtp.attempts`, CHECK constraint |
+| Storage           | HMAC of the code — never the code itself | same rule as `OtpChallenge`           |
+| Purposes          | `SIGNUP`, `RESET_PASSWORD`               | `EmailOtpPurpose`                     |
 
 `OtpChallenge` and its phone OTP still exist, but only for **seller** onboarding
 (`OtpPurpose.SELLER_SIGNUP`). Phones are still normalised to E.164
@@ -67,15 +67,15 @@ worker. The request never waits on it.
 
 ### Lead types
 
-| | DIRECT | MARKET |
-|---|---|---|
-| Recipient | the clicked product's seller | 7–10 matched sellers |
-| Delivery | WhatsApp + dashboard | dashboard only |
-| Buyer phone | visible immediately | masked until accepted |
-| Cost to seller | free | 1 credit on accept |
-| Expires | never | 48 h after creation |
-| `masked` column | always `false` (CHECK) | `true` until accept |
-| `expiresAt` | null | required (CHECK) |
+|                 | DIRECT                       | MARKET                                                                           |
+| --------------- | ---------------------------- | -------------------------------------------------------------------------------- |
+| Recipient       | the clicked product's seller | 7–10 matched sellers                                                             |
+| Delivery        | WhatsApp + dashboard         | dashboard only                                                                   |
+| Buyer phone     | visible immediately          | masked until accepted                                                            |
+| Cost to seller  | free                         | 1 credit on accept                                                               |
+| Expires         | never                        | end of the IST week (weekly slot) or of the next IST day (lead of the day) — D41 |
+| `masked` column | always `false` (CHECK)       | `true` until accept                                                              |
+| `expiresAt`     | null                         | required (CHECK)                                                                 |
 
 A seller sees a given requirement at most once: `@@unique([requirementId,
 sellerId])`. The direct seller is excluded from the market fan-out.
@@ -128,16 +128,17 @@ and an upgrade CTA. They cannot accept.
 2. **Score** (weights from the `leads` setting, defaults in
    `src/lib/validation/lead-settings.ts`):
 
-   | Signal | Default weight | Note |
-   |---|---|---|
-   | plan tier | 100 × `Plan.sortOrder` | Free 0, Basic 100, Gold 200 — the paid lever |
-   | same city | 30 | `Seller.locationId = requirement.locationId` |
-   | same cluster | 20 | both cities share `Location.clusterKey` (e.g. `ncr`) |
-   | serves city | 10 | row in `SellerServiceArea` |
-   | response rate | 20 × `responseRate` | `null` → `neutralResponseRate` (0.5) |
-   | primary category | 5 | `SellerCategory.isPrimary` |
+   | Signal           | Default weight         | Note                                                 |
+   | ---------------- | ---------------------- | ---------------------------------------------------- |
+   | plan tier        | 100 × `Plan.sortOrder` | Free 0, Basic 100, Gold 200 — the paid lever         |
+   | same city        | 30                     | `Seller.locationId = requirement.locationId`         |
+   | same cluster     | 20                     | both cities share `Location.clusterKey` (e.g. `ncr`) |
+   | serves city      | 10                     | row in `SellerServiceArea`                           |
+   | response rate    | 20 × `responseRate`    | `null` → `neutralResponseRate` (0.5)                 |
+   | primary category | 5                      | `SellerCategory.isPrimary`                           |
 
    City signals are tiered, not summed: a seller earns the best one only.
+
 3. Take the top `market.maxSellers` (10). If fewer than `market.minSellers`
    (7) qualify, send to however many did — a thin category is still worth a
    lead.
@@ -146,6 +147,16 @@ and an upgrade CTA. They cannot accept.
 on the seller row in the accept transaction and reconciled nightly. It is
 **null**, not zero, for a seller with no history, so new sellers are ranked
 at the neutral default rather than buried.
+
+### Weekly + daily delivery (D41)
+
+Each plan has `weeklyLeadQuota` (null = uncapped) and `dailyLeadQuota`.
+Before ranking, `findMatchedSellers` counts each candidate's MARKET leads since
+Monday 00:00 IST and their DAILY leads since midnight IST, and `chooseSlot`
+(`src/lib/leads/quota.ts`) gives the lead a WEEKLY slot while the week has
+room, then a DAILY slot ("lead of the day"), else drops the seller so the
+requirement goes to the next one. `Lead.slot` records which; the fan-out sets
+`expiresAt` from it. Defaults: Free 5/week (teasers), Pro 10 + 1, Gold 20 + 1.
 
 ### 7-day dedupe
 
@@ -159,19 +170,20 @@ DIRECT lead is still created: the buyer chose that seller deliberately.
 
 `CreditLedger` is append-only; `Seller.creditBalance` caches `SUM(delta)`.
 
-| Reason | Delta | When | Idempotency |
-|---|---|---|---|
-| `MONTHLY_GRANT` | +`Plan.leadCreditsPerMonth` | 1st of month, job | unique (`sellerId`, reason, `periodKey`="YYYY-MM") |
-| `LEAD_ACCEPT` | −1 | seller accepts a MARKET lead | one per lead (`leadId`) |
-| `FLAG_REFUND` | +1 | admin resolves a flag as REFUNDED | `LeadFlag.refundLedgerId` unique |
-| `ADMIN_ADJUST` | any ≠ 0 | admin screen; also the plan-change top-up (note "Plan change top-up for YYYY-MM") | — |
+| Reason           | Delta                       | When                                                                              | Idempotency                                        |
+| ---------------- | --------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `MONTHLY_GRANT`  | +`Plan.leadCreditsPerMonth` | 1st of month, job                                                                 | unique (`sellerId`, reason, `periodKey`="YYYY-MM") |
+| `LEAD_ACCEPT`    | −1                          | seller accepts a MARKET lead                                                      | one per lead (`leadId`)                            |
+| `FLAG_REFUND`    | +1                          | admin resolves a flag as REFUNDED                                                 | `LeadFlag.refundLedgerId` unique                   |
+| `ADDON_PURCHASE` | +pack size (10)             | a paid ₹499 lead pack (D41)                                                       | one per `Purchase` (guarded CREATED → PAID)        |
+| `ADMIN_ADJUST`   | any ≠ 0                     | admin screen; also the plan-change top-up (note "Plan change top-up for YYYY-MM") | —                                                  |
 
 A plan change (`changeSellerPlan`) immediately brings the seller up to the new
 plan's grant for the current month (`topUpCreditsForPlanChange`): the first
 grant of the month is a `MONTHLY_GRANT`, a later upgrade adds the difference as
 an `ADMIN_ADJUST` with the same `periodKey`. Downgrades never claw back.
 
-Defaults: Free 0, Basic 10, Gold 40 per month. Configurable per plan in the
+Defaults (D41): Free 0, Pro 30, Gold 80 per month; a lead pack adds 10. Configurable per plan in the
 admin plans screen. Unused credits do **not** roll over (the grant is a fixed
 delta, not a top-up).
 
@@ -216,10 +228,10 @@ Cron jobs that also touch leads: `prune-events` (expired OTP challenges),
 Both follow the `MailProvider` pattern — interface + console implementation +
 factory; no vendor SDK outside the module.
 
-| Interface | Console impl | Real impl (later) | Env |
-|---|---|---|---|
-| `OtpProvider` (`src/lib/otp`) | prints the code | WhatsApp Cloud API template, SMS fallback | `WHATSAPP_*` |
-| `LeadNotifier` (`src/lib/notify`) | prints the message | WhatsApp Cloud API template | `WHATSAPP_*` |
+| Interface                         | Console impl       | Real impl (later)                         | Env          |
+| --------------------------------- | ------------------ | ----------------------------------------- | ------------ |
+| `OtpProvider` (`src/lib/otp`)     | prints the code    | WhatsApp Cloud API template, SMS fallback | `WHATSAPP_*` |
+| `LeadNotifier` (`src/lib/notify`) | prints the message | WhatsApp Cloud API template               | `WHATSAPP_*` |
 
 In production without `WHATSAPP_*` the console implementations run and log an
 error at boot. Leads still land in the dashboard; nothing is lost.
@@ -244,13 +256,13 @@ error at boot. Leads still land in the dashboard; nothing is lost.
 
 Five steps, resumable; `Seller.onboardingStep` is the pointer.
 
-| Step | Route | Writes | Notes |
-|---|---|---|---|
-| 1 Account | `/register` | `User` (name, phone, whatsapp, email, password) | OTP (`SELLER_SIGNUP`) verifies the phone in the same submission when a code is entered; without one the account is created unverified and the dashboard checklist keeps asking (D2 `requireVerifiedPhone`). Verify later from `/dashboard/settings`. The seller is signed in and sent to step 2 immediately — the confirmation email is not a gate. |
-| 2 Business | `/register/business` | `Seller` (+ `businessType`, address, PIN), `SellerCategory` (1 primary + ≤4 secondary), `SellerServiceArea` (cities served), free subscription | Sets `onboardingStep = TRUST`. |
-| 3 Trust | `/register/trust` | GSTIN, year, employees, turnover band, logo, certifications | All optional; "Skip for now" is the same call. Sets `THEME`. |
-| 4 Website look | `/register/theme` | `SellerWebsite.templateId` + preset tokens (D33) | Pick a template or keep the default. Sets `CATALOG`. |
-| 5 Catalogue | `/register/catalog` | — | Two exits, both set `COMPLETE`: add a product now, or dashboard. |
+| Step           | Route                | Writes                                                                                                                                         | Notes                                                                                                                                                                                                                                                                                                                                               |
+| -------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 Account      | `/register`          | `User` (name, phone, whatsapp, email, password)                                                                                                | OTP (`SELLER_SIGNUP`) verifies the phone in the same submission when a code is entered; without one the account is created unverified and the dashboard checklist keeps asking (D2 `requireVerifiedPhone`). Verify later from `/dashboard/settings`. The seller is signed in and sent to step 2 immediately — the confirmation email is not a gate. |
+| 2 Business     | `/register/business` | `Seller` (+ `businessType`, address, PIN), `SellerCategory` (1 primary + ≤4 secondary), `SellerServiceArea` (cities served), free subscription | Sets `onboardingStep = TRUST`.                                                                                                                                                                                                                                                                                                                      |
+| 3 Trust        | `/register/trust`    | GSTIN, year, employees, turnover band, logo, certifications                                                                                    | All optional; "Skip for now" is the same call. Sets `THEME`.                                                                                                                                                                                                                                                                                        |
+| 4 Website look | `/register/theme`    | `SellerWebsite.templateId` + preset tokens (D33)                                                                                               | Pick a template or keep the default. Sets `CATALOG`.                                                                                                                                                                                                                                                                                                |
+| 5 Catalogue    | `/register/catalog`  | —                                                                                                                                              | Two exits, both set `COMPLETE`: add a product now, or dashboard.                                                                                                                                                                                                                                                                                    |
 
 `/register/business` sends a user who already has a seller to
 `stepPath(onboardingStep)`, so a half-finished onboarding resumes where it
@@ -276,10 +288,10 @@ POST endpoint; not rendering a button is not a control.
 
 `Add to cart` appears only when both are true:
 
-| Condition | Where |
-|---|---|
+| Condition                                                         | Where               |
+| ----------------------------------------------------------------- | ------------------- |
 | `SellerFeature.paymentsEnabled` (plan, add-on, or admin override) | `getSellerFeatures` |
-| A `SellerIntegration` of type RAZORPAY with `enabled = true` | `canAcceptPayments` |
+| A `SellerIntegration` of type RAZORPAY with `enabled = true`      | `canAcceptPayments` |
 
 Plus the product must have a real price — `priceOnRequest` products stay
 enquiry-only even in a store that takes payment. Everywhere else the contact

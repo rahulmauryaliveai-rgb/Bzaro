@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Check, Globe2, Link2, Sparkles } from "lucide-react";
 import { formatMoney } from "@/lib/utils/money";
 import { clientEnv } from "@/env.client";
@@ -35,29 +36,59 @@ export function planFeatures(plan: PublicPlan): string[] {
   const features = [
     plan.maxProducts >= 1000 ? "Unlimited products" : `Up to ${plan.maxProducts} products`,
     `${plan.maxServices} services · ${plan.maxGalleryItems} gallery photos`,
-    `${plan.maxCategories} categor${plan.maxCategories === 1 ? "y" : "ies"}`,
-    "Direct buyer leads on WhatsApp — free",
-    plan.leadCreditsPerMonth == null
-      ? "Unlimited matched-requirement leads"
-      : plan.leadCreditsPerMonth > 0
-        ? `${plan.leadCreditsPerMonth} matched-requirement leads / month`
-        : "Matched requirements: preview only",
+    "Direct buyer enquiries on WhatsApp — free",
   ];
+
+  // Leads (D41): delivery allowance, then the credits that unlock them.
+  const weekly = plan.weeklyLeadQuota;
+  const daily = plan.dailyLeadQuota;
+  const credits = plan.leadCreditsPerMonth;
+  if (credits === 0) {
+    features.push("Buyer requirements: preview only");
+    features.push("Unlock 10 leads anytime with a lead pack");
+  } else {
+    if (weekly !== null && weekly > 0) {
+      features.push(
+        `${weekly} matched leads every week${daily > 0 ? ` + ${daily} lead of the day` : ""}`,
+      );
+    }
+    features.push(
+      credits === null ? "Unlimited lead credits" : `${credits} lead credits every month`,
+    );
+  }
+
+  if (plan.includesPayments) features.push("Payment gateway & Add to cart — included");
+  else if (plan.webPresence !== "CATALOGUE") features.push("Payment gateway add-on available");
+  if (plan.includesShipping) features.push("Shipping integration — included");
+  else if (plan.webPresence !== "CATALOGUE") features.push("Shipping add-on available");
+  if (plan.trustSeal) features.push("Trust Seal verified badge");
+  if (plan.searchBoost > 0 && plan.trustSeal)
+    features.push("Top placement in category & city search");
+  else if (plan.searchBoost > 0) features.push("Higher placement in search");
   if (plan.allowPremiumTemplates) features.push("Premium website templates");
   if (plan.removeBranding) features.push("No Bzaro branding on your site");
   if (plan.prioritySupport) features.push("Priority support");
   return features;
 }
 
-export function formatPlanPrice(plan: PublicPlan): { amount: string; period: string } {
-  if (plan.priceMinor === 0) return { amount: "Free", period: "forever" };
-  const period =
-    plan.interval === "YEARLY"
-      ? "per year"
-      : plan.interval === "QUARTERLY"
-        ? "per quarter"
-        : "per month";
-  return { amount: formatMoney(plan.priceMinor, plan.currency), period };
+export function formatPlanPrice(plan: PublicPlan): {
+  amount: string;
+  period: string;
+  yearly: string | null;
+  yearlySaving: number | null;
+} {
+  if (plan.priceMinor === 0)
+    return { amount: "Free", period: "forever", yearly: null, yearlySaving: null };
+  const yearly = plan.yearlyPriceMinor ? formatMoney(plan.yearlyPriceMinor, plan.currency) : null;
+  const yearlySaving = plan.yearlyPriceMinor
+    ? Math.round((1 - plan.yearlyPriceMinor / (plan.priceMinor * 12)) * 100)
+    : null;
+  return {
+    amount: formatMoney(plan.priceMinor, plan.currency),
+    period: "per month + GST",
+    yearly,
+    yearlySaving: yearlySaving && yearlySaving > 0 ? yearlySaving : null,
+  };
 }
 
 export function PlanLadder({
@@ -67,6 +98,7 @@ export function PlanLadder({
   ctaHref,
   ctaLabel = "Get started",
   highlightKey,
+  renderCta,
 }: {
   plans: PublicPlan[];
   /** The seller's current plan, when rendering inside the dashboard. */
@@ -77,6 +109,11 @@ export function PlanLadder({
   ctaLabel?: string;
   /** Visually emphasised plan (defaults to the first one with a website). */
   highlightKey?: string;
+  /** Replaces the link CTA — the dashboard renders checkout buttons here. */
+  renderCta?: (
+    plan: PublicPlan,
+    context: { isCurrent: boolean; isHighlight: boolean },
+  ) => ReactNode;
 }) {
   const highlight = highlightKey ?? plans.find((plan) => plan.webPresence !== "CATALOGUE")?.key;
 
@@ -130,6 +167,16 @@ export function PlanLadder({
               </span>{" "}
               <span className="text-sm text-neutral-500">{price.period}</span>
             </p>
+            {price.yearly ? (
+              <p className="mt-1 text-sm text-neutral-600">
+                or <span className="font-semibold text-neutral-900">{price.yearly}</span> per year
+                {price.yearlySaving ? (
+                  <span className="bg-accent-50 text-accent-800 ml-2 rounded-full px-2 py-0.5 text-xs font-medium">
+                    save {price.yearlySaving}%
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
 
             <div
               className={`mt-5 flex items-start gap-3 rounded-xl p-3 ${
@@ -157,7 +204,9 @@ export function PlanLadder({
               ))}
             </ul>
 
-            {isCurrent ? (
+            {renderCta ? (
+              <div className="mt-6">{renderCta(plan, { isCurrent, isHighlight })}</div>
+            ) : isCurrent ? (
               <span className="mt-6 inline-flex justify-center rounded-lg border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-500">
                 You are on this plan
               </span>

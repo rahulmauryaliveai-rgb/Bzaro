@@ -21,7 +21,12 @@ export function withGst(baseMinor: number, ratePercent = DEFAULT_GST_RATE_PERCEN
   return { baseMinor, taxMinor, totalMinor: baseMinor + taxMinor };
 }
 
-export type GstSplit = { cgstMinor: number; sgstMinor: number; igstMinor: number; intraState: boolean };
+export type GstSplit = {
+  cgstMinor: number;
+  sgstMinor: number;
+  igstMinor: number;
+  intraState: boolean;
+};
 
 function normaliseState(state: string | null | undefined): string | null {
   const value = state?.trim().toLowerCase().replace(/\s+/g, " ");
@@ -54,6 +59,10 @@ export function financialYear(date: Date): string {
 
 /** "BZ/2026-27/0007". GST rules allow at most 16 characters of [A-Z0-9/-]. */
 export function formatInvoiceNumber(prefix: string, fy: string, sequence: number): string {
-  const clean = prefix.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 4) || "BZ";
+  const clean =
+    prefix
+      .toUpperCase()
+      .replace(/[^A-Z0-9-]/g, "")
+      .slice(0, 4) || "BZ";
   return `${clean}/${fy}/${String(sequence).padStart(4, "0")}`;
 }

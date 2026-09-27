@@ -26,6 +26,7 @@ type ProductRow = {
     slug: string;
     businessName: string;
     verifiedAt: Date | null;
+    trustSeal?: boolean;
     location: { name: string; parent: { name: string } | null } | null;
   };
 };
@@ -49,6 +50,7 @@ export function toProductHit(product: ProductRow): ProductHit {
     sellerSlug: product.seller.slug,
     sellerName: product.seller.businessName,
     sellerVerified: product.seller.verifiedAt !== null,
+    sellerTrustSeal: product.seller.trustSeal ?? false,
     sellerCity: product.seller.location?.name ?? null,
     sellerState: product.seller.location?.parent?.name ?? null,
     categoryName: product.category?.name ?? null,
@@ -68,6 +70,7 @@ type SellerRow = {
   ratingCount: number;
   establishedYear: number | null;
   verifiedAt: Date | null;
+  trustSeal?: boolean;
   location: { name: string; parent: { name: string } | null } | null;
 };
 
@@ -86,6 +89,7 @@ export function toSellerHit(seller: SellerRow): SellerHit {
     ratingAvg: seller.ratingAvg,
     ratingCount: seller.ratingCount,
     isVerified: seller.verifiedAt !== null,
+    trustSeal: seller.trustSeal ?? false,
     establishedYear: seller.establishedYear,
   };
 }

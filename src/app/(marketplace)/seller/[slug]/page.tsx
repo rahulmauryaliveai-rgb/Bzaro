@@ -9,6 +9,7 @@ import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
 import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
 import { SaveSellerButton } from "@/components/buyer/SaveSellerButton";
+import { TrustSeal } from "@/components/marketplace/TrustSeal";
 
 /**
  * Seller profile on the marketplace.
@@ -106,6 +107,7 @@ export default async function MarketplaceSellerPage({ params }: Props) {
                 ✓ Verified
               </span>
             ) : null}
+            {seller.trustSeal ? <TrustSeal /> : null}
           </div>
 
           {seller.tagline ? <p className="mt-1 text-neutral-600">{seller.tagline}</p> : null}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ProductHit, SellerHit } from "@/lib/search/types";
 import { formatPrice } from "@/lib/utils/money";
+import { TrustSeal } from "@/components/marketplace/TrustSeal";
 
 /**
  * Marketplace result cards.
@@ -75,6 +76,7 @@ export function ProductResultCard({ hit }: { hit: ProductHit }) {
           {hit.sellerName}
         </Link>
         {hit.sellerVerified ? <VerifiedBadge /> : null}
+        {hit.sellerTrustSeal ? <TrustSeal compact /> : null}
         {locality ? <span className="ml-auto shrink-0 text-neutral-500">{locality}</span> : null}
       </div>
     </article>
@@ -111,6 +113,7 @@ export function SellerResultCard({ hit }: { hit: SellerHit }) {
             </Link>
           </h3>
           {hit.isVerified ? <VerifiedBadge /> : null}
+          {hit.trustSeal ? <TrustSeal /> : null}
         </div>
 
         {hit.tagline ? (

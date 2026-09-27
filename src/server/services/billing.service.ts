@@ -19,7 +19,11 @@ import {
   verifySubscriptionPayment,
   type GatewaySubscription,
 } from "@/lib/payments/billing-gateway";
-import { getActivePlan, liveSubscriptionWhere, recomputeWebPresence } from "@/server/services/plan.service";
+import {
+  getActivePlan,
+  liveSubscriptionWhere,
+  recomputeWebPresence,
+} from "@/server/services/plan.service";
 import { periodKeyFor, topUpCreditsForPlanChange } from "@/server/services/credit.service";
 import type { AddonKind, BillingInterval } from "@/generated/prisma/enums";
 
@@ -236,7 +240,10 @@ export async function startPlanCheckout(params: {
   interval: "MONTHLY" | "YEARLY";
 }): Promise<CheckoutStart> {
   if (!isBillingGatewayConfigured()) {
-    return { ok: false, error: "Online payment is not switched on yet. Use the manual option below." };
+    return {
+      ok: false,
+      error: "Online payment is not switched on yet. Use the manual option below.",
+    };
   }
   const plan = await db.plan.findUnique({
     where: { key: params.planKey },
@@ -332,7 +339,8 @@ export async function confirmPlanCheckout(params: {
     where: { gatewaySubscriptionId: params.subscriptionId },
     select: { sellerId: true },
   });
-  if (!row || row.sellerId !== params.sellerId) return { ok: false, error: "Unknown subscription." };
+  if (!row || row.sellerId !== params.sellerId)
+    return { ok: false, error: "Unknown subscription." };
   if (
     !verifySubscriptionPayment({
       subscriptionId: params.subscriptionId,
@@ -457,7 +465,8 @@ export async function recordSubscriptionCharge(params: {
     select: { id: true, sellerId: true, status: true, interval: true },
   });
   if (!sub) return;
-  if (sub.status === "INCOMPLETE") await activateGatewaySubscription(params.gatewaySubscriptionId, params.entity);
+  if (sub.status === "INCOMPLETE")
+    await activateGatewaySubscription(params.gatewaySubscriptionId, params.entity);
 
   const baseMinor = Math.round(params.amountMinor / (1 + settings.gstRatePercent / 100));
   try {
@@ -498,7 +507,10 @@ export async function recordSubscriptionCharge(params: {
 }
 
 /** A renewal failed; Razorpay keeps retrying. Features stay on for graceDays. */
-export async function markSubscriptionPastDue(gatewaySubscriptionId: string, gatewayStatus: string) {
+export async function markSubscriptionPastDue(
+  gatewaySubscriptionId: string,
+  gatewayStatus: string,
+) {
   const settings = await getBillingSettings();
   const sub = await db.subscription.findUnique({
     where: { gatewaySubscriptionId },
@@ -567,7 +579,10 @@ export async function startAddonCheckout(params: {
   kind: AddonKind;
 }): Promise<CheckoutStart> {
   if (!isBillingGatewayConfigured()) {
-    return { ok: false, error: "Online payment is not switched on yet. Please contact us to buy this." };
+    return {
+      ok: false,
+      error: "Online payment is not switched on yet. Please contact us to buy this.",
+    };
   }
   const offers = await getAddonOffers(params.sellerId);
   const offer = offers.find((o) => o.kind === params.kind);
@@ -626,10 +641,20 @@ export async function confirmAddonCheckout(params: {
     where: { id: params.purchaseId },
     select: { sellerId: true, gatewayOrderId: true },
   });
-  if (!purchase || purchase.sellerId !== params.sellerId || purchase.gatewayOrderId !== params.orderId) {
+  if (
+    !purchase ||
+    purchase.sellerId !== params.sellerId ||
+    purchase.gatewayOrderId !== params.orderId
+  ) {
     return { ok: false, error: "Unknown purchase." };
   }
-  if (!verifyOrderPayment({ orderId: params.orderId, paymentId: params.paymentId, signature: params.signature })) {
+  if (
+    !verifyOrderPayment({
+      orderId: params.orderId,
+      paymentId: params.paymentId,
+      signature: params.signature,
+    })
+  ) {
     return { ok: false, error: "Payment could not be verified." };
   }
   await fulfillPurchase(params.purchaseId, params.paymentId);
@@ -675,7 +700,9 @@ export async function fulfillPurchase(purchaseId: string, paymentId: string): Pr
         });
       } else {
         const data =
-          purchase.kind === "PAYMENT_GATEWAY" ? { paymentsEnabled: true } : { shippingEnabled: true };
+          purchase.kind === "PAYMENT_GATEWAY"
+            ? { paymentsEnabled: true }
+            : { shippingEnabled: true };
         await tx.sellerFeature.upsert({
           where: { sellerId: purchase.sellerId },
           create: { sellerId: purchase.sellerId, ...data, source: "ADDON", note: invoiceNumber },
@@ -696,7 +723,8 @@ export async function fulfillPurchase(purchaseId: string, paymentId: string): Pr
       return true;
     });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return false;
     throw error;
   }
 }

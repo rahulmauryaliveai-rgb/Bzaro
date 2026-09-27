@@ -154,8 +154,8 @@ export default async function AdminSettingsPage() {
       <h2 className="mt-14 text-xl font-semibold tracking-tight">Billing</h2>
       <p className="mt-1 text-sm text-neutral-400">
         Add-on prices, GST and refund rules (D41), the manual payment fallback (used when the
-        Razorpay billing keys are not set, and for bank transfers), and the supplier details
-        printed on every GST invoice. Plan prices are edited on the Plans screen.
+        Razorpay billing keys are not set, and for bank transfers), and the supplier details printed
+        on every GST invoice. Plan prices are edited on the Plans screen.
       </p>
       <form action={updateBillingSettingsAction} className="mt-6 space-y-4">
         <fieldset className="space-y-4 rounded-lg border border-neutral-700 bg-neutral-800 p-5">
@@ -198,7 +198,11 @@ export default async function AdminSettingsPage() {
             label="Shipping add-on (one time)"
             minor={billing.shippingAddonMinor}
           />
-          <MoneyField name="leadPackRupees" label="Lead pack price" minor={billing.leadPackPriceMinor} />
+          <MoneyField
+            name="leadPackRupees"
+            label="Lead pack price"
+            minor={billing.leadPackPriceMinor}
+          />
           <Number
             name="leadPackCredits"
             label="Credits in a lead pack"
@@ -230,15 +234,27 @@ export default async function AdminSettingsPage() {
           <legend className="px-2 text-sm font-semibold tracking-wide text-neutral-400 uppercase">
             Invoice supplier details
           </legend>
-          <TextField name="legalName" label="Legal business name" defaultValue={billing.legalName ?? ""} />
+          <TextField
+            name="legalName"
+            label="Legal business name"
+            defaultValue={billing.legalName ?? ""}
+          />
           <TextField name="gstin" label="GSTIN" defaultValue={billing.gstin ?? ""} />
-          <TextField name="address" label="Registered address" defaultValue={billing.address ?? ""} />
+          <TextField
+            name="address"
+            label="Registered address"
+            defaultValue={billing.address ?? ""}
+          />
           <TextField
             name="state"
             label="State (place of supply — e.g. Uttar Pradesh)"
             defaultValue={billing.state ?? ""}
           />
-          <TextField name="sacCode" label="SAC code (ask your CA)" defaultValue={billing.sacCode ?? ""} />
+          <TextField
+            name="sacCode"
+            label="SAC code (ask your CA)"
+            defaultValue={billing.sacCode ?? ""}
+          />
           <TextField
             name="invoicePrefix"
             label="Invoice number prefix (up to 4 letters, e.g. BZ → BZ/2026-27/0001)"

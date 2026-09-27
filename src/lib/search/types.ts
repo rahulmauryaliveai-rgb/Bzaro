@@ -35,6 +35,8 @@ export type ProductHit = {
   sellerSlug: string;
   sellerName: string;
   sellerVerified: boolean;
+  /** Gold plan trust seal (D41). */
+  sellerTrustSeal?: boolean;
   sellerCity: string | null;
   sellerState: string | null;
   categoryName: string | null;
@@ -55,6 +57,8 @@ export type SellerHit = {
   ratingAvg: number;
   ratingCount: number;
   isVerified: boolean;
+  /** Gold plan trust seal (D41). */
+  trustSeal?: boolean;
   establishedYear: number | null;
 };
 

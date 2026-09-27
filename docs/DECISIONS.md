@@ -6,33 +6,33 @@ us revisit it.
 
 **Status legend:** `Accepted` · `Superseded` · `Revisit at <trigger>`
 
-| #                                                   | Decision                                              | Status                              | Phase |
-| --------------------------------------------------- | ----------------------------------------------------- | ----------------------------------- | ----- |
-| [D1](#d1--microsite-is-canonical)                   | Microsite is canonical for seller content             | Revised by D32                      | 7     |
-| [D2](#d2--configurable-index-eligibility)           | Configurable index eligibility, noindex by default    | Accepted                            | 0     |
-| [D3](#d3--custom-domains-deferred-designed-for-now) | Custom domains deferred to Phase 10, designed for now | Accepted                            | 10    |
-| [D4](#d4--postgresql-full-text-search-first)        | PostgreSQL FTS first, behind a provider interface     | Accepted                            | 5     |
-| [D5](#d5--free-leads-paid-visibility)               | Free leads, paid visibility                           | Accepted                            | 9     |
-| [D6](#d6--india-first-razorpay)                     | India first, Razorpay, behind an abstraction          | Accepted                            | 9     |
-| [D7](#d7--code-registered-website-templates)        | Code-registered website templates                     | Accepted                            | 0     |
-| [D8](#d8--seller-verification-state-machine)        | Seller verification state machine                     | Accepted                            | 8     |
-| [D9](#d9--english-only-v1-schema-kept-translatable) | English-only v1, schema kept translatable             | Accepted                            | —     |
-| [D10](#d10--moderation-before-public-launch)        | Moderation queue before public launch                 | Accepted                            | 8     |
-| [D11](#d11--slug-changes-preserve-old-urls-forever) | Slug changes preserve old URLs forever                | Accepted                            | 0     |
-| [D12](#d12--reserved-subdomain-denylist)            | Reserved subdomain denylist                           | Accepted                            | 0     |
-| [D19](#d19--jwt-sessions-with-explicit-revocation)  | JWT sessions with explicit revocation                 | **Accepted (revises approved #3)**  | 0     |
-| [D20](#d20--tenant-path-segment-is-site-not-_sites) | Tenant path segment is `/site/`, not `/_sites/`       | **Accepted (revises approved #10)** | 0     |
-| [D21](#d21--per-surface-root-layouts)               | Per-surface root layouts                              | Accepted                            | 0     |
-| [D22](#d22--analytics-partitioned-from-day-one)     | AnalyticsEvent partitioned from day one               | Accepted                            | 0     |
-| [D23](#d23--prisma-7-with-a-driver-adapter)         | Prisma 7 with an explicit `pg` driver adapter         | Accepted                            | 0     |
-| [D28](#d28--buyers-are-phone-first-identities-not-users) | Buyers are phone-first identities, not users          | **Superseded by D35**               | L1    |
-| [D29](#d29--market-fan-out-is-a-database-polled-outbox-not-a-queue) | Market fan-out is a DB-polled outbox, not a queue     | Accepted                            | L3    |
-| [D30](#d30--a-guarded-root-level-city-segment-for-discovery-pages) | Guarded root-level `[city]` segment for discovery  | Accepted                            | L5    |
-| [D31](#d31--the-proxy-resolves-a-loopback-host-through-x-forwarded-host) | Proxy resolves loopback Host via `x-forwarded-host`  | Accepted                            | L6    |
-| [D32](#d32--web-presence-is-a-plan-tier)            | Web presence is a plan tier: catalogue → subdomain → custom domain | Accepted               | L7    |
-| [D33](#d33--storefront-templates-are-compositions-of-shared-sections) | Storefront templates are compositions of shared sections | Accepted           | L8    |
-| [D34](#d34--indiamart-style-category-tree-chosen-at-registration) | IndiaMART-style category tree, chosen at registration | Accepted               | L8    |
-| [D35](#d35--buyers-are-full-accounts-superseding-d28)   | Buyers are full accounts on `User`, not phone identities | Accepted                | L9    |
+| #                                                                        | Decision                                                           | Status                              | Phase |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------- | ----- |
+| [D1](#d1--microsite-is-canonical)                                        | Microsite is canonical for seller content                          | Revised by D32                      | 7     |
+| [D2](#d2--configurable-index-eligibility)                                | Configurable index eligibility, noindex by default                 | Accepted                            | 0     |
+| [D3](#d3--custom-domains-deferred-designed-for-now)                      | Custom domains deferred to Phase 10, designed for now              | Accepted                            | 10    |
+| [D4](#d4--postgresql-full-text-search-first)                             | PostgreSQL FTS first, behind a provider interface                  | Accepted                            | 5     |
+| [D5](#d5--free-leads-paid-visibility)                                    | Free leads, paid visibility                                        | Accepted                            | 9     |
+| [D6](#d6--india-first-razorpay)                                          | India first, Razorpay, behind an abstraction                       | Accepted                            | 9     |
+| [D7](#d7--code-registered-website-templates)                             | Code-registered website templates                                  | Accepted                            | 0     |
+| [D8](#d8--seller-verification-state-machine)                             | Seller verification state machine                                  | Accepted                            | 8     |
+| [D9](#d9--english-only-v1-schema-kept-translatable)                      | English-only v1, schema kept translatable                          | Accepted                            | —     |
+| [D10](#d10--moderation-before-public-launch)                             | Moderation queue before public launch                              | Accepted                            | 8     |
+| [D11](#d11--slug-changes-preserve-old-urls-forever)                      | Slug changes preserve old URLs forever                             | Accepted                            | 0     |
+| [D12](#d12--reserved-subdomain-denylist)                                 | Reserved subdomain denylist                                        | Accepted                            | 0     |
+| [D19](#d19--jwt-sessions-with-explicit-revocation)                       | JWT sessions with explicit revocation                              | **Accepted (revises approved #3)**  | 0     |
+| [D20](#d20--tenant-path-segment-is-site-not-_sites)                      | Tenant path segment is `/site/`, not `/_sites/`                    | **Accepted (revises approved #10)** | 0     |
+| [D21](#d21--per-surface-root-layouts)                                    | Per-surface root layouts                                           | Accepted                            | 0     |
+| [D22](#d22--analytics-partitioned-from-day-one)                          | AnalyticsEvent partitioned from day one                            | Accepted                            | 0     |
+| [D23](#d23--prisma-7-with-a-driver-adapter)                              | Prisma 7 with an explicit `pg` driver adapter                      | Accepted                            | 0     |
+| [D28](#d28--buyers-are-phone-first-identities-not-users)                 | Buyers are phone-first identities, not users                       | **Superseded by D35**               | L1    |
+| [D29](#d29--market-fan-out-is-a-database-polled-outbox-not-a-queue)      | Market fan-out is a DB-polled outbox, not a queue                  | Accepted                            | L3    |
+| [D30](#d30--a-guarded-root-level-city-segment-for-discovery-pages)       | Guarded root-level `[city]` segment for discovery                  | Accepted                            | L5    |
+| [D31](#d31--the-proxy-resolves-a-loopback-host-through-x-forwarded-host) | Proxy resolves loopback Host via `x-forwarded-host`                | Accepted                            | L6    |
+| [D32](#d32--web-presence-is-a-plan-tier)                                 | Web presence is a plan tier: catalogue → subdomain → custom domain | Accepted                            | L7    |
+| [D33](#d33--storefront-templates-are-compositions-of-shared-sections)    | Storefront templates are compositions of shared sections           | Accepted                            | L8    |
+| [D34](#d34--indiamart-style-category-tree-chosen-at-registration)        | IndiaMART-style category tree, chosen at registration              | Accepted                            | L8    |
+| [D35](#d35--buyers-are-full-accounts-superseding-d28)                    | Buyers are full accounts on `User`, not phone identities           | Accepted                            | L9    |
 
 ---
 
@@ -379,7 +379,7 @@ The next start then fails with `Lock file is already being held`, naming a
 holder that is gone. `prisma dev stop` cannot clear it — there is nothing left
 to stop — so the command that looks like the fix is the one command guaranteed
 not to work. The locks come in two shapes, `server.lock` (a file) and
-`server.lock.lock` (a *directory*), under
+`server.lock.lock` (a _directory_), under
 `%LOCALAPPDATA%\prisma-dev-nodejs\Data\`.
 
 This is also why an embedded database is the wrong default for a project whose
@@ -388,7 +388,7 @@ potential corruption of the dev loop.
 
 **Mitigation.** `npm run db:start` now runs `scripts/db-start.mjs` rather than
 the raw command. It clears locks orphaned by a dead process — gated on a TCP
-liveness probe, so a *running* server is never unlocked — re-syncs the port in
+liveness probe, so a _running_ server is never unlocked — re-syncs the port in
 `.env.local`, and refuses to report success until it has executed a real query.
 A dead database now fails on the line that started it instead of thirty seconds
 into a test run. The raw command remains available as `db:start:raw`.
@@ -500,7 +500,7 @@ times out at the function's request limit.
 
 **What the signature actually does.** Cloudinary rejects any parameter the
 client adds that the signature does not cover. So signing `folder`, `public_id`
-and `allowed_formats` does not merely *suggest* those values — it makes them the
+and `allowed_formats` does not merely _suggest_ those values — it makes them the
 only ones the upload can use. The folder is derived from the seller id on the
 server and never read from the request, which is what stops one tenant writing
 into another's folder.
@@ -521,7 +521,7 @@ deliberately breaks the no-proxy rule by writing to `public/uploads`, which is
 why it is refused outright in production, where that filesystem is ephemeral and
 writing to it would appear to work and then silently lose every image.
 
-It is still *signed*, with a real HMAC checked by the receiving route. Not
+It is still _signed_, with a real HMAC checked by the receiving route. Not
 because a laptop is under attack, but because an unsigned development path lets
 the two flows diverge — and the flow that never gets exercised is the one that
 breaks on launch day. Both providers hand the client the same shape and verify
@@ -565,14 +565,14 @@ register.
 
 **OTP storage.** `tokens.ts` stores plain SHA-256 because its tokens are 256
 bits of CSPRNG output. A six-digit code is a million candidates, so a plain
-hash in a dump *is* the code. `OtpChallenge.codeHash` is therefore an HMAC
+hash in a dump _is_ the code. `OtpChallenge.codeHash` is therefore an HMAC
 keyed by `OTP_PEPPER`, which lives only in the server environment. Three
 attempts per code, five-minute expiry, single use, plus per-phone and per-IP
 rate limits in front.
 
 **Cost.** The buyer cookie is host-only, exactly like the session cookie and
 for the same reason (any seller's stored XSS on a tenant subdomain must not
-read it). So a buyer verified on the marketplace is *not* recognised on a
+read it). So a buyer verified on the marketplace is _not_ recognised on a
 microsite and will see the OTP again there. Accepted: the code takes thirty
 seconds, and the alternative is a cookie every tenant can read.
 
@@ -623,14 +623,14 @@ next step before a real queue.
 marketplace route group.
 
 **Why this does not reopen D20.** D20 rejected `app/[tenant]` because an
-unknown path would resolve to a *tenant site* — content that should never be
+unknown path would resolve to a _tenant site_ — content that should never be
 served on the apex. `[city]` is checked against the `Location` table
 (`type = CITY, isActive`) on every request and anything else is a plain 404.
 The worst case is the same 404 an unmatched path already produced. Static
 routes (`/search`, `/sellers`, `/category`, `/post-requirement`, …) take
 precedence over the dynamic segment, exactly as before.
 
-**Cost.** Every new top-level static route must be added *as a route*; a typo
+**Cost.** Every new top-level static route must be added _as a route_; a typo
 in a link now 404s through the city page instead of the framework's own
 not-found, which is the same page. City slugs are therefore reserved words at
 the apex — a category or page can never be called `mumbai`.
@@ -683,11 +683,11 @@ two action redirects in a real browser and would catch a regression.
 **Decision.** What a seller gets on the web is a property of their plan, not
 a right of registration:
 
-| `Plan.webPresence` | Seeded plans | Surface | Canonical for the seller's content |
-|---|---|---|---|
-| `CATALOGUE` | Free, Basic | listing + catalogue page `bzaro.in/seller/{slug}` | the marketplace pages |
-| `SUBDOMAIN` | Gold | website at `{slug}.bzaro.in` | the subdomain (D1) |
-| `CUSTOM_DOMAIN` | — (Pro, when D3 ships) | website on the seller's own domain | the custom domain |
+| `Plan.webPresence` | Seeded plans           | Surface                                           | Canonical for the seller's content |
+| ------------------ | ---------------------- | ------------------------------------------------- | ---------------------------------- |
+| `CATALOGUE`        | Free, Basic            | listing + catalogue page `bzaro.in/seller/{slug}` | the marketplace pages              |
+| `SUBDOMAIN`        | Gold                   | website at `{slug}.bzaro.in`                      | the subdomain (D1)                 |
+| `CUSTOM_DOMAIN`    | — (Pro, when D3 ships) | website on the seller's own domain                | the custom domain                  |
 
 The tier is denormalised onto `Seller.webPresence` (recomputed on every
 subscription write by `recomputeWebPresence`, swept nightly by
@@ -733,7 +733,7 @@ D1 bet), or when custom domains ship and the Pro plan is created.
 
 **Decision.** Six storefront templates (`electro`, `medico`, `autoparts`,
 `minimal`, `boutique`, `fresh`) join Classic and Modern. Each is a
-*composition* — `src/components/site/templates/storefronts.tsx` picks a
+_composition_ — `src/components/site/templates/storefronts.tsx` picks a
 header variant, a footer variant, a hero cut and an ordered list of
 sections — over one shared section library
 (`src/components/site/storefront/`). The look is completed by the template's
@@ -744,7 +744,7 @@ still holds for every template.
 
 **Why compositions, not eight hand-built sites.** The reference themes
 (Ochaka, XStore) differ in chrome, colour and section order far more than in
-section *content*: every one has a category rail, a product grid, promo
+section _content_: every one has a category rail, a product grid, promo
 tiles, a USP strip, a story block and an enquiry band. Building those once
 means a fix to the product tile lands in six templates, and a seventh
 template is an afternoon.
@@ -936,3 +936,60 @@ appears if the seller has at least one way to be paid: cash on delivery (the
 seller's own switch, on by default — `SellerFeature.codEnabled`) or their own
 Razorpay keys. COD no longer depends on Razorpay being connected. Checkout
 offers only the methods the store has, and the server enforces it.
+
+## D41 — Free / Pro / Gold, paid to Bzaro through Razorpay; leads by the week
+
+**Decision.** Three plans, every number editable on `/admin/plans`, GST (18%)
+added on top of every price:
+
+|                           | Free               | Pro                          | Gold                        |
+| ------------------------- | ------------------ | ---------------------------- | --------------------------- |
+| Price                     | ₹0                 | ₹999/mo or ₹9,999/yr         | ₹2,999/mo or ₹25,000/yr     |
+| Web presence              | catalogue page     | website on `{slug}.bzaro.in` | own domain (+ subdomain)    |
+| Matched leads delivered   | 5/week (teaser)    | 10/week + 1 lead of the day  | 20/week + 1 lead of the day |
+| Credits to unlock         | 0 (₹499 pack = 10) | 30/month                     | 80/month                    |
+| Payment gateway + cart    | —                  | ₹2,000 add-on, one time      | included                    |
+| Shipping (Shiprocket)     | —                  | ₹5,000 add-on, one time      | included                    |
+| Trust Seal, top placement | —                  | higher placement             | ✓                           |
+
+Direct enquiries (a buyer contacting the seller they clicked) stay free and
+unmasked on every plan — the buyer chose that seller, and hiding them would
+slow the buyer down to sell an upgrade.
+
+**Money.** Sellers pay Bzaro with Bzaro's own Razorpay account
+(`RAZORPAY_BILLING_KEY_ID/SECRET/WEBHOOK_SECRET`), never a seller's keys.
+Plans are Razorpay Subscriptions (UPI Autopay, card, eMandate); add-ons and
+lead packs are one-time Orders. Our row is created first (`Subscription`
+INCOMPLETE, `Purchase` CREATED) and only a verified Checkout signature or a
+signed webhook (`/api/webhooks/razorpay-billing`) activates it. Every charge
+gets a sequential GST invoice number per financial year (`InvoiceCounter`),
+rendered as a printable page. A failed renewal keeps the plan for
+`graceDays` (3) and then the live-subscription predicate drops the seller to
+Free; the nightly `recompute-web-presence` job marks the row EXPIRED. Without
+the billing keys the dashboard falls back to the D32 manual UPI flow.
+
+**Leads by the week.** Quotas govern _delivery_; credits govern _unlocking_.
+The matcher drops sellers whose weekly allowance and lead of the day are both
+used before ranking, so the requirement goes to the next seller rather than
+nowhere. Weekly leads expire at the end of the IST week, the lead of the day
+at the end of the next IST day, never sooner than 24 hours (`src/lib/leads/quota.ts`).
+The ₹499 pack is always open to Free sellers and opens for paid sellers when
+their credits run out.
+
+**Refunds.** Only for "not getting leads in my product or service category",
+requested from Plan & billing within `refundWindowDays` (7) of a plan payment.
+The request records the market leads received since paying; an admin approves
+(Razorpay refund, subscription cancelled, seller to Free) or rejects at
+`/admin/refunds`. Add-ons and lead packs are not refundable.
+
+**Placement and the seal** are denormalised onto `Seller.searchBoost` and
+`Seller.trustSeal` with `webPresence`, recomputed on every subscription write.
+The boost leads the default order on search, category and city pages; an
+explicit buyer sort (price, newest) is left alone.
+
+**Custom domains** for Gold: the seller requests one (PENDING_DNS); the team
+adds it at the edge and marks it active on the admin seller page. Automating
+the edge step is later work.
+
+**Plan switches** start the new plan immediately and end the old one with no
+pro-rata credit; cancelling autopay keeps the plan to the end of the period.

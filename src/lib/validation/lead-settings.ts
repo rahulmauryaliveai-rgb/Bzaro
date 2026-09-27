@@ -35,7 +35,7 @@ export const leadSettingsSchema = z.object({
   dedupeDays: z.number().int().min(0).max(90),
   /** Additive scoring weights. Any non-negative integer; only ratios matter. */
   weights: z.object({
-    /** Multiplied by the plan's sortOrder (Free 0, Basic 1, Gold 2). */
+    /** Multiplied by the plan's sortOrder (Free 0, Pro 1, Gold 2). */
     planTier: z.number().int().min(0),
     sameCity: z.number().int().min(0),
     sameCluster: z.number().int().min(0),

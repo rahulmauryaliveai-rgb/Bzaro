@@ -15,7 +15,7 @@ import type { LeadSettings } from "@/lib/validation/lead-settings";
 
 export type Candidate = {
   sellerId: string;
-  /** Plan.sortOrder: Free 0, Basic 1, Gold 2. */
+  /** Plan.sortOrder: Free 0, Pro 1, Gold 2. */
   planTier: number;
   locationId: string | null;
   clusterKey: string | null;

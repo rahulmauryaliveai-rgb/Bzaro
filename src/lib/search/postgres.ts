@@ -170,9 +170,12 @@ function orderBy(sort: ProductSearchInput["sort"], hasQuery: boolean): Prisma.Sq
       return Prisma.sql`p."isFeatured" DESC, p."priceMinor" DESC NULLS LAST, p."createdAt" DESC`;
     case "relevance":
     default:
+      // D41: the plan's placement boost leads the default order — Gold sellers
+      // top category, city and search pages. An explicit sort the buyer picked
+      // (price, newest) is left alone.
       return hasQuery
-        ? Prisma.sql`p."isFeatured" DESC, rank DESC, p."createdAt" DESC`
-        : Prisma.sql`p."isFeatured" DESC, p."createdAt" DESC`;
+        ? Prisma.sql`s."searchBoost" DESC, p."isFeatured" DESC, rank DESC, p."createdAt" DESC`
+        : Prisma.sql`s."searchBoost" DESC, p."isFeatured" DESC, p."createdAt" DESC`;
   }
 }
 
@@ -222,7 +225,7 @@ class PostgresSearchProvider implements SearchProvider {
           : Prisma.sql`0`;
 
     const order = useFuzzy
-      ? Prisma.sql`p."isFeatured" DESC, rank DESC, p."createdAt" DESC`
+      ? Prisma.sql`s."searchBoost" DESC, p."isFeatured" DESC, rank DESC, p."createdAt" DESC`
       : orderBy(input.sort, Boolean(input.query));
 
     const [rows, countRows] = await Promise.all([
@@ -243,6 +246,7 @@ class PostgresSearchProvider implements SearchProvider {
           s."slug"          AS "sellerSlug",
           s."businessName"  AS "sellerName",
           (s."verifiedAt" IS NOT NULL) AS "sellerVerified",
+          s."trustSeal"     AS "sellerTrustSeal",
           loc."name"        AS "sellerCity",
           par."name"        AS "sellerState",
           c."name"          AS "categoryName",
@@ -320,10 +324,10 @@ class PostgresSearchProvider implements SearchProvider {
     const offset = (input.page - 1) * input.perPage;
 
     const order = input.query
-      ? Prisma.sql`word_similarity(${input.query}, s."businessName") DESC, ts_rank(s."searchVector", ${tsquery(input.query)}) DESC, s."ratingAvg" DESC`
+      ? Prisma.sql`word_similarity(${input.query}, s."businessName") DESC, s."searchBoost" DESC, ts_rank(s."searchVector", ${tsquery(input.query)}) DESC, s."ratingAvg" DESC`
       : input.sort === "newest"
         ? Prisma.sql`s."createdAt" DESC`
-        : Prisma.sql`s."ratingAvg" DESC, s."productCount" DESC`;
+        : Prisma.sql`s."searchBoost" DESC, s."ratingAvg" DESC, s."productCount" DESC`;
 
     const [rows, countRows] = await Promise.all([
       db.$queryRaw<SellerHit[]>`
@@ -340,6 +344,7 @@ class PostgresSearchProvider implements SearchProvider {
           s."ratingCount",
           s."establishedYear",
           (s."verifiedAt" IS NOT NULL) AS "isVerified",
+          s."trustSeal" AS "trustSeal",
           loc."name" AS "city",
           par."name" AS "state"
         FROM "Seller" s

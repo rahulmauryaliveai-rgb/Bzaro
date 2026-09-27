@@ -57,9 +57,10 @@ function PlanForm({ plan }: { plan: Plan | null }) {
           {plan ? (
             <span className="ml-3 text-sm font-normal text-neutral-400">
               {formatMoney(plan.priceMinor, plan.currency)} / month
-              {plan.yearlyPriceMinor ? ` · ${formatMoney(plan.yearlyPriceMinor, plan.currency)} / year` : ""}{" "}
-              ·{" "}
-              {subscribers} live subscriber{subscribers === 1 ? "" : "s"}
+              {plan.yearlyPriceMinor
+                ? ` · ${formatMoney(plan.yearlyPriceMinor, plan.currency)} / year`
+                : ""}{" "}
+              · {subscribers} live subscriber{subscribers === 1 ? "" : "s"}
             </span>
           ) : null}
         </h2>

@@ -69,6 +69,7 @@ const publicSellerSelect = {
   productCount: true,
   serviceCount: true,
   verifiedAt: true,
+  trustSeal: true,
   webPresence: true,
   location: {
     select: { id: true, name: true, slug: true, type: true, path: true },

@@ -18,6 +18,8 @@ import { adminSetTemplateAction, setSellerFeaturesAction } from "@/server/action
 import { getSellerFeatures } from "@/server/services/integration.service";
 import { listActiveTemplates } from "@/server/services/seller.service";
 import { getActivePlan, listPublicPlans } from "@/server/services/plan.service";
+import { getCustomDomain } from "@/server/services/domain.service";
+import { setCustomDomainStatusAction } from "@/server/actions/domain";
 
 const FEATURE_SOURCE_LABEL: Record<string, string> = {
   PLAN: "From plan",
@@ -47,12 +49,13 @@ export default async function AdminSellerDetailPage({ params }: Props) {
   const seller = await getSellerForAdmin(id);
   if (!seller) notFound();
 
-  const [credits, subscription, plans, templates, features] = await Promise.all([
+  const [credits, subscription, plans, templates, features, customDomain] = await Promise.all([
     getSellerCreditsForAdmin(seller.id),
     getActivePlan(seller.id),
     listPublicPlans(),
     listActiveTemplates(),
     getSellerFeatures(seller.id),
+    getCustomDomain(seller.id),
   ]);
 
   const canVerify = can(user.role, "admin:seller:verify");
@@ -278,6 +281,41 @@ export default async function AdminSellerDetailPage({ params }: Props) {
           </form>
         ) : null}
       </Section>
+
+      {customDomain?.customDomain ? (
+        <Section title="Custom domain (Gold)">
+          <p className="text-sm">
+            <span className="font-mono">{customDomain.customDomain}</span>{" "}
+            <span className="ml-2 rounded-full bg-neutral-700 px-2 py-0.5 text-xs">
+              {customDomain.customDomainStatus}
+            </span>
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Add the hostname at the edge (Cloudflare custom hostname + origin), send the seller the
+            DNS record, then mark it active. The site starts answering on the domain immediately.
+          </p>
+          {canEditWebsite ? (
+            <div className="mt-3 flex flex-wrap gap-2 text-sm">
+              {(["ACTIVE", "FAILED", "NONE"] as const).map((status) => (
+                <form key={status} action={setCustomDomainStatusAction}>
+                  <input type="hidden" name="sellerId" value={seller.id} />
+                  <input type="hidden" name="status" value={status} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-neutral-600 px-3 py-1.5 hover:bg-neutral-700"
+                  >
+                    {status === "ACTIVE"
+                      ? "Mark active"
+                      : status === "FAILED"
+                        ? "Mark failed"
+                        : "Remove"}
+                  </button>
+                </form>
+              ))}
+            </div>
+          ) : null}
+        </Section>
+      ) : null}
 
       <Section title="Website template">
         <p className="text-sm">

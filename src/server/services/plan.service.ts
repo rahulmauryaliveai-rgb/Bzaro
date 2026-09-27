@@ -6,6 +6,10 @@ import { revalidateTag } from "next/cache";
 import { cacheTags } from "@/lib/cache/tags";
 import { periodKeyFor, topUpCreditsForPlanChange } from "@/server/services/credit.service";
 import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
+import {
+  cancelGatewaySubscription,
+  isBillingGatewayConfigured,
+} from "@/lib/payments/billing-gateway";
 
 /**
  * Plans, subscriptions and the web-presence tier (decision D32).
@@ -146,6 +150,7 @@ export function listPublicPlans() {
       includesPayments: true,
       includesShipping: true,
       trustSeal: true,
+      searchBoost: true,
       webPresence: true,
       allowPremiumTemplates: true,
       removeBranding: true,
@@ -224,12 +229,18 @@ export async function changeSellerPlan(params: {
     return {
       plan,
       previousPlanKey: previous?.plan.key ?? null,
+      previousGatewayId: previous?.gatewaySubscriptionId ?? null,
       changed: true as const,
       subscription,
     };
   });
 
   if (result.changed) {
+    // A plan the seller was paying for by autopay must stop charging when an
+    // admin moves them by hand (D41).
+    if (result.previousGatewayId && isBillingGatewayConfigured()) {
+      await cancelGatewaySubscription(result.previousGatewayId, false).catch(() => undefined);
+    }
     await recomputeWebPresence(params.sellerId, db, "immediate");
     // Credits for the current month, now — not on the 1st (see credit.service).
     await topUpCreditsForPlanChange({

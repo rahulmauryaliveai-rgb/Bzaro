@@ -30,7 +30,9 @@ type Body = {
   event?: string;
   payload?: {
     subscription?: { entity?: GatewaySubscription };
-    payment?: { entity?: { id?: string; amount?: number; order_id?: string | null; status?: string } };
+    payment?: {
+      entity?: { id?: string; amount?: number; order_id?: string | null; status?: string };
+    };
     order?: { entity?: { id?: string } };
     refund?: { entity?: { id?: string; status?: string; error_description?: string } };
   };
@@ -89,10 +91,12 @@ export async function POST(request: NextRequest) {
         if (subscription?.id) await markSubscriptionPastDue(subscription.id, subscription.status);
         break;
       case "subscription.cancelled":
-        if (subscription?.id) await endGatewaySubscription(subscription.id, "CANCELED", subscription.status);
+        if (subscription?.id)
+          await endGatewaySubscription(subscription.id, "CANCELED", subscription.status);
         break;
       case "subscription.completed":
-        if (subscription?.id) await endGatewaySubscription(subscription.id, "EXPIRED", subscription.status);
+        if (subscription?.id)
+          await endGatewaySubscription(subscription.id, "EXPIRED", subscription.status);
         break;
       case "order.paid":
       case "payment.captured": {
@@ -102,7 +106,8 @@ export async function POST(request: NextRequest) {
       }
       case "refund.failed": {
         const refund = body.payload?.refund?.entity;
-        if (refund?.id) await markGatewayRefundFailed(refund.id, refund.error_description ?? "unknown");
+        if (refund?.id)
+          await markGatewayRefundFailed(refund.id, refund.error_description ?? "unknown");
         break;
       }
       default:

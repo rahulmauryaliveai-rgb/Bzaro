@@ -36,6 +36,7 @@ const sellerCardSelect = {
   ratingCount: true,
   establishedYear: true,
   verifiedAt: true,
+  trustSeal: true,
   businessType: true,
   responseRate: true,
   location: { select: { name: true, parent: { select: { name: true } } } },
@@ -71,6 +72,7 @@ const productCardSelect = {
       slug: true,
       businessName: true,
       verifiedAt: true,
+      trustSeal: true,
       location: { select: { name: true, parent: { select: { name: true } } } },
     },
   },
@@ -163,13 +165,22 @@ export function getPopularInCity(locationId: string) {
       const [sellers, products, categoryRows, sellerTotal] = await Promise.all([
         db.seller.findMany({
           where: { ...LIVE_SELLER, locationId },
-          orderBy: [{ ratingAvg: "desc" }, { productCount: "desc" }, { createdAt: "asc" }],
+          orderBy: [
+            { searchBoost: "desc" },
+            { ratingAvg: "desc" },
+            { productCount: "desc" },
+            { createdAt: "asc" },
+          ],
           take: 6,
           select: sellerCardSelect,
         }),
         db.product.findMany({
           where: { ...LIVE_PRODUCT, seller: { ...LIVE_SELLER, locationId } },
-          orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+          orderBy: [
+            { seller: { searchBoost: "desc" } },
+            { isFeatured: "desc" },
+            { createdAt: "desc" },
+          ],
           take: 8,
           select: productCardSelect,
         }),
@@ -223,7 +234,12 @@ export function getCityCategoryListing(locationId: string, categoryId: string) {
       const [sellers, products, sellerTotal] = await Promise.all([
         db.seller.findMany({
           where: { ...LIVE_SELLER, locationId, categories: categoryFilter },
-          orderBy: [{ ratingAvg: "desc" }, { productCount: "desc" }, { createdAt: "asc" }],
+          orderBy: [
+            { searchBoost: "desc" },
+            { ratingAvg: "desc" },
+            { productCount: "desc" },
+            { createdAt: "asc" },
+          ],
           take: 24,
           select: sellerCardSelect,
         }),
@@ -233,7 +249,11 @@ export function getCityCategoryListing(locationId: string, categoryId: string) {
             seller: { ...LIVE_SELLER, locationId },
             OR: [{ categoryId }, { category: { ancestorIds: { has: categoryId } } }],
           },
-          orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+          orderBy: [
+            { seller: { searchBoost: "desc" } },
+            { isFeatured: "desc" },
+            { createdAt: "desc" },
+          ],
           take: 12,
           select: productCardSelect,
         }),

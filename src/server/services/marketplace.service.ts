@@ -26,6 +26,7 @@ export function getMarketplaceSeller(slug: string) {
         select: {
           id: true,
           slug: true,
+          trustSeal: true,
           businessName: true,
           legalName: true,
           tagline: true,

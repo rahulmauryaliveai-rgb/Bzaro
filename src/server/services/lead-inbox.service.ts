@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { projectLead, type Entitlement, type LeadRow, type LeadView } from "@/lib/leads/projection";
 import { debitForAcceptWith } from "@/server/services/credit.service";
+import { istDayStart, istWeekStart, weeklyProgress } from "@/lib/leads/quota";
 import type { LeadFlagReason, LeadStatus, LeadType } from "@/generated/prisma/enums";
 
 /**
@@ -66,6 +67,72 @@ export async function getEntitlement(sellerId: string): Promise<Entitlement> {
     monthlyCredits,
     planName: plan?.name ?? "Free",
     canAccept: monthlyCredits > 0 || creditBalance > 0,
+  };
+}
+
+/**
+ * The seller's D41 delivery allowance for the inbox header: "7 of 10 leads
+ * this week", whether the lead of the day is still to come, and which
+ * upsell to show (Join Pro for Free; a lead pack when credits run out).
+ */
+export async function getLeadAllowance(sellerId: string, now = new Date()) {
+  const [seller, freePlan] = await Promise.all([
+    db.seller.findUnique({
+      where: { id: sellerId },
+      select: {
+        creditBalance: true,
+        subscriptions: {
+          where: {
+            OR: [
+              { status: { in: ["ACTIVE", "TRIALING"] } },
+              { status: "PAST_DUE", gracePeriodEndsAt: { gt: now } },
+            ],
+          },
+          orderBy: { currentPeriodEnd: "desc" },
+          take: 1,
+          select: {
+            plan: {
+              select: { key: true, name: true, weeklyLeadQuota: true, dailyLeadQuota: true },
+            },
+          },
+        },
+      },
+    }),
+    db.plan.findUnique({
+      where: { key: "free" },
+      select: { weeklyLeadQuota: true, dailyLeadQuota: true },
+    }),
+  ]);
+  const plan = seller?.subscriptions[0]?.plan;
+  const weeklyQuota = plan ? plan.weeklyLeadQuota : (freePlan?.weeklyLeadQuota ?? null);
+  const dailyQuota = plan ? plan.dailyLeadQuota : (freePlan?.dailyLeadQuota ?? 0);
+
+  const weekStart = istWeekStart(now);
+  const [weeklyUsed, dailyUsed] = await Promise.all([
+    db.lead.count({
+      where: {
+        sellerId,
+        type: "MARKET",
+        createdAt: { gte: weekStart },
+        OR: [{ slot: null }, { slot: "WEEKLY" }],
+      },
+    }),
+    db.lead.count({
+      where: { sellerId, type: "MARKET", slot: "DAILY", createdAt: { gte: istDayStart(now) } },
+    }),
+  ]);
+
+  const planKey = plan?.key ?? "free";
+  const credits = seller?.creditBalance ?? 0;
+  return {
+    planKey,
+    planName: plan?.name ?? "Free",
+    credits,
+    weekly: weeklyProgress({ weeklyQuota, weeklyUsed }),
+    dailyQuota,
+    dailyLeft: Math.max(0, dailyQuota - dailyUsed),
+    showJoinPro: planKey === "free",
+    showLeadPack: planKey === "free" || credits <= 0,
   };
 }
 

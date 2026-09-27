@@ -55,6 +55,8 @@ export type SellerPublic = {
   productCount: number;
   serviceCount: number;
   isVerified: boolean;
+  /** Gold plan trust seal (D41). */
+  trustSeal?: boolean;
 };
 
 export type BusinessHours = Record<string, Array<{ open: string; close: string }>>;
@@ -148,6 +150,7 @@ type SellerRow = {
   productCount: number;
   serviceCount: number;
   verifiedAt: Date | null;
+  trustSeal?: boolean;
   webPresence: "CATALOGUE" | "SUBDOMAIN" | "CUSTOM_DOMAIN";
   location: { id: string; name: string; slug: string; type: string; path: string } | null;
   website: {
@@ -239,6 +242,7 @@ export function toTenantContext(row: SellerRow): TenantContext {
     productCount: row.productCount,
     serviceCount: row.serviceCount,
     isVerified: row.verifiedAt !== null,
+    trustSeal: row.trustSeal ?? false,
   };
 
   return {

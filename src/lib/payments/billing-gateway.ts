@@ -140,7 +140,11 @@ export function createGatewayOrder(params: {
 
 export type GatewayRefund = { id: string; amount: number; status: string };
 
-export function refundGatewayPayment(paymentId: string, amountMinor: number, notes: Record<string, string>) {
+export function refundGatewayPayment(
+  paymentId: string,
+  amountMinor: number,
+  notes: Record<string, string>,
+) {
   return call<GatewayRefund>("POST", `/payments/${encodeURIComponent(paymentId)}/refund`, {
     amount: amountMinor,
     speed: "normal",

@@ -1,12 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
- * Decision D32: web presence is a plan tier.
+ * Decision D32 (tiers revised by D41): web presence is a plan tier.
  *
- *   free / basic → catalogue page on the apex, subdomain 301s there
- *   gold         → subdomain website, marketplace pages canonical to it
+ *   free       → catalogue page on the apex, subdomain 301s there
+ *   pro / gold → subdomain website, marketplace pages canonical to it
  *
- * Fixtures: delhi-led-house is on Basic (catalogue), abc-electronics on Gold.
+ * Fixtures: noida-lights is on Free (catalogue), abc-electronics on Gold.
  * The last test moves noida-lights (Free) up to Gold from the admin page and
  * back, proving the subdomain follows the plan without a redeploy.
  */
@@ -34,34 +34,34 @@ test.describe("catalogue tier", () => {
   test("the subdomain 301s to the marketplace catalogue page, path preserved", async ({
     request,
   }) => {
-    const home = await raw(request, tenant("delhi-led-house"));
+    const home = await raw(request, tenant("noida-lights"));
     expect([301, 308]).toContain(home.status());
-    expect(home.headers()["location"]).toBe(`${APEX}/seller/delhi-led-house`);
+    expect(home.headers()["location"]).toBe(`${APEX}/seller/noida-lights`);
 
-    const product = await raw(request, tenant("delhi-led-house", "/products/some-bulb"));
+    const product = await raw(request, tenant("noida-lights", "/products/some-bulb"));
     expect([301, 308]).toContain(product.status());
-    expect(product.headers()["location"]).toBe(`${APEX}/product/delhi-led-house/some-bulb`);
+    expect(product.headers()["location"]).toBe(`${APEX}/product/noida-lights/some-bulb`);
 
-    const about = await raw(request, tenant("delhi-led-house", "/about"));
-    expect(about.headers()["location"]).toBe(`${APEX}/seller/delhi-led-house`);
+    const about = await raw(request, tenant("noida-lights", "/about"));
+    expect(about.headers()["location"]).toBe(`${APEX}/seller/noida-lights`);
   });
 
   test("the marketplace page is canonical and offers no website link", async ({ request }) => {
-    const response = await raw(request, `${APEX}/seller/delhi-led-house`);
+    const response = await raw(request, `${APEX}/seller/noida-lights`);
     expect(response.status()).toBe(200);
     const body = await response.text();
-    expect(body).toContain(`<link rel="canonical" href="${APEX}/seller/delhi-led-house"/>`);
+    expect(body).toContain(`<link rel="canonical" href="${APEX}/seller/noida-lights"/>`);
     expect(body).not.toContain("Visit website");
   });
 
   test("the dashboard shows the catalogue link and the upgrade ladder", async ({ page }) => {
-    await login(page, "owner@delhi-led-house.test");
+    await login(page, "owner@noida-lights.test");
     await page.goto(`${APEX}/dashboard/website`);
     await expect(page.getByRole("heading", { name: "Your catalogue page" })).toBeVisible();
-    await expect(page.getByText(`${ROOT}/seller/delhi-led-house`)).toBeVisible();
+    await expect(page.getByText(`${ROOT}/seller/noida-lights`)).toBeVisible();
     await expect(page.getByRole("heading", { name: /own web address/ })).toBeVisible();
-    // Only tiers above the seller's own are offered.
-    await expect(page.getByRole("link", { name: "Upgrade" })).toHaveCount(1);
+    // Only tiers above the seller's own are offered: Pro and Gold (D41).
+    await expect(page.getByRole("link", { name: "Upgrade" })).toHaveCount(2);
     await expect(page.getByRole("button", { name: /Publish site/ })).toHaveCount(0);
   });
 });

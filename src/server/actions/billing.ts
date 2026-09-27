@@ -114,7 +114,6 @@ export async function updateBillingSettingsAction(formData: FormData): Promise<v
   revalidatePath("/dashboard/billing");
 }
 
-
 // ── D41: online checkout ─────────────────────────────────────────────────────
 
 async function billingScope() {
@@ -125,8 +124,18 @@ async function billingScope() {
 
 const intervalSchema = z.enum(["MONTHLY", "YEARLY"]);
 const addonSchema = z.enum(["LEAD_PACK", "PAYMENT_GATEWAY", "SHIPPING"]);
-const gatewayId = z.string().trim().min(5).max(64).regex(/^[A-Za-z0-9_]+$/);
-const signature = z.string().trim().min(10).max(256).regex(/^[a-f0-9]+$/);
+const gatewayId = z
+  .string()
+  .trim()
+  .min(5)
+  .max(64)
+  .regex(/^[A-Za-z0-9_]+$/);
+const signature = z
+  .string()
+  .trim()
+  .min(10)
+  .max(256)
+  .regex(/^[a-f0-9]+$/);
 
 export async function startPlanCheckoutAction(
   planKeyInput: string,
@@ -174,7 +183,12 @@ export async function confirmAddonCheckoutAction(input: {
   const scope = await billingScope();
   if (!scope) return { ok: false, error: "Not allowed." };
   const parsed = z
-    .object({ purchaseId: z.string().min(10).max(40), orderId: gatewayId, paymentId: gatewayId, signature })
+    .object({
+      purchaseId: z.string().min(10).max(40),
+      orderId: gatewayId,
+      paymentId: gatewayId,
+      signature,
+    })
     .safeParse(input);
   if (!parsed.success) return { ok: false, error: "Payment response was incomplete." };
   const result = await confirmAddonCheckout({ sellerId: scope.sellerId, ...parsed.data });
@@ -215,7 +229,11 @@ export async function requestRefundAction(
       details: formData.get("details") ?? "",
     });
   if (!parsed.success) return { error: "Choose a reason." };
-  const result = await requestRefund({ sellerId: scope.sellerId, userId: scope.userId, ...parsed.data });
+  const result = await requestRefund({
+    sellerId: scope.sellerId,
+    userId: scope.userId,
+    ...parsed.data,
+  });
   revalidatePath("/dashboard/billing");
   return result.ok ? { ok: true } : { error: result.error };
 }

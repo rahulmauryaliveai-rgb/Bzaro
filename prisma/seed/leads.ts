@@ -15,7 +15,7 @@ import type { SeededTaxonomy } from "./taxonomy";
  *
  *   abc-electronics    Mumbai      gold     (the direct seller in most demos; keeps its microsite)
  *   pune-lighting      Pune        gold     serves Mumbai
- *   delhi-led-house    New Delhi   basic    (catalogue tier — no subdomain, D32)
+ *   delhi-led-house    New Delhi   pro      (subdomain website since D41)
  *   noida-lights       Noida       free     → sees the teaser, cannot accept
  *
  * Paid sellers receive this month's credit grant so "Accept" works right after

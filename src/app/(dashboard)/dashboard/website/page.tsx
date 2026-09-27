@@ -14,6 +14,8 @@ import { getActivePlan, listPublicPlans } from "@/server/services/plan.service";
 import { listActiveTemplates } from "@/server/services/seller.service";
 import { chooseTemplateAction } from "@/server/actions/seller";
 import { TemplatePicker } from "@/components/site/TemplatePicker";
+import { CustomDomainForm } from "@/components/dashboard/CustomDomainForm";
+import { getCustomDomain } from "@/server/services/domain.service";
 
 export const metadata: Metadata = {
   title: "Website settings",
@@ -23,7 +25,7 @@ export const metadata: Metadata = {
 export default async function WebsiteSettingsPage() {
   const scope = await requireSeller();
 
-  const [profile, slugStatus, subscription, plans, templates] = await Promise.all([
+  const [profile, slugStatus, subscription, plans, templates, customDomain] = await Promise.all([
     getSellerProfile(scope.sellerId),
     // The 90-day cooldown is computed in the service: reading the clock in a
     // render body is an impure call, and the rule (D11) belongs in one place.
@@ -31,6 +33,7 @@ export default async function WebsiteSettingsPage() {
     getActivePlan(scope.sellerId),
     listPublicPlans(),
     listActiveTemplates(),
+    getCustomDomain(scope.sellerId),
   ]);
 
   if (!profile) notFound();
@@ -134,6 +137,20 @@ export default async function WebsiteSettingsPage() {
           </form>
         </div>
       </section>
+
+      {scope.webPresence === "CUSTOM_DOMAIN" ? (
+        <section className="mb-8 rounded-lg border border-neutral-200 bg-white p-5">
+          <h2 className="font-medium">Your own domain</h2>
+          <p className="mt-0.5 mb-4 text-sm text-neutral-600">
+            Included in Gold. Your site stays on {scope.sellerSlug}.bzaro.in as well, so existing
+            links keep working.
+          </p>
+          <CustomDomainForm
+            domain={customDomain?.customDomain ?? null}
+            status={customDomain?.customDomainStatus ?? "NONE"}
+          />
+        </section>
+      ) : null}
 
       <section className="mb-10">
         <h2 className="font-medium">Template</h2>

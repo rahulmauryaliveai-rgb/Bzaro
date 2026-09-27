@@ -82,6 +82,11 @@ export function StorefrontHeader({
                   <span aria-hidden="true">✓</span> Verified supplier
                 </span>
               ) : null}
+              {seller.trustSeal ? (
+                <span className="inline-flex items-center gap-1 font-semibold">
+                  <span aria-hidden="true">★</span> Trust Seal
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
