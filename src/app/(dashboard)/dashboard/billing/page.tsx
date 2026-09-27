@@ -63,6 +63,15 @@ export default async function BillingPage({ searchParams }: Props) {
   const wanted = plans.find((plan) => plan.key === wantedKey && plan.key !== currentKey);
   const gst = settings.gstRatePercent;
   const pastDue = subscription?.status === "PAST_DUE";
+  // A plan the seller is paying for by autopay and has not cancelled (D41).
+  const paidAutopay = Boolean(
+    subscription &&
+    subscription.plan.priceMinor > 0 &&
+    subscription.gatewaySubscriptionId &&
+    !subscription.cancelAtPeriodEnd,
+  );
+  const onYearly = paidAutopay && subscription?.interval === "YEARLY";
+  const currentRank = subscription?.plan.sortOrder ?? 0;
   const openRefund = history.payments.find((payment) =>
     payment.refunds.some((refund) => refund.status === "REQUESTED" || refund.status === "APPROVED"),
   );
@@ -135,20 +144,54 @@ export default async function BillingPage({ searchParams }: Props) {
                       </p>
                     );
                   }
-                  const onThis =
-                    isCurrent &&
-                    Boolean(subscription?.gatewaySubscriptionId) &&
-                    !subscription?.cancelAtPeriodEnd;
                   const monthly = withGst(plan.priceMinor, gst);
                   const yearly = plan.yearlyPriceMinor ? withGst(plan.yearlyPriceMinor, gst) : null;
+
+                  // The seller's own autopay plan: say what they are on, and
+                  // offer only the one sensible move — monthly → yearly.
+                  if (isCurrent && paidAutopay) {
+                    return (
+                      <div className="space-y-2">
+                        <div className="bg-accent-50 text-accent-900 rounded-lg px-4 py-2.5 text-center text-sm">
+                          <p className="font-semibold">
+                            Your plan · billed {onYearly ? "yearly" : "monthly"}
+                          </p>
+                          {subscription ? (
+                            <p className="text-xs">
+                              Renews {dateFmt(subscription.currentPeriodEnd)}
+                            </p>
+                          ) : null}
+                        </div>
+                        {!onYearly && yearly ? (
+                          <SubscribeButton
+                            planKey={plan.key}
+                            interval="YEARLY"
+                            variant="secondary"
+                            label={`Switch to yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  }
+
+                  // A lower plan while a paid plan is running: switching now
+                  // would throw away paid time, so point to cancel-at-period-end.
+                  if (paidAutopay && plan.sortOrder < currentRank) {
+                    return (
+                      <p className="rounded-lg bg-neutral-50 px-3 py-2.5 text-center text-xs text-neutral-600">
+                        To move to {plan.name}, cancel autopay below. Your current plan runs until{" "}
+                        {subscription
+                          ? dateFmt(subscription.currentPeriodEnd)
+                          : "the end of the period"}
+                        ; then choose {plan.name} here.
+                      </p>
+                    );
+                  }
+
                   return (
                     <div className="space-y-2">
-                      {onThis ? (
-                        <span className="inline-flex w-full justify-center rounded-lg border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-500">
-                          You are on this plan
-                        </span>
-                      ) : null}
-                      {!(onThis && subscription?.interval === "MONTHLY") ? (
+                      {/* A yearly subscriber is never offered a monthly price (D41). */}
+                      {!onYearly ? (
                         <SubscribeButton
                           planKey={plan.key}
                           interval="MONTHLY"
@@ -156,12 +199,12 @@ export default async function BillingPage({ searchParams }: Props) {
                           label={`Pay monthly · ${formatMoney(monthly.totalMinor, "INR")}`}
                         />
                       ) : null}
-                      {yearly && !(onThis && subscription?.interval === "YEARLY") ? (
+                      {yearly ? (
                         <SubscribeButton
                           planKey={plan.key}
                           interval="YEARLY"
-                          variant="secondary"
-                          label={`Pay yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
+                          variant={onYearly || isHighlight ? "primary" : "secondary"}
+                          label={`${paidAutopay ? "Upgrade" : "Pay"} yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
                         />
                       ) : null}
                       <p className="text-center text-[11px] text-neutral-500">
@@ -175,8 +218,8 @@ export default async function BillingPage({ searchParams }: Props) {
         />
         {online && subscription && subscription.plan.priceMinor > 0 ? (
           <p className="mt-4 text-xs text-neutral-500">
-            Switching plans starts the new plan today and ends the current one — there is no
-            pro-rata credit. Lead credits are topped up to the new plan straight away.
+            Upgrading starts the new plan today and ends the current one — there is no pro-rata
+            credit for the unused part. Lead credits are topped up to the new plan straight away.
           </p>
         ) : null}
       </section>

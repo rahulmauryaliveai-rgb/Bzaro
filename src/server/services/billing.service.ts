@@ -254,6 +254,7 @@ export async function startPlanCheckout(params: {
       isActive: true,
       priceMinor: true,
       yearlyPriceMinor: true,
+      sortOrder: true,
       gatewayPlanIdMonthly: true,
       gatewayPlanIdYearly: true,
     },
@@ -272,6 +273,27 @@ export async function startPlanCheckout(params: {
     !current.cancelAtPeriodEnd
   ) {
     return { ok: false, error: `You are already on ${plan.name}.` };
+  }
+
+  // The billing page hides these; the server refuses them too (D41).
+  const paidAutopay = Boolean(
+    current &&
+    current.plan.priceMinor > 0 &&
+    current.gatewaySubscriptionId &&
+    !current.cancelAtPeriodEnd,
+  );
+  if (paidAutopay && current?.interval === "YEARLY" && params.interval === "MONTHLY") {
+    return {
+      ok: false,
+      error:
+        "You are on a yearly plan, so monthly billing isn't offered. Choose yearly to upgrade.",
+    };
+  }
+  if (paidAutopay && current && plan.sortOrder < current.plan.sortOrder) {
+    return {
+      ok: false,
+      error: `To move down to ${plan.name}, cancel autopay first; you can switch when your current plan ends.`,
+    };
   }
 
   const gatewayPlan = await ensureGatewayPlan(plan, params.interval, quote.totalMinor);
