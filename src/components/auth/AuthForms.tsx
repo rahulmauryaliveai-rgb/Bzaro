@@ -98,12 +98,12 @@ function FormError({ state }: { state: ActionState }) {
           Buyers can sell too — sign in with the same email and password and add your business to
           that account. Your buyer requirements and saved suppliers stay as they are.
         </p>
-        <a
+        <Link
           href="/login?next=/register/business"
           className="mt-2 inline-block rounded-md bg-neutral-900 px-3 py-1.5 font-medium text-white hover:bg-neutral-700"
         >
           Sign in and add my business
-        </a>
+        </Link>
       </div>
     );
   }

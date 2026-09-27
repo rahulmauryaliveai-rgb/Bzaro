@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSeller } from "@/lib/auth/guards";
-import { db } from "@/lib/db";
 import { formatMoney } from "@/lib/utils/money";
 import { splitGst } from "@/lib/billing/gst";
-import { ADDON_LABEL, getBillingSettings } from "@/server/services/billing.service";
+import {
+  getBillingSettings,
+  getInvoiceLine,
+  getInvoiceRecipient,
+} from "@/server/services/billing.service";
 import { PrintButton } from "@/components/billing/PrintButton";
 
 export const metadata: Metadata = {
@@ -26,89 +29,12 @@ export default async function InvoicePage({ params }: Props) {
   const scope = await requireSeller();
   const { type, id } = await params;
 
-  const [settings, seller] = await Promise.all([
+  const [settings, seller, line] = await Promise.all([
     getBillingSettings(),
-    db.seller.findUnique({
-      where: { id: scope.sellerId },
-      select: {
-        businessName: true,
-        legalName: true,
-        gstin: true,
-        addressLine1: true,
-        addressLine2: true,
-        postalCode: true,
-        email: true,
-        location: { select: { name: true, parent: { select: { name: true } } } },
-      },
-    }),
+    getInvoiceRecipient(scope.sellerId),
+    getInvoiceLine(scope.sellerId, type, id),
   ]);
   if (!seller) notFound();
-
-  let line: {
-    number: string;
-    date: Date;
-    description: string;
-    baseMinor: number;
-    taxMinor: number;
-    totalMinor: number;
-    paymentRef: string | null;
-  } | null = null;
-
-  if (type === "payment") {
-    const payment = await db.payment.findFirst({
-      where: { id, sellerId: scope.sellerId },
-      select: {
-        invoiceNumber: true,
-        paidAt: true,
-        createdAt: true,
-        amountMinor: true,
-        baseMinor: true,
-        taxMinor: true,
-        gatewayPaymentId: true,
-        subscription: { select: { interval: true, plan: { select: { name: true } } } },
-      },
-    });
-    if (payment?.invoiceNumber) {
-      line = {
-        number: payment.invoiceNumber,
-        date: payment.paidAt ?? payment.createdAt,
-        description: `Bzaro ${payment.subscription.plan.name} plan — ${payment.subscription.interval === "YEARLY" ? "yearly" : "monthly"} subscription`,
-        baseMinor: payment.baseMinor || payment.amountMinor - payment.taxMinor,
-        taxMinor: payment.taxMinor,
-        totalMinor: payment.amountMinor,
-        paymentRef: payment.gatewayPaymentId,
-      };
-    }
-  } else if (type === "purchase") {
-    const purchase = await db.purchase.findFirst({
-      where: { id, sellerId: scope.sellerId, status: { in: ["PAID", "REFUNDED"] } },
-      select: {
-        invoiceNumber: true,
-        paidAt: true,
-        createdAt: true,
-        kind: true,
-        quantity: true,
-        baseMinor: true,
-        taxMinor: true,
-        totalMinor: true,
-        gatewayPaymentId: true,
-      },
-    });
-    if (purchase?.invoiceNumber) {
-      line = {
-        number: purchase.invoiceNumber,
-        date: purchase.paidAt ?? purchase.createdAt,
-        description:
-          purchase.kind === "LEAD_PACK"
-            ? `Bzaro lead pack — ${purchase.quantity} lead credits`
-            : `Bzaro ${ADDON_LABEL[purchase.kind]} add-on (one time)`,
-        baseMinor: purchase.baseMinor,
-        taxMinor: purchase.taxMinor,
-        totalMinor: purchase.totalMinor,
-        paymentRef: purchase.gatewayPaymentId,
-      };
-    }
-  }
   if (!line) notFound();
 
   const recipientState = seller.location?.parent?.name ?? null;

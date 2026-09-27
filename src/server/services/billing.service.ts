@@ -779,3 +779,97 @@ export async function getBillingHistory(sellerId: string) {
   ]);
   return { payments, purchases };
 }
+
+// ── Invoices ─────────────────────────────────────────────────────────────────
+
+export type InvoiceLine = {
+  number: string;
+  date: Date;
+  description: string;
+  baseMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  paymentRef: string | null;
+};
+
+/**
+ * One invoice's line for the printable invoice page. Scoped by sellerId in the
+ * WHERE clause, so an id belonging to another tenant returns null (404).
+ */
+export async function getInvoiceLine(
+  sellerId: string,
+  type: string,
+  id: string,
+): Promise<InvoiceLine | null> {
+  if (type === "payment") {
+    const payment = await db.payment.findFirst({
+      where: { id, sellerId },
+      select: {
+        invoiceNumber: true,
+        paidAt: true,
+        createdAt: true,
+        amountMinor: true,
+        baseMinor: true,
+        taxMinor: true,
+        gatewayPaymentId: true,
+        subscription: { select: { interval: true, plan: { select: { name: true } } } },
+      },
+    });
+    if (!payment?.invoiceNumber) return null;
+    return {
+      number: payment.invoiceNumber,
+      date: payment.paidAt ?? payment.createdAt,
+      description: `Bzaro ${payment.subscription.plan.name} plan — ${payment.subscription.interval === "YEARLY" ? "yearly" : "monthly"} subscription`,
+      baseMinor: payment.baseMinor || payment.amountMinor - payment.taxMinor,
+      taxMinor: payment.taxMinor,
+      totalMinor: payment.amountMinor,
+      paymentRef: payment.gatewayPaymentId,
+    };
+  }
+  if (type === "purchase") {
+    const purchase = await db.purchase.findFirst({
+      where: { id, sellerId, status: { in: ["PAID", "REFUNDED"] } },
+      select: {
+        invoiceNumber: true,
+        paidAt: true,
+        createdAt: true,
+        kind: true,
+        quantity: true,
+        baseMinor: true,
+        taxMinor: true,
+        totalMinor: true,
+        gatewayPaymentId: true,
+      },
+    });
+    if (!purchase?.invoiceNumber) return null;
+    return {
+      number: purchase.invoiceNumber,
+      date: purchase.paidAt ?? purchase.createdAt,
+      description:
+        purchase.kind === "LEAD_PACK"
+          ? `Bzaro lead pack — ${purchase.quantity} lead credits`
+          : `Bzaro ${ADDON_LABEL[purchase.kind]} add-on (one time)`,
+      baseMinor: purchase.baseMinor,
+      taxMinor: purchase.taxMinor,
+      totalMinor: purchase.totalMinor,
+      paymentRef: purchase.gatewayPaymentId,
+    };
+  }
+  return null;
+}
+
+/** The "Billed to" block. */
+export function getInvoiceRecipient(sellerId: string) {
+  return db.seller.findUnique({
+    where: { id: sellerId },
+    select: {
+      businessName: true,
+      legalName: true,
+      gstin: true,
+      addressLine1: true,
+      addressLine2: true,
+      postalCode: true,
+      location: { select: { name: true, parent: { select: { name: true } } } },
+    },
+  });
+}
