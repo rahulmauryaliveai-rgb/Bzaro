@@ -24,6 +24,7 @@ export type AdminCategory = {
   isActive: boolean;
   sortOrder: number;
   imageUrl: string | null;
+  keywords: string[];
   productCount: number;
   sellerCount: number;
   children: AdminCategory[];
@@ -42,6 +43,7 @@ export async function listCategoryTree(): Promise<AdminCategory[]> {
       isActive: true,
       sortOrder: true,
       imageUrl: true,
+      keywords: true,
       productCount: true,
       sellerCount: true,
     },
@@ -96,7 +98,13 @@ export async function createCategory(input: { name: string; parentId: string | n
 
 export async function updateCategory(
   id: string,
-  input: { name?: string; isActive?: boolean; imageUrl?: string | null; sortOrder?: number },
+  input: {
+    name?: string;
+    isActive?: boolean;
+    imageUrl?: string | null;
+    sortOrder?: number;
+    keywords?: string[];
+  },
 ) {
   await db.category.update({
     where: { id },
@@ -105,6 +113,7 @@ export async function updateCategory(
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
       ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      ...(input.keywords !== undefined ? { keywords: input.keywords } : {}),
     },
   });
   revalidateCategory(id, "immediate");

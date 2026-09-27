@@ -8,6 +8,7 @@ import { CONSENT_TEXT } from "@/lib/consent";
 import { BuyerAuth } from "@/components/buyer/AuthModal";
 import { PURPOSE_LABELS, QUANTITY_UNITS, TIMELINE_LABELS } from "@/lib/validation/requirement";
 import { Field, Select, TextArea } from "@/components/dashboard/fields";
+import { ProductCategoryField } from "@/components/buyer/ProductCategoryField";
 import {
   clearPendingRequirement,
   loadPendingRequirement,
@@ -401,25 +402,25 @@ function RequirementStep({
       ) : null}
 
       {!target.sellerId && !target.categoryId && categories ? (
-        <Select
-          label="Category"
-          name="categoryId"
-          defaultValue={prefill?.categoryId ?? ""}
-          placeholder="Choose a category"
-          options={categories.map((c) => ({ value: c.id, label: c.name }))}
-          error={state.fieldErrors?.categoryId}
+        // D43: the buyer types the product; the category is suggested from it.
+        <ProductCategoryField
+          categories={categories}
+          defaultProduct={prefill?.productName ?? target.productName ?? ""}
+          defaultCategoryId={prefill?.categoryId}
+          productError={state.fieldErrors?.productName}
+          categoryError={state.fieldErrors?.categoryId}
         />
-      ) : null}
-
-      <Field
-        label="What do you need?"
-        name="productName"
-        defaultValue={prefill?.productName ?? target.productName ?? ""}
-        placeholder="e.g. LED bulb 9W"
-        required
-        maxLength={200}
-        error={state.fieldErrors?.productName}
-      />
+      ) : (
+        <Field
+          label="What do you need?"
+          name="productName"
+          defaultValue={prefill?.productName ?? target.productName ?? ""}
+          placeholder="e.g. LED bulb 9W"
+          required
+          maxLength={200}
+          error={state.fieldErrors?.productName}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Field

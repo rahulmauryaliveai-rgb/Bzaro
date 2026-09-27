@@ -132,6 +132,18 @@ function NodeEditor({
           </label>
         ) : null}
         <label className="flex flex-col gap-1">
+          {!compact ? (
+            <span className="text-xs text-neutral-500">Buyer search words (comma-separated)</span>
+          ) : null}
+          <input
+            name="keywords"
+            defaultValue={node.keywords.join(", ")}
+            placeholder="search words: camera, dvr…"
+            title="Words buyers type for this category. Used to suggest it on Post a requirement."
+            className={`${input} w-56`}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
           {!compact ? <span className="text-xs text-neutral-500">Order</span> : null}
           <input
             name="sortOrder"

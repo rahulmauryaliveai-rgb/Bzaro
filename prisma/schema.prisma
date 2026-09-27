@@ -701,6 +701,9 @@ model Category {
 
   metaTitle       String?
   metaDescription String?
+  /// Words buyers use for this category ("cctv, camera, dvr") — lower-case.
+  /// Feed the post-requirement category suggestions (D43).
+  keywords        String[] @default([])
   createdAt       DateTime @default(now())
 
   parent       Category?        @relation("CategoryTree", fields: [parentId], references: [id])

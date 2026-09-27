@@ -1017,3 +1017,17 @@ the coupon; a ₹0 pass gets no tax invoice.
 
 `liveSubscriptionWhere` gained the pass rule, and the nightly
 `recompute-web-presence` job marks finished passes EXPIRED.
+
+## D43 — Buyers type the product; the category is suggested
+
+**Decision.** On "Post a requirement" (and every marketplace contact form that
+has no product or seller behind it) the buyer no longer picks from ~50
+top-level groups. They type what they need; matching categories appear under
+the box with their trail ("LED Bulbs & Tubes · in Electrical › Lighting") and
+the best match is pre-selected. "Browse all categories" keeps the old list.
+
+Suggestions merge the category tree (name exact / prefix / contained /
+trigram-similar, plus admin-curated `Category.keywords`) with the live
+catalogue (categories of published products whose names match). Deeper
+categories win ties: a subcategory sends the lead to sellers of exactly that
+thing instead of a whole group — better leads for Pro and Gold.

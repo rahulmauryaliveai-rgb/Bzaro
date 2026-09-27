@@ -1,5 +1,6 @@
 "use server";
 
+import { parseKeywords } from "@/server/services/category-suggest.service";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -56,16 +57,23 @@ export async function updateCategoryAction(formData: FormData): Promise<void> {
       name: name.optional(),
       imageUrl: optionalUrl.optional(),
       sortOrder: z.coerce.number().int().min(0).max(9999).optional(),
+      keywords: z.string().max(2000).optional(),
     })
     .safeParse({
       id: formData.get("id"),
       name: formData.get("name") ?? undefined,
       imageUrl: formData.get("imageUrl") ?? undefined,
       sortOrder: formData.get("sortOrder") ?? undefined,
+      keywords: formData.get("keywords") ?? undefined,
     });
   if (!parsed.success) return;
 
-  const { id: categoryId, ...rest } = parsed.data;
+  const { id: categoryId, keywords, ...fields } = parsed.data;
+  // D43: comma-separated buyer words; absent field = leave unchanged.
+  const rest = {
+    ...fields,
+    ...(keywords !== undefined ? { keywords: parseKeywords(keywords) } : {}),
+  };
   await updateCategory(categoryId, rest);
   await audit(user.id, "category.update", categoryId, rest);
   revalidatePath("/admin/categories");
