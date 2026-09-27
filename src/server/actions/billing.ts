@@ -7,11 +7,24 @@ import { requirePermission, requireSeller } from "@/lib/auth/guards";
 import { setSetting } from "@/lib/settings";
 import { BILLING_SETTINGS_KEY, billingSettingsSchema } from "@/lib/validation/billing-settings";
 import { changeSellerPlan } from "@/server/services/plan.service";
+import { can } from "@/lib/auth/permissions";
+import {
+  cancelPlanAtPeriodEnd,
+  confirmAddonCheckout,
+  confirmPlanCheckout,
+  startAddonCheckout,
+  startPlanCheckout,
+  type CheckoutStart,
+} from "@/server/services/billing.service";
+import { approveRefund, rejectRefund, requestRefund } from "@/server/services/refund.service";
 
 /**
- * Billing actions (decision D32). There is no payment gateway yet, so the
- * seller side only *asks* and the admin side *assigns*. Both leave an audit
- * row, which is the entire paper trail until invoices exist.
+ * Billing actions (D32, D41).
+ *
+ * With Bzaro's Razorpay keys configured, sellers subscribe and buy add-ons
+ * online (the checkout actions below). Without them — or for a bank transfer —
+ * the manual path stays: the seller *asks*, the admin *assigns*. Every path
+ * leaves an audit row.
  */
 
 const planKey = z.string().trim().min(1).max(40);
@@ -59,15 +72,31 @@ export async function changePlanAction(formData: FormData): Promise<void> {
   revalidatePath(`/admin/sellers/${parsed.data.sellerId}`);
 }
 
-/** Admin: the payment instructions shown on the upgrade page. */
+/** Admin: payment instructions, D41 prices and the invoice supplier details. */
 export async function updateBillingSettingsAction(formData: FormData): Promise<void> {
   const user = await requirePermission("admin:settings:manage");
+  const text = (name: string) => String(formData.get(name) ?? "");
+  const paise = (name: string) => Math.round(Number(formData.get(name) ?? 0) * 100);
+  const int = (name: string) => Number.parseInt(String(formData.get(name) ?? ""), 10);
 
   const parsed = billingSettingsSchema.safeParse({
-    supportWhatsapp: formData.get("supportWhatsapp") ?? "",
-    supportEmail: formData.get("supportEmail") ?? "",
-    upiId: formData.get("upiId") ?? "",
-    instructions: formData.get("instructions") ?? "",
+    supportWhatsapp: text("supportWhatsapp"),
+    supportEmail: text("supportEmail"),
+    upiId: text("upiId"),
+    instructions: text("instructions"),
+    gstRatePercent: Number(formData.get("gstRatePercent") ?? 18),
+    leadPackPriceMinor: paise("leadPackRupees"),
+    leadPackCredits: int("leadPackCredits"),
+    paymentGatewayAddonMinor: paise("paymentGatewayAddonRupees"),
+    shippingAddonMinor: paise("shippingAddonRupees"),
+    graceDays: int("graceDays"),
+    refundWindowDays: int("refundWindowDays"),
+    legalName: text("legalName"),
+    gstin: text("gstin").toUpperCase(),
+    address: text("address"),
+    state: text("state"),
+    sacCode: text("sacCode"),
+    invoicePrefix: text("invoicePrefix").toUpperCase(),
   });
   if (!parsed.success) return;
 
@@ -83,4 +112,136 @@ export async function updateBillingSettingsAction(formData: FormData): Promise<v
 
   revalidatePath("/admin/settings");
   revalidatePath("/dashboard/billing");
+}
+
+
+// ── D41: online checkout ─────────────────────────────────────────────────────
+
+async function billingScope() {
+  const scope = await requireSeller();
+  if (!can(scope.role, "seller:billing")) return null;
+  return scope;
+}
+
+const intervalSchema = z.enum(["MONTHLY", "YEARLY"]);
+const addonSchema = z.enum(["LEAD_PACK", "PAYMENT_GATEWAY", "SHIPPING"]);
+const gatewayId = z.string().trim().min(5).max(64).regex(/^[A-Za-z0-9_]+$/);
+const signature = z.string().trim().min(10).max(256).regex(/^[a-f0-9]+$/);
+
+export async function startPlanCheckoutAction(
+  planKeyInput: string,
+  intervalInput: string,
+): Promise<CheckoutStart> {
+  const scope = await billingScope();
+  if (!scope) return { ok: false, error: "Only the account owner can change the plan." };
+  const parsed = z
+    .object({ planKey, interval: intervalSchema })
+    .safeParse({ planKey: planKeyInput, interval: intervalInput });
+  if (!parsed.success) return { ok: false, error: "Choose a plan." };
+  return startPlanCheckout({ sellerId: scope.sellerId, userId: scope.userId, ...parsed.data });
+}
+
+export async function confirmPlanCheckoutAction(input: {
+  subscriptionId: string;
+  paymentId: string;
+  signature: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const scope = await billingScope();
+  if (!scope) return { ok: false, error: "Not allowed." };
+  const parsed = z
+    .object({ subscriptionId: gatewayId, paymentId: gatewayId, signature })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Payment response was incomplete." };
+  const result = await confirmPlanCheckout({ sellerId: scope.sellerId, ...parsed.data });
+  revalidatePath("/dashboard", "layout");
+  return result;
+}
+
+export async function startAddonCheckoutAction(kindInput: string): Promise<CheckoutStart> {
+  const scope = await billingScope();
+  if (!scope) return { ok: false, error: "Only the account owner can buy add-ons." };
+  const parsed = addonSchema.safeParse(kindInput);
+  if (!parsed.success) return { ok: false, error: "Unknown add-on." };
+  return startAddonCheckout({ sellerId: scope.sellerId, userId: scope.userId, kind: parsed.data });
+}
+
+export async function confirmAddonCheckoutAction(input: {
+  purchaseId: string;
+  orderId: string;
+  paymentId: string;
+  signature: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const scope = await billingScope();
+  if (!scope) return { ok: false, error: "Not allowed." };
+  const parsed = z
+    .object({ purchaseId: z.string().min(10).max(40), orderId: gatewayId, paymentId: gatewayId, signature })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Payment response was incomplete." };
+  const result = await confirmAddonCheckout({ sellerId: scope.sellerId, ...parsed.data });
+  revalidatePath("/dashboard", "layout");
+  return result;
+}
+
+export async function cancelPlanAction(): Promise<void> {
+  const scope = await billingScope();
+  if (!scope) return;
+  await cancelPlanAtPeriodEnd({ sellerId: scope.sellerId, userId: scope.userId });
+  revalidatePath("/dashboard/billing");
+}
+
+// ── D41: refunds ─────────────────────────────────────────────────────────────
+
+export type RefundFormState = { ok?: boolean; error?: string };
+
+export async function requestRefundAction(
+  _prev: RefundFormState,
+  formData: FormData,
+): Promise<RefundFormState> {
+  const scope = await billingScope();
+  if (!scope) return { error: "Only the account owner can request a refund." };
+  const parsed = z
+    .object({
+      paymentId: z.string().min(10).max(40),
+      reason: z.string().trim().min(3).max(200),
+      details: z
+        .string()
+        .trim()
+        .max(2000)
+        .transform((value) => (value.length === 0 ? null : value)),
+    })
+    .safeParse({
+      paymentId: formData.get("paymentId"),
+      reason: formData.get("reason"),
+      details: formData.get("details") ?? "",
+    });
+  if (!parsed.success) return { error: "Choose a reason." };
+  const result = await requestRefund({ sellerId: scope.sellerId, userId: scope.userId, ...parsed.data });
+  revalidatePath("/dashboard/billing");
+  return result.ok ? { ok: true } : { error: result.error };
+}
+
+export async function reviewRefundAction(formData: FormData): Promise<void> {
+  const user = await requirePermission("admin:subscription:manage");
+  const parsed = z
+    .object({
+      id: z.string().min(10).max(40),
+      decision: z.enum(["approve", "reject"]),
+      note: z
+        .string()
+        .trim()
+        .max(1000)
+        .transform((value) => (value.length === 0 ? null : value)),
+    })
+    .safeParse({
+      id: formData.get("id"),
+      decision: formData.get("decision"),
+      note: formData.get("note") ?? "",
+    });
+  if (!parsed.success) return;
+  if (parsed.data.decision === "approve") {
+    await approveRefund({ id: parsed.data.id, adminId: user.id, note: parsed.data.note });
+  } else {
+    await rejectRefund({ id: parsed.data.id, adminId: user.id, note: parsed.data.note });
+  }
+  revalidatePath("/admin/refunds");
 }

@@ -105,6 +105,14 @@ const serverSchema = z.object({
    */
   INTEGRATIONS_ENCRYPTION_KEY: z.string().optional(),
 
+  // ── Bzaro's own Razorpay account (D41) ──
+  // Sellers pay Bzaro for plans and add-ons with these. Entirely separate from
+  // the per-seller keys stored encrypted in SellerIntegration. Optional: with
+  // no keys the billing page falls back to the manual UPI / WhatsApp flow.
+  RAZORPAY_BILLING_KEY_ID: z.string().optional(),
+  RAZORPAY_BILLING_KEY_SECRET: z.string().optional(),
+  RAZORPAY_BILLING_WEBHOOK_SECRET: z.string().optional(),
+
   // ── Buyer OTP + lead notifications ──
   // Both providers follow the mail pattern: unset → console implementation.
   // WHATSAPP_* are read only by the Cloud API adapter (later phase).

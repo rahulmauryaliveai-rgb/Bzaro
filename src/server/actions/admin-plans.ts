@@ -39,6 +39,20 @@ const planSchema = z.object({
     .refine(
       (value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 100_000),
     ),
+  yearlyPriceRupees: z
+    .string()
+    .trim()
+    .transform((value) => (value.length === 0 ? null : Number(value)))
+    .refine((value) => value === null || (Number.isFinite(value) && value > 0 && value <= 10_000_000)),
+  weeklyLeadQuota: z
+    .string()
+    .trim()
+    .transform((value) => (value.length === 0 ? null : Number(value)))
+    .refine((value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 10_000)),
+  dailyLeadQuota: z.coerce.number().int().min(0).max(100),
+  includesPayments: z.boolean(),
+  includesShipping: z.boolean(),
+  trustSeal: z.boolean(),
   webPresence: z.enum(["CATALOGUE", "SUBDOMAIN", "CUSTOM_DOMAIN"]),
   allowPremiumTemplates: z.boolean(),
   removeBranding: z.boolean(),
@@ -62,6 +76,12 @@ export async function savePlanAction(formData: FormData): Promise<void> {
     maxGalleryItems: formData.get("maxGalleryItems"),
     maxCategories: formData.get("maxCategories"),
     leadCreditsPerMonth: formData.get("leadCreditsPerMonth") ?? "",
+    yearlyPriceRupees: formData.get("yearlyPriceRupees") ?? "",
+    weeklyLeadQuota: formData.get("weeklyLeadQuota") ?? "",
+    dailyLeadQuota: formData.get("dailyLeadQuota") ?? 0,
+    includesPayments: formData.get("includesPayments") === "on",
+    includesShipping: formData.get("includesShipping") === "on",
+    trustSeal: formData.get("trustSeal") === "on",
     webPresence: formData.get("webPresence"),
     allowPremiumTemplates: formData.get("allowPremiumTemplates") === "on",
     removeBranding: formData.get("removeBranding") === "on",
@@ -72,8 +92,13 @@ export async function savePlanAction(formData: FormData): Promise<void> {
   });
   if (!parsed.success) return;
 
-  const { id, priceRupees, ...rest } = parsed.data;
-  const plan = await upsertPlan(id || null, { ...rest, priceMinor: Math.round(priceRupees * 100) });
+  const { id, priceRupees, yearlyPriceRupees, ...rest } = parsed.data;
+  const yearlyPriceMinor = yearlyPriceRupees === null ? null : Math.round(yearlyPriceRupees * 100);
+  const plan = await upsertPlan(id || null, {
+    ...rest,
+    priceMinor: Math.round(priceRupees * 100),
+    yearlyPriceMinor,
+  });
 
   await db.auditLog.create({
     data: {
@@ -81,7 +106,7 @@ export async function savePlanAction(formData: FormData): Promise<void> {
       action: id ? "plan.update" : "plan.create",
       entityType: "Plan",
       entityId: plan.id,
-      after: { ...rest, priceMinor: Math.round(priceRupees * 100) },
+      after: { ...rest, priceMinor: Math.round(priceRupees * 100), yearlyPriceMinor },
     },
   });
 

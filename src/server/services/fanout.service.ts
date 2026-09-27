@@ -7,6 +7,7 @@ import {
   leadSettingsSchema,
 } from "@/lib/validation/lead-settings";
 import { findMatchedSellers } from "@/server/services/matching.service";
+import { slotExpiry } from "@/lib/leads/quota";
 
 /**
  * MARKET fan-out — the worker-side half of the lead system (docs/LEADS.md §2, §5).
@@ -110,7 +111,9 @@ export async function processRequirement(requirementId: string): Promise<FanoutO
   }
 
   // ── Write ──────────────────────────────────────────────────────────────────
-  const expiresAt = new Date(Date.now() + settings.market.expiryHours * 3_600_000);
+  // Expiry follows the plan allowance the lead used (D41): end of the IST week
+  // for a weekly lead, end of the next IST day for the lead of the day.
+  const now = new Date();
 
   await db.$transaction(async (tx) => {
     for (const candidate of ranked) {
@@ -134,7 +137,8 @@ export async function processRequirement(requirementId: string): Promise<FanoutO
           masked: true,
           score: candidate.score,
           rank: candidate.rank,
-          expiresAt,
+          slot: candidate.slot,
+          expiresAt: slotExpiry(candidate.slot, now),
           deliveries: { create: [{ channel: "PANEL" }] },
         },
         select: { id: true },

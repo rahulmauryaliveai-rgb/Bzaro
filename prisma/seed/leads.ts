@@ -35,7 +35,7 @@ type LeadFixture = {
   businessName: string;
   email: string;
   city: string;
-  planKey: "free" | "basic" | "gold";
+  planKey: "free" | "pro" | "gold";
   categorySlug: string;
   servesCities?: string[];
   phone: string;
@@ -57,7 +57,7 @@ const FIXTURES: LeadFixture[] = [
     businessName: "Delhi LED House",
     email: "owner@delhi-led-house.test",
     city: "new-delhi",
-    planKey: "basic",
+    planKey: "pro",
     categorySlug: "led-bulbs",
     phone: "+919811100002",
   },
@@ -170,7 +170,7 @@ async function setPlan(
   prisma: PrismaClient,
   deps: Deps,
   slug: string,
-  planKey: "free" | "basic" | "gold",
+  planKey: "free" | "pro" | "gold",
   periodKey: string,
 ) {
   const seller = await prisma.seller.findUnique({ where: { slug }, select: { id: true } });

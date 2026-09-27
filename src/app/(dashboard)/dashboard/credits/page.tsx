@@ -23,6 +23,7 @@ const REASON_LABEL = {
   LEAD_ACCEPT: "Lead accepted",
   FLAG_REFUND: "Refund",
   ADMIN_ADJUST: "Adjustment",
+  ADDON_PURCHASE: "Lead pack",
 } as const;
 
 export default async function CreditsPage() {

@@ -19,7 +19,8 @@ export const leadSettingsSchema = z.object({
       minSellers: z.number().int().min(0).max(50),
       /** Most sellers a MARKET fan-out will target. Consent text says ten. */
       maxSellers: z.number().int().min(1).max(50),
-      /** Hours after creation at which an unaccepted MARKET lead expires. */
+      /** Superseded by D41 (weekly / daily slot expiry, src/lib/leads/quota.ts).
+       *  Kept so saved settings still parse; no longer read. */
       expiryHours: z
         .number()
         .int()

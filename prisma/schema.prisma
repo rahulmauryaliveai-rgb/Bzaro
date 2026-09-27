@@ -88,6 +88,9 @@ enum SubStatus {
   PAST_DUE
   CANCELED
   EXPIRED
+  /// Created at Razorpay, waiting for the seller to authorise the mandate
+  /// (D41). Never live; becomes ACTIVE on activation or stays until swept.
+  INCOMPLETE
 }
 
 enum BillingInterval {
@@ -247,6 +250,38 @@ enum CreditReason {
   LEAD_ACCEPT
   FLAG_REFUND
   ADMIN_ADJUST
+  /// A paid lead pack (D41). One per Purchase.
+  ADDON_PURCHASE
+}
+
+/// Which of a plan's delivery allowances a MARKET lead used (D41). WEEKLY
+/// leads expire at the end of the IST week, the DAILY lead at the end of the
+/// next IST day.
+enum LeadSlot {
+  WEEKLY
+  DAILY
+}
+
+/// One-time purchases from the seller dashboard (D41).
+enum AddonKind {
+  LEAD_PACK
+  PAYMENT_GATEWAY
+  SHIPPING
+}
+
+enum PurchaseStatus {
+  CREATED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  REFUNDED
+  FAILED
 }
 
 enum LeadFlagReason {
@@ -488,6 +523,10 @@ model Seller {
   /// `recomputeWebPresence` on every subscription write and swept nightly.
   /// Read on every microsite request, so it must not be a join.
   webPresence WebPresence @default(CATALOGUE)
+  /// Denormalised with webPresence from the live plan (D41): the ranking
+  /// boost on category, city and search pages, and the Gold trust seal.
+  searchBoost Int         @default(0)
+  trustSeal   Boolean     @default(false)
 
   verifiedAt   DateTime?
   verifiedById String?
@@ -520,6 +559,8 @@ model Seller {
   integrations  SellerIntegration[]
   feature       SellerFeature?
   savedBy       SavedSeller[]
+  purchases     Purchase[]
+  refunds       RefundRequest[]
   // searchVector tsvector column + GIN index: see migration SQL.
 
   @@index([status, deletedAt])
@@ -1151,8 +1192,11 @@ model Lead {
   /// Matcher output, kept for admin debugging and inbox ranking.
   score     Int?
   rank      Int?
-  /// MARKET only: createdAt + leads.market.expiryHours. DIRECT never expires.
+  /// MARKET only: end of the IST week (WEEKLY) or of the next IST day
+  /// (DAILY) — D41. DIRECT never expires.
   expiresAt DateTime?
+  /// MARKET only: which plan allowance this lead counted against (D41).
+  slot      LeadSlot?
 
   viewedAt     DateTime?
   acceptedAt   DateTime?
@@ -1179,6 +1223,8 @@ model Lead {
   // Expiry sweeper: status IN (NEW, VIEWED) AND expiresAt < now().
   @@index([status, expiresAt])
   @@index([requirementId])
+  // Quota count: this seller's MARKET leads since the start of the week.
+  @@index([sellerId, type, createdAt])
 }
 
 /// Outbox row per (lead, channel). The request path only ever inserts; the
@@ -1497,6 +1543,24 @@ model Plan {
   searchBoost           Int     @default(0)
   features              Json?
 
+  // ── D41 ──
+  /// Price when billed yearly; null = no yearly option. `priceMinor` is the
+  /// monthly price. Both exclude GST.
+  yearlyPriceMinor Int?
+  /// MARKET leads delivered per IST week (null = no weekly cap).
+  weeklyLeadQuota  Int?
+  /// Extra "lead of the day" deliveries once the weekly quota is used.
+  dailyLeadQuota   Int     @default(0)
+  /// Orders on the seller's website (Razorpay + COD) included, no add-on.
+  includesPayments Boolean @default(false)
+  /// Shipping (Shiprocket) included, no add-on.
+  includesShipping Boolean @default(false)
+  /// Trust seal next to the seller's name everywhere.
+  trustSeal        Boolean @default(false)
+  /// Razorpay plan ids, created on first subscribe (Bzaro's own account).
+  gatewayPlanIdMonthly String?
+  gatewayPlanIdYearly  String?
+
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
@@ -1522,6 +1586,10 @@ model Subscription {
 
   gatewayCustomerId     String?
   gatewaySubscriptionId String? @unique
+  /// Which of the plan's prices this subscription bills (D41).
+  interval              BillingInterval @default(MONTHLY)
+  /// Razorpay's own status string, for the admin screen.
+  gatewayStatus         String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1540,7 +1608,12 @@ model Payment {
   subscriptionId String
   sellerId       String
 
+  /// Total charged, GST included.
   amountMinor      Int
+  /// D41: the taxable value and the GST on it (amountMinor = base + tax).
+  baseMinor        Int       @default(0)
+  taxMinor         Int       @default(0)
+  refundedMinor    Int       @default(0)
   currency         String    @default("INR")
   status           String
   gatewayPaymentId String?   @unique
@@ -1549,10 +1622,74 @@ model Payment {
   paidAt           DateTime?
   createdAt        DateTime  @default(now())
 
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
-  seller       Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  subscription Subscription    @relation(fields: [subscriptionId], references: [id])
+  seller       Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  refunds      RefundRequest[]
 
   @@index([sellerId, createdAt(sort: Desc)])
+}
+
+/// A one-time purchase paid to Bzaro (D41): lead pack, payment-gateway
+/// add-on or shipping add-on. Prices are copied in at creation, so an admin
+/// price change never rewrites what a seller already paid.
+model Purchase {
+  id               String         @id @default(cuid())
+  sellerId         String
+  kind             AddonKind
+  /// Credits for a LEAD_PACK; 1 otherwise.
+  quantity         Int            @default(1)
+  baseMinor        Int
+  taxMinor         Int
+  totalMinor       Int
+  currency         String         @default("INR")
+  status           PurchaseStatus @default(CREATED)
+  gatewayOrderId   String?        @unique
+  gatewayPaymentId String?        @unique
+  invoiceNumber    String?        @unique
+  paidAt           DateTime?
+  /// User who clicked Buy.
+  actorId          String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+/// "I am not getting leads in my category" (D41). The seller asks; an admin
+/// decides; an approved request refunds the plan payment through Razorpay and
+/// moves the seller to Free.
+model RefundRequest {
+  id              String       @id @default(cuid())
+  sellerId        String
+  paymentId       String
+  status          RefundStatus @default(REQUESTED)
+  reason          String
+  details         String?      @db.Text
+  /// Market leads the seller received in the window, captured at request time.
+  leadsInWindow   Int          @default(0)
+  amountMinor     Int
+  adminNote       String?      @db.Text
+  reviewedById    String?
+  reviewedAt      DateTime?
+  gatewayRefundId String?      @unique
+  requestedById   String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  seller  Seller  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([sellerId, createdAt(sort: Desc)])
+}
+
+/// Sequential GST invoice numbers per Indian financial year (D41).
+model InvoiceCounter {
+  fy   String @id
+  next Int    @default(1)
 }
 
 /// Webhook idempotency. Payment gateways retry aggressively; the unique

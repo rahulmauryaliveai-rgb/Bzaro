@@ -32,6 +32,12 @@ export function listPlansForAdmin() {
       maxGalleryItems: true,
       maxCategories: true,
       leadCreditsPerMonth: true,
+      yearlyPriceMinor: true,
+      weeklyLeadQuota: true,
+      dailyLeadQuota: true,
+      includesPayments: true,
+      includesShipping: true,
+      trustSeal: true,
       webPresence: true,
       allowPremiumTemplates: true,
       removeBranding: true,
@@ -55,6 +61,12 @@ export type PlanInput = {
   maxGalleryItems: number;
   maxCategories: number;
   leadCreditsPerMonth: number | null;
+  yearlyPriceMinor: number | null;
+  weeklyLeadQuota: number | null;
+  dailyLeadQuota: number;
+  includesPayments: boolean;
+  includesShipping: boolean;
+  trustSeal: boolean;
   webPresence: WebPresence;
   allowPremiumTemplates: boolean;
   removeBranding: boolean;

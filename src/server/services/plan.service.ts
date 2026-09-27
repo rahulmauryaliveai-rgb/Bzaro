@@ -5,6 +5,7 @@ import { revalidateTenant, type RevalidateMode } from "@/lib/cache/revalidate";
 import { revalidateTag } from "next/cache";
 import { cacheTags } from "@/lib/cache/tags";
 import { periodKeyFor, topUpCreditsForPlanChange } from "@/server/services/credit.service";
+import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
 
 /**
  * Plans, subscriptions and the web-presence tier (decision D32).
@@ -47,18 +48,29 @@ export async function getActivePlan(sellerId: string, client: TxClient | typeof 
     select: {
       id: true,
       status: true,
+      interval: true,
+      currentPeriodStart: true,
       currentPeriodEnd: true,
       gracePeriodEndsAt: true,
+      cancelAtPeriodEnd: true,
+      gatewaySubscriptionId: true,
       plan: {
         select: {
           id: true,
           key: true,
           name: true,
           priceMinor: true,
+          yearlyPriceMinor: true,
           currency: true,
           interval: true,
           webPresence: true,
           leadCreditsPerMonth: true,
+          weeklyLeadQuota: true,
+          dailyLeadQuota: true,
+          includesPayments: true,
+          includesShipping: true,
+          trustSeal: true,
+          searchBoost: true,
           maxProducts: true,
           removeBranding: true,
           allowPremiumTemplates: true,
@@ -71,9 +83,10 @@ export async function getActivePlan(sellerId: string, client: TxClient | typeof 
 }
 
 /**
- * Recompute `Seller.webPresence` from the live subscription. Returns the new
- * value and whether it changed; on change the tenant cache is purged so the
- * subdomain starts (or stops) serving immediately.
+ * Recompute `Seller.webPresence` — and, since D41, the plan's search boost
+ * and trust seal — from the live subscription. Returns the new tier and
+ * whether anything changed; on change the tenant and discovery caches are
+ * purged so the subdomain, badge and placement follow immediately.
  */
 export async function recomputeWebPresence(
   sellerId: string,
@@ -85,18 +98,27 @@ export async function recomputeWebPresence(
   const [seller, subscription] = await Promise.all([
     client.seller.findUnique({
       where: { id: sellerId },
-      select: { slug: true, webPresence: true },
+      select: { slug: true, webPresence: true, searchBoost: true, trustSeal: true },
     }),
     getActivePlan(sellerId, client),
   ]);
   if (!seller) return { webPresence: "CATALOGUE", changed: false };
 
   const next: WebPresence = subscription?.plan.webPresence ?? "CATALOGUE";
-  if (next === seller.webPresence) return { webPresence: next, changed: false };
+  const searchBoost = subscription?.plan.searchBoost ?? 0;
+  const trustSeal = subscription?.plan.trustSeal ?? false;
+  const perksChanged = searchBoost !== seller.searchBoost || trustSeal !== seller.trustSeal;
+  if (next === seller.webPresence && !perksChanged) return { webPresence: next, changed: false };
 
-  await client.seller.update({ where: { id: sellerId }, data: { webPresence: next } });
+  await client.seller.update({
+    where: { id: sellerId },
+    data: { webPresence: next, searchBoost, trustSeal },
+  });
   revalidateTenant(seller.slug, mode);
   revalidateTag(cacheTags.sitemap(), "max");
+  if (perksChanged) {
+    await revalidateSellerDiscovery(sellerId, mode).catch(() => undefined);
+  }
   return { webPresence: next, changed: true };
 }
 
@@ -111,6 +133,7 @@ export function listPublicPlans() {
       name: true,
       description: true,
       priceMinor: true,
+      yearlyPriceMinor: true,
       currency: true,
       interval: true,
       maxProducts: true,
@@ -118,6 +141,11 @@ export function listPublicPlans() {
       maxGalleryItems: true,
       maxCategories: true,
       leadCreditsPerMonth: true,
+      weeklyLeadQuota: true,
+      dailyLeadQuota: true,
+      includesPayments: true,
+      includesShipping: true,
+      trustSeal: true,
       webPresence: true,
       allowPremiumTemplates: true,
       removeBranding: true,
@@ -214,8 +242,33 @@ export async function changeSellerPlan(params: {
   return result;
 }
 
+/**
+ * Close out subscriptions whose grace period has ended (D41): PAST_DUE past
+ * `gracePeriodEndsAt` becomes EXPIRED. Entitlement already stopped at that
+ * instant — `liveSubscriptionWhere` excludes them — so this is bookkeeping for
+ * the admin screens, plus INCOMPLETE checkouts abandoned for a day.
+ */
+export async function expireLapsedSubscriptions(now = new Date()): Promise<number> {
+  const [lapsed, abandoned] = await Promise.all([
+    db.subscription.updateMany({
+      where: { status: "PAST_DUE", gracePeriodEndsAt: { lte: now } },
+      data: { status: "EXPIRED" },
+    }),
+    db.subscription.updateMany({
+      where: { status: "INCOMPLETE", createdAt: { lt: new Date(now.getTime() - 86_400_000) } },
+      data: { status: "EXPIRED" },
+    }),
+  ]);
+  return lapsed.count + abandoned.count;
+}
+
 /** Nightly sweep: every live seller, so a lapsed subscription downgrades. */
-export async function recomputeAllWebPresence(): Promise<{ scanned: number; changed: number }> {
+export async function recomputeAllWebPresence(): Promise<{
+  scanned: number;
+  changed: number;
+  expired: number;
+}> {
+  const expired = await expireLapsedSubscriptions();
   const sellers = await db.seller.findMany({
     where: { deletedAt: null },
     select: { id: true },
@@ -226,5 +279,5 @@ export async function recomputeAllWebPresence(): Promise<{ scanned: number; chan
     const result = await recomputeWebPresence(seller.id);
     if (result.changed) changed += 1;
   }
-  return { scanned: sellers.length, changed };
+  return { scanned: sellers.length, changed, expired };
 }

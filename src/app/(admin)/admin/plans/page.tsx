@@ -20,9 +20,12 @@ export default async function AdminPlansPage() {
     <div className="max-w-5xl">
       <h1 className="text-2xl font-semibold tracking-tight">Plans</h1>
       <p className="mt-1 text-sm text-neutral-400">
-        Prices in rupees, excluding GST. <strong>Web presence</strong> decides what the plan buys on
-        the web: catalogue page only, a subdomain website, or the seller&rsquo;s own domain (D32).
-        Inactive plans disappear from pricing but keep their subscribers.
+        Prices in rupees, excluding GST (added at checkout). <strong>Web presence</strong> decides
+        what the plan buys on the web: catalogue page only, a subdomain website, or the
+        seller&rsquo;s own domain. <strong>Leads/week</strong> and <strong>lead of the day</strong>{" "}
+        cap how many matched leads a seller receives (D41); credits unlock them. Changing a price
+        takes effect for new subscriptions — existing autopay mandates keep their amount. Inactive
+        plans disappear from pricing but keep their subscribers. Add-on prices live in Settings.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -53,7 +56,9 @@ function PlanForm({ plan }: { plan: Plan | null }) {
           {plan ? plan.name : "New plan"}
           {plan ? (
             <span className="ml-3 text-sm font-normal text-neutral-400">
-              {formatMoney(plan.priceMinor, plan.currency)} / {plan.interval.toLowerCase()} ·{" "}
+              {formatMoney(plan.priceMinor, plan.currency)} / month
+              {plan.yearlyPriceMinor ? ` · ${formatMoney(plan.yearlyPriceMinor, plan.currency)} / year` : ""}{" "}
+              ·{" "}
               {subscribers} live subscriber{subscribers === 1 ? "" : "s"}
             </span>
           ) : null}
@@ -67,7 +72,15 @@ function PlanForm({ plan }: { plan: Plan | null }) {
         <Text label="Key" name="key" defaultValue={plan?.key ?? ""} placeholder="pro" required />
         <Text label="Name" name="name" defaultValue={plan?.name ?? ""} required />
         <Text
-          label="Price (₹)"
+          label="Yearly price (₹, blank = no yearly)"
+          name="yearlyPriceRupees"
+          type="number"
+          defaultValue={plan?.yearlyPriceMinor ? String(plan.yearlyPriceMinor / 100) : ""}
+          min={0}
+          step="1"
+        />
+        <Text
+          label="Monthly price (₹)"
           name="priceRupees"
           type="number"
           defaultValue={plan ? String(plan.priceMinor / 100) : "0"}
@@ -75,14 +88,8 @@ function PlanForm({ plan }: { plan: Plan | null }) {
           step="1"
           required
         />
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-neutral-500">Billing interval</span>
-          <select name="interval" defaultValue={plan?.interval ?? "MONTHLY"} className={input}>
-            <option value="MONTHLY">Monthly</option>
-            <option value="QUARTERLY">Quarterly</option>
-            <option value="YEARLY">Yearly</option>
-          </select>
-        </label>
+        {/* D41: the base price is monthly; the yearly price is its own field. */}
+        <input type="hidden" name="interval" value="MONTHLY" />
         <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
           <span className="text-xs text-neutral-500">Description (one line on pricing)</span>
           <input
@@ -113,7 +120,21 @@ function PlanForm({ plan }: { plan: Plan | null }) {
           min={0}
         />
         <Text
-          label="Search boost"
+          label="Leads / week (blank = no cap)"
+          name="weeklyLeadQuota"
+          type="number"
+          defaultValue={plan?.weeklyLeadQuota == null ? "" : String(plan.weeklyLeadQuota)}
+          min={0}
+        />
+        <Text
+          label="Lead of the day (extra per day)"
+          name="dailyLeadQuota"
+          type="number"
+          defaultValue={String(plan?.dailyLeadQuota ?? 0)}
+          min={0}
+        />
+        <Text
+          label="Search boost (top placement)"
           name="searchBoost"
           type="number"
           defaultValue={String(plan?.searchBoost ?? 0)}
@@ -170,6 +191,17 @@ function PlanForm({ plan }: { plan: Plan | null }) {
           label="Priority support"
           defaultChecked={plan?.prioritySupport ?? false}
         />
+        <Check
+          name="includesPayments"
+          label="Payment gateway + cart included"
+          defaultChecked={plan?.includesPayments ?? false}
+        />
+        <Check
+          name="includesShipping"
+          label="Shipping included"
+          defaultChecked={plan?.includesShipping ?? false}
+        />
+        <Check name="trustSeal" label="Trust seal" defaultChecked={plan?.trustSeal ?? false} />
         <Check
           name="isActive"
           label="Active (shown on pricing)"

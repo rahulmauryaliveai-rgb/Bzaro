@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { decryptJson, encryptJson, lastFour } from "@/lib/crypto/secrets";
 import { shiprocketLogin } from "@/lib/shipping/shiprocket";
 import type { FeatureSource, IntegrationMode } from "@/generated/prisma/enums";
+import { getActivePlan } from "@/server/services/plan.service";
 
 /**
  * Seller payment and shipping integrations (Phase 6).
@@ -305,11 +306,28 @@ const NO_FEATURES: SellerFeatures = {
  * which is the correct default for every free seller.
  */
 export async function getSellerFeatures(sellerId: string): Promise<SellerFeatures> {
-  const row = await db.sellerFeature.findUnique({
-    where: { sellerId },
-    select: { paymentsEnabled: true, shippingEnabled: true, codEnabled: true, source: true },
-  });
-  return row ?? NO_FEATURES;
+  const [row, subscription] = await Promise.all([
+    db.sellerFeature.findUnique({
+      where: { sellerId },
+      select: { paymentsEnabled: true, shippingEnabled: true, codEnabled: true, source: true },
+    }),
+    getActivePlan(sellerId),
+  ]);
+  const base = row ?? NO_FEATURES;
+  // An admin override is the last word, in either direction.
+  if (base.source === "ADMIN_OVERRIDE") return base;
+
+  // D41: a plan may include orders and shipping (Gold). Otherwise they come
+  // from a paid add-on (source ADDON) — and an add-on bought on a website plan
+  // stops working when the plan no longer has a website.
+  const plan = subscription?.plan;
+  const hasWebsite = (plan?.webPresence ?? "CATALOGUE") !== "CATALOGUE";
+  return {
+    ...base,
+    paymentsEnabled: Boolean(plan?.includesPayments) || (hasWebsite && base.paymentsEnabled),
+    shippingEnabled: Boolean(plan?.includesShipping) || (hasWebsite && base.shippingEnabled),
+    source: plan?.includesPayments && !base.paymentsEnabled ? "PLAN" : base.source,
+  };
 }
 
 /** The seller's own COD switch. Only meaningful once orders are switched on. */
