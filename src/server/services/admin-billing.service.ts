@@ -202,3 +202,58 @@ export async function listUpgradeRequests(limit = 20) {
     ];
   });
 }
+
+// ── Overview (D42) ───────────────────────────────────────────────────────────
+
+/**
+ * Sellers per plan for the admin overview. A seller counts on the plan of
+ * their live subscription; everyone else — no row, lapsed, or a ₹0 plan — is
+ * Free. Passes (coupon plans without autopay) are shown separately inside
+ * their plan's count.
+ */
+export async function getPlanBreakdown() {
+  const now = new Date();
+  const [plans, totalSellers, grouped, passes] = await Promise.all([
+    db.plan.findMany({
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, key: true, name: true, priceMinor: true, trustSeal: true },
+    }),
+    db.seller.count({ where: { deletedAt: null } }),
+    db.subscription.groupBy({
+      by: ["planId"],
+      where: { ...liveSubscriptionWhere(now), seller: { deletedAt: null } },
+      _count: { sellerId: true },
+    }),
+    db.subscription.groupBy({
+      by: ["planId"],
+      where: {
+        ...liveSubscriptionWhere(now),
+        expiresAtPeriodEnd: true,
+        seller: { deletedAt: null },
+      },
+      _count: { sellerId: true },
+    }),
+  ]);
+  const live = new Map(grouped.map((row) => [row.planId, row._count.sellerId]));
+  const onPass = new Map(passes.map((row) => [row.planId, row._count.sellerId]));
+  const paid = plans
+    .filter((plan) => plan.priceMinor > 0)
+    .map((plan) => ({
+      key: plan.key,
+      name: plan.name,
+      gold: plan.trustSeal,
+      sellers: live.get(plan.id) ?? 0,
+      onPass: onPass.get(plan.id) ?? 0,
+    }));
+  const paidTotal = paid.reduce((sum, plan) => sum + plan.sellers, 0);
+  const freePlan = plans.find((plan) => plan.priceMinor === 0);
+  return {
+    total: totalSellers,
+    free: {
+      key: freePlan?.key ?? "free",
+      name: freePlan?.name ?? "Free",
+      sellers: Math.max(0, totalSellers - paidTotal),
+    },
+    paid,
+  };
+}

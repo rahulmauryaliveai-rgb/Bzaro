@@ -20,7 +20,9 @@ import { REFUND_REASONS, getRefundableCandidate } from "@/server/services/refund
 import { getSellerProfile } from "@/server/services/seller.service";
 import { cancelPlanAction, requestUpgradeAction } from "@/server/actions/billing";
 import { PlanLadder, formatPlanPrice } from "@/components/billing/PlanLadder";
-import { AddonBuyButton, SubscribeButton } from "@/components/billing/BillingCheckout";
+import { AddonBuyButton, PassButton, SubscribeButton } from "@/components/billing/BillingCheckout";
+import { describeCoupon, type CouponTarget } from "@/lib/billing/coupon";
+import { discountForTarget, findUsableCoupon } from "@/server/services/coupon.service";
 import { RefundForm } from "@/components/billing/RefundForm";
 
 export const metadata: Metadata = {
@@ -37,14 +39,16 @@ export const metadata: Metadata = {
  * "Notify the team" button that queues the request for an admin.
  */
 
-type Props = { searchParams: Promise<{ plan?: string; requested?: string }> };
+type Props = {
+  searchParams: Promise<{ plan?: string; requested?: string; coupon?: string }>;
+};
 
 const dateFmt = (date: Date) =>
   date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
 export default async function BillingPage({ searchParams }: Props) {
   const scope = await requireSeller();
-  const { plan: wantedKey, requested } = await searchParams;
+  const { plan: wantedKey, requested, coupon: couponParam } = await searchParams;
 
   const [subscription, plans, profile, settings, lastRequest, offers, history, refundable] =
     await Promise.all([
@@ -59,6 +63,21 @@ export default async function BillingPage({ searchParams }: Props) {
     ]);
 
   const online = billingGatewayReady();
+
+  // D42: ?coupon=CODE — a plan pass shows its own card; a discount coupon
+  // re-prices every button it applies to.
+  const couponLookup = couponParam ? await findUsableCoupon(scope.sellerId, couponParam) : null;
+  const coupon = couponLookup?.ok ? couponLookup.coupon : null;
+  const discountCoupon = coupon && coupon.kind !== "PLAN_PASS" ? coupon : null;
+  const priced = (target: CouponTarget, baseMinor: number, planKey?: string) => {
+    const discount = discountCoupon
+      ? discountForTarget(discountCoupon, target, baseMinor, planKey)
+      : null;
+    return {
+      quote: withGst(baseMinor - (discount ?? 0), settings.gstRatePercent),
+      couponCode: discount !== null && discountCoupon ? discountCoupon.code : undefined,
+    };
+  };
   const currentKey = subscription?.plan.key ?? "free";
   const wanted = plans.find((plan) => plan.key === wantedKey && plan.key !== currentKey);
   const gst = settings.gstRatePercent;
@@ -108,13 +127,92 @@ export default async function BillingPage({ searchParams }: Props) {
         </div>
       ) : null}
 
-      {subscription?.cancelAtPeriodEnd ? (
+      {subscription?.expiresAtPeriodEnd ? (
+        <div className="border-accent-200 bg-accent-50 text-accent-900 rounded-xl border p-4 text-sm">
+          <p className="font-semibold">
+            Your {subscription.plan.name} pass runs until {dateFmt(subscription.currentPeriodEnd)}.
+          </p>
+          <p className="mt-1">
+            After that your account moves to Free. To keep {subscription.plan.name}, subscribe below
+            close to the end date — subscribing starts the paid plan straight away.
+          </p>
+        </div>
+      ) : subscription?.cancelAtPeriodEnd ? (
         <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
           Autopay is cancelled. You keep {subscription.plan.name} until{" "}
           {dateFmt(subscription.currentPeriodEnd)}, then move to Free. Subscribe again any time
           below.
         </div>
       ) : null}
+
+      {/* ── Coupon (D42) ──────────────────────────────────────────────────── */}
+      <section className="rounded-xl border border-dashed border-neutral-300 bg-white p-4">
+        <form method="get" className="flex flex-wrap items-center gap-2">
+          <label htmlFor="coupon" className="text-sm font-medium text-neutral-800">
+            Have a coupon?
+          </label>
+          <input
+            id="coupon"
+            name="coupon"
+            defaultValue={couponParam ?? ""}
+            placeholder="Enter code"
+            autoComplete="off"
+            className="w-44 rounded-md border border-neutral-300 px-3 py-1.5 text-sm uppercase"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            Apply
+          </button>
+          {couponParam ? (
+            <Link href="/dashboard/billing" className="text-xs text-neutral-500 underline">
+              Remove
+            </Link>
+          ) : null}
+        </form>
+        {couponLookup && !couponLookup.ok ? (
+          <p role="alert" className="mt-2 text-sm text-red-700">
+            {couponLookup.reason}
+          </p>
+        ) : null}
+        {discountCoupon ? (
+          <p role="status" className="mt-2 text-sm text-green-800">
+            Coupon <strong>{discountCoupon.code}</strong> applied —{" "}
+            {describeCoupon(discountCoupon, (m) => formatMoney(m, "INR"))}. Prices below already
+            include it.
+            {discountCoupon.appliesTo.some((t) => t.startsWith("PLAN_"))
+              ? " On a plan, the discount applies to every renewal of that subscription."
+              : ""}
+          </p>
+        ) : null}
+        {coupon && coupon.kind === "PLAN_PASS" && coupon.plan ? (
+          <div className="border-accent-200 bg-accent-50 mt-4 rounded-xl border p-5">
+            <p className="text-accent-800 text-xs font-semibold tracking-wide uppercase">
+              Coupon {coupon.code}
+            </p>
+            <p className="mt-1 text-xl font-bold text-neutral-900">
+              {coupon.plan.name} for {coupon.passMonths} month{coupon.passMonths === 1 ? "" : "s"}{" "}
+              at {formatMoney(coupon.passPriceMinor ?? 0, "INR")}
+            </p>
+            <p className="mt-1 text-sm text-neutral-700">
+              Everything in {coupon.plan.name} — website, weekly leads and monthly credits — for{" "}
+              {coupon.passMonths} month{coupon.passMonths === 1 ? "" : "s"}. GST included. No
+              autopay: when it ends you choose whether to continue.
+            </p>
+            <div className="mt-4 max-w-xs">
+              <PassButton
+                couponCode={coupon.code}
+                label={
+                  (coupon.passPriceMinor ?? 0) === 0
+                    ? `Activate ${coupon.plan.name} free`
+                    : `Activate for ${formatMoney(coupon.passPriceMinor ?? 0, "INR")}`
+                }
+              />
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       {/* ── Plans ─────────────────────────────────────────────────────────── */}
       <section>
@@ -144,8 +242,12 @@ export default async function BillingPage({ searchParams }: Props) {
                       </p>
                     );
                   }
-                  const monthly = withGst(plan.priceMinor, gst);
-                  const yearly = plan.yearlyPriceMinor ? withGst(plan.yearlyPriceMinor, gst) : null;
+                  const monthlyPriced = priced("PLAN_MONTHLY", plan.priceMinor, plan.key);
+                  const yearlyPriced = plan.yearlyPriceMinor
+                    ? priced("PLAN_YEARLY", plan.yearlyPriceMinor, plan.key)
+                    : null;
+                  const monthly = monthlyPriced.quote;
+                  const yearly = yearlyPriced?.quote ?? null;
 
                   // The seller's own autopay plan: say what they are on, and
                   // offer only the one sensible move — monthly → yearly.
@@ -168,6 +270,7 @@ export default async function BillingPage({ searchParams }: Props) {
                           <SubscribeButton
                             planKey={plan.key}
                             interval="YEARLY"
+                            couponCode={yearlyPriced?.couponCode}
                             variant="secondary"
                             label={`Switch to yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
                           />
@@ -198,6 +301,7 @@ export default async function BillingPage({ searchParams }: Props) {
                         <SubscribeButton
                           planKey={plan.key}
                           interval="MONTHLY"
+                          couponCode={monthlyPriced.couponCode}
                           variant={isGold ? "gold" : isHighlight ? "primary" : "secondary"}
                           label={`Pay monthly · ${formatMoney(monthly.totalMinor, "INR")}`}
                         />
@@ -206,6 +310,7 @@ export default async function BillingPage({ searchParams }: Props) {
                         <SubscribeButton
                           planKey={plan.key}
                           interval="YEARLY"
+                          couponCode={yearlyPriced?.couponCode}
                           variant={
                             isGold ? "gold" : onYearly || isHighlight ? "primary" : "secondary"
                           }
@@ -340,7 +445,8 @@ export default async function BillingPage({ searchParams }: Props) {
                 ) : online ? (
                   <AddonBuyButton
                     kind={offer.kind}
-                    label={`Buy · ${formatMoney(offer.quote.totalMinor, "INR")}`}
+                    couponCode={priced(offer.kind, offer.quote.baseMinor).couponCode}
+                    label={`Buy · ${formatMoney(priced(offer.kind, offer.quote.baseMinor).quote.totalMinor, "INR")}`}
                     disabled={!offer.available}
                   />
                 ) : (
@@ -401,7 +507,9 @@ export default async function BillingPage({ searchParams }: Props) {
                     item:
                       purchase.kind === "LEAD_PACK"
                         ? `Lead pack · ${purchase.quantity} credits`
-                        : ADDON_LABEL[purchase.kind],
+                        : purchase.kind === "PLAN_PASS"
+                          ? `Plan pass · ${purchase.passMonths} months`
+                          : ADDON_LABEL[purchase.kind],
                     amount: purchase.totalMinor,
                     status: purchase.status === "REFUNDED" ? "Refunded" : "Paid",
                     invoice: purchase.invoiceNumber

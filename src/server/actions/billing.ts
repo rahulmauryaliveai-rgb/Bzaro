@@ -13,6 +13,7 @@ import {
   confirmAddonCheckout,
   confirmPlanCheckout,
   startAddonCheckout,
+  startPassCheckout,
   startPlanCheckout,
   type CheckoutStart,
 } from "@/server/services/billing.service";
@@ -137,9 +138,17 @@ const signature = z
   .max(256)
   .regex(/^[a-f0-9]+$/);
 
+const couponInput = z
+  .string()
+  .trim()
+  .max(40)
+  .nullable()
+  .transform((value) => (value ? value : null));
+
 export async function startPlanCheckoutAction(
   planKeyInput: string,
   intervalInput: string,
+  couponCodeInput: string | null = null,
 ): Promise<CheckoutStart> {
   const scope = await billingScope();
   if (!scope) return { ok: false, error: "Only the account owner can change the plan." };
@@ -147,7 +156,13 @@ export async function startPlanCheckoutAction(
     .object({ planKey, interval: intervalSchema })
     .safeParse({ planKey: planKeyInput, interval: intervalInput });
   if (!parsed.success) return { ok: false, error: "Choose a plan." };
-  return startPlanCheckout({ sellerId: scope.sellerId, userId: scope.userId, ...parsed.data });
+  const couponCode = couponInput.safeParse(couponCodeInput);
+  return startPlanCheckout({
+    sellerId: scope.sellerId,
+    userId: scope.userId,
+    ...parsed.data,
+    couponCode: couponCode.success ? couponCode.data : null,
+  });
 }
 
 export async function confirmPlanCheckoutAction(input: {
@@ -166,12 +181,36 @@ export async function confirmPlanCheckoutAction(input: {
   return result;
 }
 
-export async function startAddonCheckoutAction(kindInput: string): Promise<CheckoutStart> {
+export async function startAddonCheckoutAction(
+  kindInput: string,
+  couponCodeInput: string | null = null,
+): Promise<CheckoutStart> {
   const scope = await billingScope();
   if (!scope) return { ok: false, error: "Only the account owner can buy add-ons." };
   const parsed = addonSchema.safeParse(kindInput);
   if (!parsed.success) return { ok: false, error: "Unknown add-on." };
-  return startAddonCheckout({ sellerId: scope.sellerId, userId: scope.userId, kind: parsed.data });
+  const couponCode = couponInput.safeParse(couponCodeInput);
+  return startAddonCheckout({
+    sellerId: scope.sellerId,
+    userId: scope.userId,
+    kind: parsed.data,
+    couponCode: couponCode.success ? couponCode.data : null,
+  });
+}
+
+/** D42: redeem a plan-pass coupon. */
+export async function startPassCheckoutAction(couponCodeInput: string): Promise<CheckoutStart> {
+  const scope = await billingScope();
+  if (!scope) return { ok: false, error: "Only the account owner can change the plan." };
+  const couponCode = couponInput.safeParse(couponCodeInput);
+  if (!couponCode.success || !couponCode.data) return { ok: false, error: "Enter a coupon code." };
+  const result = await startPassCheckout({
+    sellerId: scope.sellerId,
+    userId: scope.userId,
+    couponCode: couponCode.data,
+  });
+  if (result.ok && "free" in result) revalidatePath("/dashboard", "layout");
+  return result;
 }
 
 export async function confirmAddonCheckoutAction(input: {

@@ -40,6 +40,7 @@ const NAV = [
   { href: "/admin/leads/flags", label: "Lead flags", permission: "admin:lead:refund" },
   { href: "/admin/subscriptions", label: "Subscriptions", permission: "admin:subscription:manage" },
   { href: "/admin/refunds", label: "Refunds", permission: "admin:subscription:manage" },
+  { href: "/admin/coupons", label: "Coupons", permission: "admin:plan:manage" },
   { href: "/admin/plans", label: "Plans", permission: "admin:plan:manage" },
   { href: "/admin/audit-log", label: "Audit log", permission: "admin:audit:read" },
   { href: "/admin/settings", label: "Settings", permission: "admin:settings:manage" },

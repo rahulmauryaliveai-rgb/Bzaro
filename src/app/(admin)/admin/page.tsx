@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
 import { getPlatformStats } from "@/server/services/admin.service";
+import { getPlanBreakdown } from "@/server/services/admin-billing.service";
 
 /**
  * Platform overview.
@@ -11,7 +12,7 @@ import { getPlatformStats } from "@/server/services/admin.service";
  */
 export default async function AdminDashboardPage() {
   await requirePermission("admin:seller:read");
-  const stats = await getPlatformStats();
+  const [stats, plans] = await Promise.all([getPlatformStats(), getPlanBreakdown()]);
 
   return (
     <div>
@@ -33,6 +34,30 @@ export default async function AdminDashboardPage() {
           cta="Review content"
           urgent={stats.pendingModeration > 0}
         />
+      </div>
+
+      {/* D42: sellers per plan. */}
+      <h2 className="mt-8 text-sm font-semibold tracking-wide text-neutral-400 uppercase">
+        Sellers by plan
+      </h2>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <PlanCard
+          name={plans.free.name}
+          sellers={plans.free.sellers}
+          total={plans.total}
+          href={`/admin/subscriptions?plan=${plans.free.key}`}
+        />
+        {plans.paid.map((plan) => (
+          <PlanCard
+            key={plan.key}
+            name={plan.name}
+            sellers={plan.sellers}
+            total={plans.total}
+            onPass={plan.onPass}
+            gold={plan.gold}
+            href={`/admin/subscriptions?plan=${plan.key}`}
+          />
+        ))}
       </div>
 
       <dl className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -97,5 +122,47 @@ function Stat({ label, value }: { label: string; value: number }) {
       <dt className="text-xs font-medium tracking-wide text-neutral-400 uppercase">{label}</dt>
       <dd className="mt-1 text-3xl font-semibold tabular-nums">{value}</dd>
     </div>
+  );
+}
+
+function PlanCard({
+  name,
+  sellers,
+  total,
+  onPass = 0,
+  gold = false,
+  href,
+}: {
+  name: string;
+  sellers: number;
+  total: number;
+  onPass?: number;
+  gold?: boolean;
+  href: string;
+}) {
+  const share = total > 0 ? Math.round((sellers / total) * 100) : 0;
+  return (
+    <Link
+      href={href}
+      className={`block rounded-lg border p-5 transition-colors ${
+        gold
+          ? "border-amber-500/60 bg-linear-to-br from-amber-500/20 via-yellow-500/10 to-neutral-800 hover:border-amber-400"
+          : "border-neutral-700 bg-neutral-800 hover:border-neutral-500"
+      }`}
+    >
+      <p
+        className={`text-xs font-medium tracking-wide uppercase ${gold ? "text-amber-300" : "text-neutral-400"}`}
+      >
+        {gold ? "♛ " : ""}
+        {name} sellers
+      </p>
+      <p className={`mt-1 text-3xl font-semibold tabular-nums ${gold ? "text-amber-200" : ""}`}>
+        {sellers}
+      </p>
+      <p className="mt-1 text-xs text-neutral-500">
+        {share}% of all sellers
+        {onPass > 0 ? ` · ${onPass} on a coupon pass` : ""}
+      </p>
+    </Link>
   );
 }

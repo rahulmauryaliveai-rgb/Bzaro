@@ -6,6 +6,7 @@ import {
   confirmAddonCheckoutAction,
   confirmPlanCheckoutAction,
   startAddonCheckoutAction,
+  startPassCheckoutAction,
   startPlanCheckoutAction,
 } from "@/server/actions/billing";
 import type { CheckoutPayload, CheckoutStart } from "@/server/services/billing.service";
@@ -55,6 +56,11 @@ function useCheckout(
       const started = await start();
       if (!started.ok) {
         setStatus({ kind: "error", message: started.error });
+        return;
+      }
+      if ("free" in started) {
+        setStatus({ kind: "done", message: started.message });
+        router.refresh();
         return;
       }
       const Razorpay = await loadRazorpay();
@@ -125,15 +131,18 @@ export function SubscribeButton({
   label,
   variant = "primary",
   disabled,
+  couponCode,
 }: {
   planKey: string;
   interval: "MONTHLY" | "YEARLY";
   label: string;
   variant?: keyof typeof buttonStyles;
   disabled?: boolean;
+  /** D42: a discount coupon to apply to this subscription. */
+  couponCode?: string;
 }) {
   const { run, pending, status } = useCheckout(
-    () => startPlanCheckoutAction(planKey, interval),
+    () => startPlanCheckoutAction(planKey, interval, couponCode ?? null),
     (payload, response) =>
       confirmPlanCheckoutAction({
         subscriptionId: payload.subscriptionId ?? "",
@@ -162,14 +171,16 @@ export function AddonBuyButton({
   label,
   variant = "secondary",
   disabled,
+  couponCode,
 }: {
   kind: "LEAD_PACK" | "PAYMENT_GATEWAY" | "SHIPPING";
   label: string;
   variant?: keyof typeof buttonStyles;
   disabled?: boolean;
+  couponCode?: string;
 }) {
   const { run, pending, status } = useCheckout(
-    () => startAddonCheckoutAction(kind),
+    () => startAddonCheckoutAction(kind, couponCode ?? null),
     (payload, response) =>
       confirmAddonCheckoutAction({
         purchaseId: payload.purchaseId ?? "",
@@ -188,6 +199,34 @@ export function AddonBuyButton({
         onClick={run}
         disabled={disabled || pending}
         className={`inline-flex w-full justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${buttonStyles[variant]}`}
+      >
+        {pending ? "Opening payment…" : label}
+      </button>
+      <StatusLine status={status} />
+    </div>
+  );
+}
+
+/** D42: redeem a plan-pass coupon (e.g. Pro for 3 months for ₹1). */
+export function PassButton({ couponCode, label }: { couponCode: string; label: string }) {
+  const { run, pending, status } = useCheckout(
+    () => startPassCheckoutAction(couponCode),
+    (payload, response) =>
+      confirmAddonCheckoutAction({
+        purchaseId: payload.purchaseId ?? "",
+        orderId: payload.orderId ?? "",
+        paymentId: response["razorpay_payment_id"] ?? "",
+        signature: response["razorpay_signature"] ?? "",
+      }),
+    "Payment received — your plan is active.",
+  );
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={run}
+        disabled={pending}
+        className={`inline-flex w-full justify-center rounded-lg px-5 py-3 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${buttonStyles.accent}`}
       >
         {pending ? "Opening payment…" : label}
       </button>

@@ -38,7 +38,13 @@ export const WEB_PRESENCE_RANK: Record<WebPresence, number> = {
 export function liveSubscriptionWhere(now = new Date()): Prisma.SubscriptionWhereInput {
   return {
     OR: [
-      { status: { in: ["ACTIVE", "TRIALING"] } },
+      { status: { in: ["ACTIVE", "TRIALING"] }, expiresAtPeriodEnd: false },
+      // D42: a coupon plan pass is live only until its period ends.
+      {
+        status: { in: ["ACTIVE", "TRIALING"] },
+        expiresAtPeriodEnd: true,
+        currentPeriodEnd: { gt: now },
+      },
       { status: "PAST_DUE", gracePeriodEndsAt: { gt: now } },
     ],
   };
@@ -58,6 +64,7 @@ export async function getActivePlan(sellerId: string, client: TxClient | typeof 
       gracePeriodEndsAt: true,
       cancelAtPeriodEnd: true,
       gatewaySubscriptionId: true,
+      expiresAtPeriodEnd: true,
       plan: {
         select: {
           id: true,
@@ -260,7 +267,7 @@ export async function changeSellerPlan(params: {
  * the admin screens, plus INCOMPLETE checkouts abandoned for a day.
  */
 export async function expireLapsedSubscriptions(now = new Date()): Promise<number> {
-  const [lapsed, abandoned] = await Promise.all([
+  const [lapsed, abandoned, passes] = await Promise.all([
     db.subscription.updateMany({
       where: { status: "PAST_DUE", gracePeriodEndsAt: { lte: now } },
       data: { status: "EXPIRED" },
@@ -269,8 +276,12 @@ export async function expireLapsedSubscriptions(now = new Date()): Promise<numbe
       where: { status: "INCOMPLETE", createdAt: { lt: new Date(now.getTime() - 86_400_000) } },
       data: { status: "EXPIRED" },
     }),
+    db.subscription.updateMany({
+      where: { status: "ACTIVE", expiresAtPeriodEnd: true, currentPeriodEnd: { lte: now } },
+      data: { status: "EXPIRED" },
+    }),
   ]);
-  return lapsed.count + abandoned.count;
+  return lapsed.count + abandoned.count + passes.count;
 }
 
 /** Nightly sweep: every live seller, so a lapsed subscription downgrades. */

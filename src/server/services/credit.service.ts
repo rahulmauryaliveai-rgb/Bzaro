@@ -194,6 +194,8 @@ export async function grantMonthlyCredits(
   const subscriptions = await db.subscription.findMany({
     where: {
       status: { in: ["ACTIVE", "TRIALING"] },
+      // D42: a plan pass earns its monthly credits only while it lasts.
+      OR: [{ expiresAtPeriodEnd: false }, { currentPeriodEnd: { gt: new Date() } }],
       seller: { deletedAt: null, status: { not: "BANNED" } },
       plan: { leadCreditsPerMonth: { gt: 0 } },
     },

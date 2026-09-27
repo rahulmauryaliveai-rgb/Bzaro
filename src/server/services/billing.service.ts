@@ -26,6 +26,12 @@ import {
 } from "@/server/services/plan.service";
 import { periodKeyFor, topUpCreditsForPlanChange } from "@/server/services/credit.service";
 import type { AddonKind, BillingInterval } from "@/generated/prisma/enums";
+import { discountFor, splitInclusive, type CouponTarget } from "@/lib/billing/coupon";
+import {
+  discountForTarget,
+  findUsableCoupon,
+  recordRedemption,
+} from "@/server/services/coupon.service";
 
 /**
  * Sellers paying Bzaro (decision D41).
@@ -90,6 +96,8 @@ export function addonBasePrice(kind: AddonKind, settings: BillingSettings): numb
       return settings.paymentGatewayAddonMinor;
     case "SHIPPING":
       return settings.shippingAddonMinor;
+    case "PLAN_PASS":
+      return 0; // priced by its coupon (D42)
   }
 }
 
@@ -97,6 +105,7 @@ export const ADDON_LABEL: Record<AddonKind, string> = {
   LEAD_PACK: "Lead pack",
   PAYMENT_GATEWAY: "Payment gateway & Add to cart",
   SHIPPING: "Shipping integration",
+  PLAN_PASS: "Plan pass",
 };
 
 // ── Invoice numbers ──────────────────────────────────────────────────────────
@@ -114,7 +123,7 @@ export async function nextInvoiceNumber(tx: TxClient, prefix: string | null, at 
 // ── What a seller may buy right now ──────────────────────────────────────────
 
 export type AddonOffer = {
-  kind: AddonKind;
+  kind: Exclude<AddonKind, "PLAN_PASS">;
   label: string;
   quote: GstAmounts;
   credits?: number;
@@ -198,7 +207,11 @@ export type CheckoutPayload = {
   description: string;
 };
 
-export type CheckoutStart = { ok: true; payload: CheckoutPayload } | { ok: false; error: string };
+export type CheckoutStart =
+  | { ok: true; payload: CheckoutPayload }
+  /** Nothing to pay (a ₹0 coupon): already applied, no Razorpay window. */
+  | { ok: true; free: true; message: string }
+  | { ok: false; error: string };
 
 const TOTAL_CYCLES: Record<"MONTHLY" | "YEARLY", number> = { MONTHLY: 120, YEARLY: 10 };
 
@@ -238,6 +251,7 @@ export async function startPlanCheckout(params: {
   userId: string;
   planKey: string;
   interval: "MONTHLY" | "YEARLY";
+  couponCode?: string | null;
 }): Promise<CheckoutStart> {
   if (!isBillingGatewayConfigured()) {
     return {
@@ -302,7 +316,40 @@ export async function startPlanCheckout(params: {
     }
   }
 
-  const gatewayPlan = await ensureGatewayPlan(plan, params.interval, quote.totalMinor);
+  // D42: a discount coupon lowers the price of every cycle of this
+  // subscription. The discounted amount gets its own (uncached) gateway plan.
+  let charge = quote;
+  let couponId: string | null = null;
+  let couponCode: string | null = null;
+  if (params.couponCode) {
+    const found = await findUsableCoupon(params.sellerId, params.couponCode);
+    if (!found.ok) return { ok: false, error: found.reason };
+    const discount = discountForTarget(
+      found.coupon,
+      params.interval === "YEARLY" ? "PLAN_YEARLY" : "PLAN_MONTHLY",
+      quote.baseMinor,
+      plan.key,
+    );
+    if (discount === null) {
+      return { ok: false, error: `Coupon ${found.coupon.code} doesn't apply to this plan.` };
+    }
+    charge = withGst(quote.baseMinor - discount, settings.gstRatePercent);
+    couponId = found.coupon.id;
+    couponCode = found.coupon.code;
+    if (charge.totalMinor < 100) {
+      return { ok: false, error: "Use a plan pass coupon for plans under ₹1." };
+    }
+  }
+
+  const gatewayPlan = couponId
+    ? await createGatewayPlan({
+        period: params.interval === "YEARLY" ? "yearly" : "monthly",
+        name: `Bzaro ${plan.name} (${params.interval === "YEARLY" ? "yearly" : "monthly"}) · ${couponCode}`,
+        amountMinor: charge.totalMinor,
+        description: `Bzaro ${plan.name} plan with coupon ${couponCode}, GST included`,
+        notes: { bzaroPlanId: plan.id, bzaroPlanKey: plan.key, coupon: couponCode ?? "" },
+      }).then((r) => (r.ok ? { ok: true as const, id: r.data.id } : r))
+    : await ensureGatewayPlan(plan, params.interval, quote.totalMinor);
   if (!gatewayPlan.ok) return { ok: false, error: `Razorpay: ${gatewayPlan.error}` };
 
   // Row first, so the webhook can always find it by the gateway id.
@@ -314,6 +361,7 @@ export async function startPlanCheckout(params: {
       interval: params.interval,
       currentPeriodStart: new Date(),
       currentPeriodEnd: new Date(),
+      couponId,
     },
     select: { id: true },
   });
@@ -339,7 +387,12 @@ export async function startPlanCheckout(params: {
       action: "billing.subscription_started",
       entityType: "Subscription",
       entityId: row.id,
-      after: { plan: plan.key, interval: params.interval, totalMinor: quote.totalMinor },
+      after: {
+        plan: plan.key,
+        interval: params.interval,
+        totalMinor: charge.totalMinor,
+        coupon: couponCode,
+      },
     },
   });
 
@@ -348,9 +401,9 @@ export async function startPlanCheckout(params: {
     payload: {
       keyId: billingKeyId() ?? "",
       subscriptionId: created.data.id,
-      amountMinor: quote.totalMinor,
+      amountMinor: charge.totalMinor,
       name: "Bzaro",
-      description: `${plan.name} · ${params.interval === "YEARLY" ? "yearly" : "monthly"} (incl. GST)`,
+      description: `${plan.name} · ${params.interval === "YEARLY" ? "yearly" : "monthly"} (incl. GST)${couponCode ? ` · ${couponCode}` : ""}`,
     },
   };
 }
@@ -408,7 +461,15 @@ export async function activateGatewaySubscription(
         sellerId: true,
         status: true,
         interval: true,
-        plan: { select: { key: true, leadCreditsPerMonth: true } },
+        couponId: true,
+        plan: {
+          select: {
+            key: true,
+            leadCreditsPerMonth: true,
+            priceMinor: true,
+            yearlyPriceMinor: true,
+          },
+        },
       },
     });
     if (!sub) return null;
@@ -448,6 +509,20 @@ export async function activateGatewaySubscription(
         gatewayStatus: entity?.status ?? "active",
       },
     });
+    if (sub.couponId) {
+      const coupon = await tx.coupon.findUnique({
+        where: { id: sub.couponId },
+        select: { kind: true, percentOff: true, amountOffMinor: true },
+      });
+      const base =
+        (sub.interval === "YEARLY" ? sub.plan.yearlyPriceMinor : sub.plan.priceMinor) ?? 0;
+      await recordRedemption(tx, {
+        couponId: sub.couponId,
+        sellerId: sub.sellerId,
+        subscriptionId: sub.id,
+        discountMinor: coupon ? discountFor(coupon, base) : 0,
+      });
+    }
     await tx.auditLog.create({
       data: {
         sellerId: sub.sellerId,
@@ -605,6 +680,7 @@ export async function startAddonCheckout(params: {
   sellerId: string;
   userId: string;
   kind: AddonKind;
+  couponCode?: string | null;
 }): Promise<CheckoutStart> {
   if (!isBillingGatewayConfigured()) {
     return {
@@ -617,21 +693,129 @@ export async function startAddonCheckout(params: {
   if (!offer?.available) return { ok: false, error: offer?.reason ?? "Not available." };
 
   const settings = await getBillingSettings();
+  let quote = offer.quote;
+  let couponId: string | null = null;
+  let discountMinor = 0;
+  if (params.couponCode) {
+    const found = await findUsableCoupon(params.sellerId, params.couponCode);
+    if (!found.ok) return { ok: false, error: found.reason };
+    const discount = discountForTarget(
+      found.coupon,
+      params.kind as CouponTarget,
+      offer.quote.baseMinor,
+    );
+    if (discount === null) {
+      return { ok: false, error: `Coupon ${found.coupon.code} doesn't apply to this add-on.` };
+    }
+    discountMinor = discount;
+    couponId = found.coupon.id;
+    quote = withGst(offer.quote.baseMinor - discount, settings.gstRatePercent);
+  }
+
+  return beginPurchase({
+    sellerId: params.sellerId,
+    userId: params.userId,
+    kind: params.kind,
+    quantity: params.kind === "LEAD_PACK" ? settings.leadPackCredits : 1,
+    quote,
+    couponId,
+    discountMinor,
+    label: offer.label,
+  });
+}
+
+/**
+ * D42: redeem a PLAN_PASS coupon — e.g. Pro for 3 months for ₹1. Pays by a
+ * one-time Razorpay order (or not at all for a ₹0 pass); the plan starts on
+ * payment and simply ends when the pass does. No autopay.
+ */
+export async function startPassCheckout(params: {
+  sellerId: string;
+  userId: string;
+  couponCode: string;
+}): Promise<CheckoutStart> {
+  const found = await findUsableCoupon(params.sellerId, params.couponCode);
+  if (!found.ok) return { ok: false, error: found.reason };
+  const coupon = found.coupon;
+  if (coupon.kind !== "PLAN_PASS" || !coupon.plan || !coupon.passMonths) {
+    return { ok: false, error: "This coupon is a discount — use it at checkout." };
+  }
+
+  const current = await getActivePlan(params.sellerId);
+  if (current && current.plan.priceMinor > 0) {
+    const until = current.currentPeriodEnd.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    return {
+      ok: false,
+      error: `You already have ${current.plan.name} until ${until}. A plan pass can be used from the Free plan.`,
+    };
+  }
+
+  const settings = await getBillingSettings();
+  const total = coupon.passPriceMinor ?? 0;
+  if (total > 0 && !isBillingGatewayConfigured()) {
+    return { ok: false, error: "Online payment is not switched on yet." };
+  }
+  const months = coupon.passMonths;
+  return beginPurchase({
+    sellerId: params.sellerId,
+    userId: params.userId,
+    kind: "PLAN_PASS",
+    quantity: 1,
+    quote: splitInclusive(total, settings.gstRatePercent),
+    couponId: coupon.id,
+    discountMinor: 0,
+    label: `${coupon.plan.name} for ${months} month${months === 1 ? "" : "s"}`,
+    planId: coupon.plan.id,
+    passMonths: months,
+  });
+}
+
+/** Create the Purchase and, when there is anything to pay, its Razorpay order. */
+async function beginPurchase(params: {
+  sellerId: string;
+  userId: string;
+  kind: AddonKind;
+  quantity: number;
+  quote: GstAmounts;
+  couponId: string | null;
+  discountMinor: number;
+  label: string;
+  planId?: string;
+  passMonths?: number;
+}): Promise<CheckoutStart> {
   const purchase = await db.purchase.create({
     data: {
       sellerId: params.sellerId,
       kind: params.kind,
-      quantity: params.kind === "LEAD_PACK" ? settings.leadPackCredits : 1,
-      baseMinor: offer.quote.baseMinor,
-      taxMinor: offer.quote.taxMinor,
-      totalMinor: offer.quote.totalMinor,
+      quantity: params.quantity,
+      baseMinor: params.quote.baseMinor,
+      taxMinor: params.quote.taxMinor,
+      totalMinor: params.quote.totalMinor,
       actorId: params.userId,
+      couponId: params.couponId,
+      discountMinor: params.discountMinor,
+      planId: params.planId ?? null,
+      passMonths: params.passMonths ?? null,
     },
     select: { id: true },
   });
 
+  // Nothing to pay: apply it now. Razorpay cannot take a ₹0 order.
+  if (params.quote.totalMinor === 0) {
+    await fulfillPurchase(purchase.id, null);
+    return { ok: true, free: true, message: `${params.label} is active.` };
+  }
+  if (params.quote.totalMinor < 100) {
+    await db.purchase.update({ where: { id: purchase.id }, data: { status: "FAILED" } });
+    return { ok: false, error: "The amount to pay must be at least ₹1." };
+  }
+
   const order = await createGatewayOrder({
-    amountMinor: offer.quote.totalMinor,
+    amountMinor: params.quote.totalMinor,
     receipt: purchase.id,
     notes: { purchaseId: purchase.id, sellerId: params.sellerId, kind: params.kind },
   });
@@ -650,9 +834,9 @@ export async function startAddonCheckout(params: {
       keyId: billingKeyId() ?? "",
       orderId: order.data.id,
       purchaseId: purchase.id,
-      amountMinor: offer.quote.totalMinor,
+      amountMinor: params.quote.totalMinor,
       name: "Bzaro",
-      description: `${offer.label} (incl. GST)`,
+      description: `${params.label} (incl. GST)`,
     },
   };
 }
@@ -692,23 +876,61 @@ export async function confirmAddonCheckout(params: {
 /**
  * CREATED → PAID and apply the effect, once. The guarded updateMany is the
  * lock: a duplicate callback or webhook matches zero rows and stops there.
+ * `paymentId` is null for a ₹0 coupon purchase.
  */
-export async function fulfillPurchase(purchaseId: string, paymentId: string): Promise<boolean> {
+export async function fulfillPurchase(
+  purchaseId: string,
+  paymentId: string | null,
+): Promise<boolean> {
   const settings = await getBillingSettings();
+  const now = new Date();
+  let applied: {
+    ok: boolean;
+    pass?: {
+      sellerId: string;
+      subscriptionId: string;
+      credits: number | null;
+      previousGatewayIds: string[];
+    };
+  };
   try {
-    return await db.$transaction(async (tx) => {
+    applied = await db.$transaction(async (tx) => {
       const claimed = await tx.purchase.updateMany({
         where: { id: purchaseId, status: { in: ["CREATED", "FAILED"] } },
-        data: { status: "PAID", gatewayPaymentId: paymentId, paidAt: new Date() },
+        data: { status: "PAID", gatewayPaymentId: paymentId, paidAt: now },
       });
-      if (claimed.count !== 1) return false;
+      if (claimed.count !== 1) return { ok: false };
 
       const purchase = await tx.purchase.findUniqueOrThrow({
         where: { id: purchaseId },
-        select: { id: true, sellerId: true, kind: true, quantity: true, actorId: true },
+        select: {
+          id: true,
+          sellerId: true,
+          kind: true,
+          quantity: true,
+          actorId: true,
+          totalMinor: true,
+          couponId: true,
+          discountMinor: true,
+          planId: true,
+          passMonths: true,
+        },
       });
-      const invoiceNumber = await nextInvoiceNumber(tx, settings.invoicePrefix);
-      await tx.purchase.update({ where: { id: purchase.id }, data: { invoiceNumber } });
+      // No tax invoice for a free (₹0) coupon purchase.
+      const invoiceNumber =
+        purchase.totalMinor > 0 ? await nextInvoiceNumber(tx, settings.invoicePrefix) : null;
+      if (invoiceNumber) {
+        await tx.purchase.update({ where: { id: purchase.id }, data: { invoiceNumber } });
+      }
+
+      let pass:
+        | {
+            sellerId: string;
+            subscriptionId: string;
+            credits: number | null;
+            previousGatewayIds: string[];
+          }
+        | undefined;
 
       if (purchase.kind === "LEAD_PACK") {
         const seller = await tx.seller.update({
@@ -722,19 +944,64 @@ export async function fulfillPurchase(purchaseId: string, paymentId: string): Pr
             delta: purchase.quantity,
             balanceAfter: seller.creditBalance,
             reason: "ADDON_PURCHASE",
-            note: `Lead pack ${invoiceNumber}`,
+            note: `Lead pack ${invoiceNumber ?? "(coupon)"}`,
             actorId: purchase.actorId,
           },
         });
+      } else if (purchase.kind === "PLAN_PASS") {
+        if (!purchase.planId || !purchase.passMonths) throw new Error("Plan pass without a plan");
+        const end = new Date(now);
+        end.setUTCMonth(end.getUTCMonth() + purchase.passMonths);
+        const previous = await tx.subscription.findMany({
+          where: { sellerId: purchase.sellerId, ...liveSubscriptionWhere(now) },
+          select: { id: true, gatewaySubscriptionId: true },
+        });
+        if (previous.length > 0) {
+          await tx.subscription.updateMany({
+            where: { id: { in: previous.map((p) => p.id) } },
+            data: { status: "CANCELED", canceledAt: now, cancelAtPeriodEnd: false },
+          });
+        }
+        const sub = await tx.subscription.create({
+          data: {
+            sellerId: purchase.sellerId,
+            planId: purchase.planId,
+            status: "ACTIVE",
+            currentPeriodStart: now,
+            currentPeriodEnd: end,
+            expiresAtPeriodEnd: true,
+            cancelAtPeriodEnd: true,
+            couponId: purchase.couponId,
+          },
+          select: { id: true, plan: { select: { leadCreditsPerMonth: true } } },
+        });
+        pass = {
+          sellerId: purchase.sellerId,
+          subscriptionId: sub.id,
+          credits: sub.plan.leadCreditsPerMonth,
+          previousGatewayIds: previous
+            .map((p) => p.gatewaySubscriptionId)
+            .filter((id): id is string => Boolean(id)),
+        };
       } else {
         const data =
           purchase.kind === "PAYMENT_GATEWAY"
             ? { paymentsEnabled: true }
             : { shippingEnabled: true };
+        const note = invoiceNumber ?? "coupon";
         await tx.sellerFeature.upsert({
           where: { sellerId: purchase.sellerId },
-          create: { sellerId: purchase.sellerId, ...data, source: "ADDON", note: invoiceNumber },
-          update: { ...data, source: "ADDON", note: invoiceNumber },
+          create: { sellerId: purchase.sellerId, ...data, source: "ADDON", note },
+          update: { ...data, source: "ADDON", note },
+        });
+      }
+
+      if (purchase.couponId) {
+        await recordRedemption(tx, {
+          couponId: purchase.couponId,
+          sellerId: purchase.sellerId,
+          purchaseId: purchase.id,
+          discountMinor: purchase.discountMinor,
         });
       }
 
@@ -742,19 +1009,41 @@ export async function fulfillPurchase(purchaseId: string, paymentId: string): Pr
         data: {
           actorId: purchase.actorId,
           sellerId: purchase.sellerId,
-          action: "billing.addon_paid",
+          action:
+            purchase.kind === "PLAN_PASS" ? "billing.plan_pass_started" : "billing.addon_paid",
           entityType: "Purchase",
           entityId: purchase.id,
-          after: { kind: purchase.kind, quantity: purchase.quantity, invoiceNumber },
+          after: {
+            kind: purchase.kind,
+            quantity: purchase.quantity,
+            invoiceNumber,
+            couponId: purchase.couponId,
+            passMonths: purchase.passMonths,
+          },
         },
       });
-      return true;
+      return { ok: true, pass };
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
       return false;
     throw error;
   }
+
+  // A plan pass changes the plan: purge caches and grant this month's credits.
+  if (applied.ok && applied.pass) {
+    for (const id of applied.pass.previousGatewayIds) {
+      await cancelGatewaySubscription(id, false).catch(() => undefined);
+    }
+    await recomputeWebPresence(applied.pass.sellerId);
+    await topUpCreditsForPlanChange({
+      sellerId: applied.pass.sellerId,
+      subscriptionId: applied.pass.subscriptionId,
+      monthlyCredits: applied.pass.credits,
+      periodKey: periodKeyFor(now),
+    });
+  }
+  return applied.ok;
 }
 
 export async function fulfillPurchaseByOrder(orderId: string, paymentId: string): Promise<boolean> {
@@ -797,6 +1086,7 @@ export async function getBillingHistory(sellerId: string) {
         id: true,
         kind: true,
         quantity: true,
+        passMonths: true,
         totalMinor: true,
         status: true,
         invoiceNumber: true,
@@ -818,6 +1108,8 @@ export type InvoiceLine = {
   taxMinor: number;
   totalMinor: number;
   paymentRef: string | null;
+  /** D42: "Coupon LAUNCH50: ₹499.50 off" — shown under the line. */
+  discountNote?: string | null;
 };
 
 /**
@@ -867,16 +1159,30 @@ export async function getInvoiceLine(
         taxMinor: true,
         totalMinor: true,
         gatewayPaymentId: true,
+        discountMinor: true,
+        passMonths: true,
+        planId: true,
+        coupon: { select: { code: true } },
       },
     });
     if (!purchase?.invoiceNumber) return null;
+    const passPlan =
+      purchase.kind === "PLAN_PASS" && purchase.planId
+        ? await db.plan.findUnique({ where: { id: purchase.planId }, select: { name: true } })
+        : null;
     return {
       number: purchase.invoiceNumber,
       date: purchase.paidAt ?? purchase.createdAt,
       description:
         purchase.kind === "LEAD_PACK"
           ? `Bzaro lead pack — ${purchase.quantity} lead credits`
-          : `Bzaro ${ADDON_LABEL[purchase.kind]} add-on (one time)`,
+          : purchase.kind === "PLAN_PASS"
+            ? `Bzaro ${passPlan?.name ?? ""} plan — ${purchase.passMonths}-month pass (coupon ${purchase.coupon?.code ?? ""})`
+            : `Bzaro ${ADDON_LABEL[purchase.kind]} add-on (one time)`,
+      discountNote:
+        purchase.discountMinor > 0 && purchase.coupon
+          ? `Coupon ${purchase.coupon.code}: ₹${(purchase.discountMinor / 100).toFixed(2)} off the list price`
+          : null,
       baseMinor: purchase.baseMinor,
       taxMinor: purchase.taxMinor,
       totalMinor: purchase.totalMinor,

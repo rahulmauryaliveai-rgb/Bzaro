@@ -101,7 +101,12 @@ export default async function InvoicePage({ params }: Props) {
           </thead>
           <tbody>
             <tr className="border-b border-neutral-100">
-              <td className="py-3">{line.description}</td>
+              <td className="py-3">
+                {line.description}
+                {line.discountNote ? (
+                  <span className="block text-xs text-neutral-500">{line.discountNote}</span>
+                ) : null}
+              </td>
               <td className="py-3">{settings.sacCode ?? "—"}</td>
               <td className="py-3 text-right tabular-nums">{inr(line.baseMinor)}</td>
             </tr>

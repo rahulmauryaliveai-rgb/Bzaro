@@ -79,7 +79,12 @@ export async function findMatchedSellers(
           subscriptions: {
             where: {
               OR: [
-                { status: { in: ["ACTIVE", "TRIALING"] } },
+                { status: { in: ["ACTIVE", "TRIALING"] }, expiresAtPeriodEnd: false },
+                {
+                  status: { in: ["ACTIVE", "TRIALING"] },
+                  expiresAtPeriodEnd: true,
+                  currentPeriodEnd: { gt: now },
+                },
                 { status: "PAST_DUE", gracePeriodEndsAt: { gt: now } },
               ],
             },

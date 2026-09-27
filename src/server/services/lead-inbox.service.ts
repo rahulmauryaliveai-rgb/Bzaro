@@ -52,7 +52,16 @@ export async function getEntitlement(sellerId: string): Promise<Entitlement> {
     select: {
       creditBalance: true,
       subscriptions: {
-        where: { status: { in: ["ACTIVE", "TRIALING"] } },
+        where: {
+          OR: [
+            { status: { in: ["ACTIVE", "TRIALING"] }, expiresAtPeriodEnd: false },
+            {
+              status: { in: ["ACTIVE", "TRIALING"] },
+              expiresAtPeriodEnd: true,
+              currentPeriodEnd: { gt: new Date() },
+            },
+          ],
+        },
         orderBy: { currentPeriodEnd: "desc" },
         take: 1,
         select: { plan: { select: { name: true, leadCreditsPerMonth: true } } },
@@ -84,7 +93,12 @@ export async function getLeadAllowance(sellerId: string, now = new Date()) {
         subscriptions: {
           where: {
             OR: [
-              { status: { in: ["ACTIVE", "TRIALING"] } },
+              { status: { in: ["ACTIVE", "TRIALING"] }, expiresAtPeriodEnd: false },
+              {
+                status: { in: ["ACTIVE", "TRIALING"] },
+                expiresAtPeriodEnd: true,
+                currentPeriodEnd: { gt: now },
+              },
               { status: "PAST_DUE", gracePeriodEndsAt: { gt: now } },
             ],
           },

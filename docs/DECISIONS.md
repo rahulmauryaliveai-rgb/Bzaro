@@ -993,3 +993,27 @@ the edge step is later work.
 
 **Plan switches** start the new plan immediately and end the old one with no
 pro-rata credit; cancelling autopay keeps the plan to the end of the period.
+
+## D42 — Coupons: plan passes and discounts
+
+**Decision.** Admins create coupons at `/admin/coupons`; sellers enter them on
+Plan & billing ("Have a coupon?"). Three kinds:
+
+- **Plan pass** — a plan for N months at a fixed price that includes GST
+  (e.g. `PRO3FOR1`: Pro for 3 months for ₹1). Paid by a one-time Razorpay
+  order, or applied at once when the price is ₹0. It creates a subscription
+  with `expiresAtPeriodEnd = true`: live only until `currentPeriodEnd`, never
+  renews, no autopay. Usable only from the Free plan.
+- **% off / ₹ off** — taken off the price before GST, for chosen targets
+  (monthly plans, yearly plans, lead packs, payment-gateway and shipping
+  add-ons) and optionally chosen plans. On an autopay plan the discounted
+  amount becomes that subscription's price for every renewal (Razorpay charges
+  one fixed amount per cycle); a one-off plan offer is a plan pass.
+
+Limits: start/end date, total uses, uses per seller, new sellers only (never
+paid Bzaro). A use is recorded (`CouponRedemption`) only when the payment is
+confirmed — an abandoned checkout never burns a seller's one go. Invoices show
+the coupon; a ₹0 pass gets no tax invoice.
+
+`liveSubscriptionWhere` gained the pass rule, and the nightly
+`recompute-web-presence` job marks finished passes EXPIRED.

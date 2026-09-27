@@ -267,6 +267,16 @@ enum AddonKind {
   LEAD_PACK
   PAYMENT_GATEWAY
   SHIPPING
+  /// A coupon's fixed-price plan pass, e.g. Pro for 3 months for ₹1 (D42).
+  PLAN_PASS
+}
+
+/// D42 coupon kinds.
+enum CouponKind {
+  /// A plan for N months at a fixed price (GST included), no autopay.
+  PLAN_PASS
+  PERCENT_OFF
+  FLAT_OFF
 }
 
 enum PurchaseStatus {
@@ -561,6 +571,7 @@ model Seller {
   savedBy       SavedSeller[]
   purchases     Purchase[]
   refunds       RefundRequest[]
+  couponRedemptions CouponRedemption[]
   // searchVector tsvector column + GIN index: see migration SQL.
 
   @@index([status, deletedAt])
@@ -1590,6 +1601,10 @@ model Subscription {
   interval              BillingInterval @default(MONTHLY)
   /// Razorpay's own status string, for the admin screen.
   gatewayStatus         String?
+  /// D42: a coupon plan pass — live only until currentPeriodEnd, never
+  /// renews. Ordinary rows (admin-assigned, autopay) ignore the period end.
+  expiresAtPeriodEnd    Boolean   @default(false)
+  couponId              String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1649,13 +1664,81 @@ model Purchase {
   paidAt           DateTime?
   /// User who clicked Buy.
   actorId          String?
+  /// D42: the coupon applied, what it took off (before GST), and — for a
+  /// PLAN_PASS — which plan for how many months.
+  couponId         String?
+  discountMinor    Int            @default(0)
+  planId           String?
+  passMonths       Int?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  seller Seller  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  coupon Coupon? @relation(fields: [couponId], references: [id])
 
   @@index([sellerId, createdAt(sort: Desc)])
   @@index([status, createdAt])
+}
+
+/// Discount coupons (D42), created on /admin/coupons.
+model Coupon {
+  id          String     @id @default(cuid())
+  /// Upper-case, what the seller types.
+  code        String     @unique @db.Citext
+  description String?
+  kind        CouponKind
+
+  // PLAN_PASS
+  planId         String?
+  passMonths     Int?
+  /// What the seller pays for the whole pass, GST INCLUDED (₹1 = 100).
+  passPriceMinor Int?
+
+  // PERCENT_OFF / FLAT_OFF — taken off the price before GST.
+  percentOff     Int?
+  amountOffMinor Int?
+  /// What a discount applies to: PLAN_MONTHLY, PLAN_YEARLY, LEAD_PACK,
+  /// PAYMENT_GATEWAY, SHIPPING. Empty = everything.
+  appliesTo      String[]
+  /// Plan keys a plan discount is limited to. Empty = every paid plan.
+  planKeys       String[]
+
+  startsAt        DateTime?
+  endsAt          DateTime?
+  /// Total redemptions allowed; null = unlimited.
+  maxRedemptions  Int?
+  perSellerLimit  Int       @default(1)
+  /// Only sellers who have never paid Bzaro anything.
+  newSellersOnly  Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  redemptionCount Int       @default(0)
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  redemptions CouponRedemption[]
+  purchases   Purchase[]
+
+  @@index([isActive, endsAt])
+}
+
+/// One successful use of a coupon. Written when the payment is confirmed (or
+/// at once for a ₹0 pass), never at checkout start.
+model CouponRedemption {
+  id             String   @id @default(cuid())
+  couponId       String
+  sellerId       String
+  purchaseId     String?  @unique
+  subscriptionId String?  @unique
+  discountMinor  Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, createdAt(sort: Desc)])
+  @@index([sellerId, couponId])
 }
 
 /// "I am not getting leads in my category" (D41). The seller asks; an admin
