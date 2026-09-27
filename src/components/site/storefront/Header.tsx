@@ -83,8 +83,8 @@ export function StorefrontHeader({
                 </span>
               ) : null}
               {seller.trustSeal ? (
-                <span className="inline-flex items-center gap-1 font-semibold">
-                  <span aria-hidden="true">★</span> Trust Seal
+                <span className="inline-flex items-center gap-1 rounded-full bg-linear-to-r from-amber-400 via-yellow-300 to-amber-400 px-2 py-0.5 font-bold text-amber-950">
+                  <span aria-hidden="true">♛</span> Gold · Trust Seal
                 </span>
               ) : null}
             </div>

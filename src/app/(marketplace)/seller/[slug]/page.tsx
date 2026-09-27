@@ -80,8 +80,18 @@ export default async function MarketplaceSellerPage({ params }: Props) {
 
       <MarketplaceBreadcrumbs trail={trail} />
 
-      <header className="flex flex-wrap items-start gap-5">
-        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100">
+      <header
+        className={`flex flex-wrap items-start gap-5 ${
+          seller.trustSeal
+            ? "rounded-2xl border border-amber-300 bg-linear-to-br from-amber-50 via-yellow-50/50 to-white p-5 ring-1 ring-amber-200"
+            : ""
+        }`}
+      >
+        <div
+          className={`h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-neutral-100 ${
+            seller.trustSeal ? "border-amber-400 ring-2 ring-amber-300" : "border-neutral-200"
+          }`}
+        >
           {seller.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

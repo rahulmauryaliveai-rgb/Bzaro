@@ -24,7 +24,13 @@ export function ProductResultCard({ hit }: { hit: ProductHit }) {
   const locality = [hit.sellerCity, hit.sellerState].filter(Boolean).join(", ");
 
   return (
-    <article className="group hover:border-brand-300 hover:shadow-brand-900/5 flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg">
+    <article
+      className={`group flex flex-col overflow-hidden rounded-2xl border bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+        hit.sellerTrustSeal
+          ? "border-amber-300 ring-1 ring-amber-200 hover:border-amber-400 hover:shadow-amber-900/10"
+          : "hover:border-brand-300 hover:shadow-brand-900/5 border-neutral-200"
+      }`}
+    >
       <Link href={`/product/${hit.sellerSlug}/${hit.slug}`} className="flex flex-1 flex-col">
         <div className="aspect-4/3 w-full overflow-hidden bg-neutral-100">
           {hit.imageUrl ? (
@@ -87,7 +93,13 @@ export function SellerResultCard({ hit }: { hit: SellerHit }) {
   const locality = [hit.city, hit.state].filter(Boolean).join(", ");
 
   return (
-    <article className="hover:border-brand-300 hover:shadow-brand-900/5 flex gap-4 rounded-2xl border border-neutral-200 bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg">
+    <article
+      className={`flex gap-4 rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+        hit.trustSeal
+          ? "border-amber-300 bg-linear-to-br from-amber-50 via-yellow-50/40 to-white ring-1 ring-amber-200 hover:border-amber-400 hover:shadow-amber-900/10"
+          : "hover:border-brand-300 hover:shadow-brand-900/5 border-neutral-200 bg-white"
+      }`}
+    >
       <div className="bg-brand-50 h-14 w-14 shrink-0 overflow-hidden rounded-xl">
         {hit.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element

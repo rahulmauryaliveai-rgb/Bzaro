@@ -116,6 +116,7 @@ const buttonStyles = {
   primary: "bg-brand-700 hover:bg-brand-600 text-white",
   secondary: "border-brand-200 text-brand-800 hover:bg-brand-50 border bg-white",
   accent: "bg-accent-600 hover:bg-accent-700 text-white",
+  gold: "bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-amber-950 shadow-sm shadow-amber-900/20 hover:from-amber-600 hover:via-yellow-500 hover:to-amber-600",
 } as const;
 
 export function SubscribeButton({

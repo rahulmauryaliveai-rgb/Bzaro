@@ -7,6 +7,9 @@ import { DashboardNav } from "@/components/dashboard/DashboardNav";
 import { SignOutButton } from "@/components/shared/SignOutButton";
 import "../../globals.css";
 import { DemoBanner } from "@/components/shared/DemoBanner";
+import Link from "next/link";
+import { Crown } from "lucide-react";
+import { getActivePlan } from "@/server/services/plan.service";
 
 /**
  * Seller dashboard shell.
@@ -39,6 +42,8 @@ export const metadata: Metadata = {
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const scope = await requireSeller();
+  const subscription = await getActivePlan(scope.sellerId);
+  const plan = subscription?.plan;
 
   return (
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
@@ -52,6 +57,30 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <div className="mb-6">
               <p className="text-xs tracking-wide text-neutral-500 uppercase">Signed in as</p>
               <p className="truncate font-medium">{scope.sellerSlug}</p>
+              {plan?.trustSeal ? (
+                <Link
+                  href="/dashboard/billing"
+                  className="mt-1 inline-flex items-center gap-1 rounded-full bg-linear-to-r from-amber-400 via-yellow-300 to-amber-400 px-2.5 py-0.5 text-xs font-bold text-amber-950 shadow-sm"
+                >
+                  <Crown className="h-3.5 w-3.5" aria-hidden="true" />
+                  {plan.name} member
+                </Link>
+              ) : plan && plan.priceMinor > 0 ? (
+                <Link
+                  href="/dashboard/billing"
+                  className="bg-brand-50 text-brand-800 mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                >
+                  {plan.name} plan
+                </Link>
+              ) : (
+                <Link
+                  href="/dashboard/billing"
+                  className="mt-1 inline-flex rounded-full bg-neutral-200 px-2.5 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-300"
+                >
+                  Free · Upgrade
+                </Link>
+              )}
+              <br />
               <a
                 href={sellerSiteUrl(scopeSurface(scope))}
                 target="_blank"

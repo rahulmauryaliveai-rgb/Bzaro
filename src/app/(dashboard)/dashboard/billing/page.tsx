@@ -132,7 +132,7 @@ export default async function BillingPage({ searchParams }: Props) {
           ctaLabel="Choose plan"
           renderCta={
             online
-              ? (plan, { isCurrent, isHighlight }) => {
+              ? (plan, { isCurrent, isHighlight, isGold }) => {
                   if (plan.priceMinor === 0) {
                     return isCurrent ? (
                       <span className="inline-flex w-full justify-center rounded-lg border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-500">
@@ -195,7 +195,7 @@ export default async function BillingPage({ searchParams }: Props) {
                         <SubscribeButton
                           planKey={plan.key}
                           interval="MONTHLY"
-                          variant={isHighlight ? "primary" : "secondary"}
+                          variant={isGold ? "gold" : isHighlight ? "primary" : "secondary"}
                           label={`Pay monthly · ${formatMoney(monthly.totalMinor, "INR")}`}
                         />
                       ) : null}
@@ -203,7 +203,9 @@ export default async function BillingPage({ searchParams }: Props) {
                         <SubscribeButton
                           planKey={plan.key}
                           interval="YEARLY"
-                          variant={onYearly || isHighlight ? "primary" : "secondary"}
+                          variant={
+                            isGold ? "gold" : onYearly || isHighlight ? "primary" : "secondary"
+                          }
                           label={`${paidAutopay ? "Upgrade" : "Pay"} yearly · ${formatMoney(yearly.totalMinor, "INR")}`}
                         />
                       ) : null}
