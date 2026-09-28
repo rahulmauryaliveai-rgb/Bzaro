@@ -54,10 +54,12 @@ export async function suggestCategories(input: string, limit = 6): Promise<Categ
             SELECT 1 FROM unnest(c."keywords") k
             WHERE k <> '' AND (${lower} LIKE '%' || k || '%' OR k LIKE ${`${lower}%`})
           ) THEN 0.88 ELSE 0 END,
-          CASE WHEN ${words.length > 0} AND EXISTS (
-            SELECT 1 FROM unnest(${words}::text[]) w
+          (
+            SELECT CASE WHEN count(*) = 0 THEN 0
+              ELSE 0.55 + 0.3 * count(*)::float / ${Math.max(words.length, 1)} END
+            FROM unnest(${words}::text[]) w
             WHERE lower(c."name") ~ ('\\m' || w)
-          ) THEN 0.6 ELSE 0 END,
+          ),
           word_similarity(${q}, c."name"),
           word_similarity(c."name", ${q}) * 0.9
         )::float AS score
@@ -78,17 +80,11 @@ export async function suggestCategories(input: string, limit = 6): Promise<Categ
       LIMIT 4`,
   ]);
 
-  const scores = new Map<string, number>();
-  for (const row of byTree) {
-    if (row.score >= 0.4) scores.set(row.id, row.score + row.depth * 0.02);
-  }
-  for (const row of byCatalogue) {
-    const bonus = 0.78 + Math.min(Number(row.n), 10) * 0.01;
-    scores.set(row.categoryId, Math.max(scores.get(row.categoryId) ?? 0, bonus));
-  }
-  if (scores.size === 0) return [];
-
-  const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
+  const ranked = mergeSuggestionScores(
+    byTree,
+    byCatalogue.map((row) => ({ categoryId: row.categoryId, n: Number(row.n) })),
+  ).slice(0, limit);
+  if (ranked.length === 0) return [];
   const categories = await db.category.findMany({
     where: { id: { in: ranked.map(([id]) => id) }, isActive: true },
     select: { id: true, name: true, ancestorIds: true },
@@ -117,6 +113,33 @@ export async function suggestCategories(input: string, limit = 6): Promise<Categ
       },
     ];
   });
+}
+
+/**
+ * Merge the two signals into one ranking.
+ *
+ * The category's own name/keywords lead. The catalogue only supports it: a
+ * category that also holds matching products gets a small boost, and a
+ * category found *only* through products tops out below a half-matched name —
+ * one seller filing "CCTV camera" under Networking must not outrank
+ * "CCTV & Surveillance".
+ */
+export function mergeSuggestionScores(
+  tree: ReadonlyArray<{ id: string; score: number; depth: number }>,
+  catalogue: ReadonlyArray<{ categoryId: string; n: number }>,
+): Array<[string, number]> {
+  const scores = new Map<string, number>();
+  for (const row of tree) {
+    if (row.score >= 0.4) scores.set(row.id, row.score + row.depth * 0.02);
+  }
+  for (const row of catalogue) {
+    const fromTree = scores.get(row.categoryId);
+    scores.set(
+      row.categoryId,
+      fromTree !== undefined ? fromTree + 0.08 : 0.55 + Math.min(row.n, 10) * 0.01,
+    );
+  }
+  return [...scores.entries()].sort((a, b) => b[1] - a[1]);
 }
 
 /** Admin input "CCTV, Camera ,dvr" → ["cctv","camera","dvr"]. */
