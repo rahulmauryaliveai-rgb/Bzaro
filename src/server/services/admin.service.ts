@@ -89,6 +89,7 @@ export async function getSellerForAdmin(id: string) {
       id: true,
       slug: true,
       webPresence: true,
+      seoNoindex: true,
       businessName: true,
       legalName: true,
       tagline: true,

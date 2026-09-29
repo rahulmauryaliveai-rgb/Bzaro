@@ -187,7 +187,7 @@ export function listSitemapCategories() {
       }
       if (ids.size === 0) return [];
       return db.category.findMany({
-        where: { id: { in: [...ids] }, isActive: true },
+        where: { id: { in: [...ids] }, isActive: true, noindex: false },
         orderBy: { path: "asc" },
         take: SITEMAP_PAGE_SIZE,
         select: { path: true },

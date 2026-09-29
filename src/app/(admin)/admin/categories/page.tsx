@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
 import { listCategoryTree, type AdminCategory } from "@/server/services/admin-taxonomy.service";
 import {
@@ -167,6 +168,12 @@ function NodeEditor({
       <span className="text-xs text-neutral-500">
         {node.sellerCount}s · {node.productCount}p
       </span>
+      <Link
+        href={`/admin/categories/${node.id}`}
+        className="text-xs text-sky-300 underline underline-offset-2 hover:text-sky-200"
+      >
+        SEO &amp; page
+      </Link>
       {compact && !leaf && node.depth === 1 ? (
         <form action={createCategoryAction} className="ml-auto flex items-end gap-2">
           <input type="hidden" name="parentId" value={node.id} />

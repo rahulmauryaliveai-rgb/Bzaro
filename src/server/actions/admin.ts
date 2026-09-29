@@ -11,6 +11,7 @@ import {
   verifySeller,
 } from "@/server/services/admin.service";
 import { db } from "@/lib/db";
+import { recomputeIndexability } from "@/server/services/indexability.service";
 import { applyTemplate } from "@/server/services/seller.service";
 import { setSellerFeatures } from "@/server/services/integration.service";
 import {
@@ -258,5 +259,28 @@ export async function setSellerFeaturesAction(formData: FormData): Promise<void>
     parsed.data.note,
   );
 
+  revalidatePath(`/admin/sellers/${parsed.data.sellerId}`);
+}
+
+/** D44: hide a seller's pages from search engines (or undo it). */
+export async function setSellerSeoNoindexAction(formData: FormData): Promise<void> {
+  const user = await requirePermission("admin:seller:website");
+  const parsed = z
+    .object({ sellerId: z.string().cuid(), hidden: z.enum(["0", "1"]) })
+    .safeParse({ sellerId: formData.get("sellerId"), hidden: formData.get("hidden") });
+  if (!parsed.success) return;
+
+  const hidden = parsed.data.hidden === "1";
+  await db.seller.update({ where: { id: parsed.data.sellerId }, data: { seoNoindex: hidden } });
+  await db.auditLog.create({
+    data: {
+      actorId: user.id,
+      sellerId: parsed.data.sellerId,
+      action: hidden ? "seller.seo_hidden" : "seller.seo_shown",
+      entityType: "Seller",
+      entityId: parsed.data.sellerId,
+    },
+  });
+  await recomputeIndexability(parsed.data.sellerId);
   revalidatePath(`/admin/sellers/${parsed.data.sellerId}`);
 }

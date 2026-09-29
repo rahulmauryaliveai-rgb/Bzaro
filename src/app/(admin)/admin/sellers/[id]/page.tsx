@@ -14,7 +14,11 @@ import {
 import { StatusBadge } from "@/app/(admin)/admin/sellers/page";
 import { sellerSiteUrl } from "@/lib/utils/url";
 import { changePlanAction } from "@/server/actions/billing";
-import { adminSetTemplateAction, setSellerFeaturesAction } from "@/server/actions/admin";
+import {
+  adminSetTemplateAction,
+  setSellerFeaturesAction,
+  setSellerSeoNoindexAction,
+} from "@/server/actions/admin";
 import { getSellerFeatures } from "@/server/services/integration.service";
 import { listActiveTemplates } from "@/server/services/seller.service";
 import { getActivePlan, listPublicPlans } from "@/server/services/plan.service";
@@ -131,6 +135,23 @@ export default async function AdminSellerDetailPage({ params }: Props) {
           }
         />
         <Row label="Description" value={`${seller.description?.length ?? 0} characters`} />
+        {canEditWebsite ? (
+          <form action={setSellerSeoNoindexAction} className="mt-3 flex items-center gap-3 text-sm">
+            <input type="hidden" name="sellerId" value={seller.id} />
+            <input type="hidden" name="hidden" value={seller.seoNoindex ? "0" : "1"} />
+            <button
+              type="submit"
+              className="rounded-md border border-neutral-600 px-3 py-1.5 hover:bg-neutral-700"
+            >
+              {seller.seoNoindex ? "Show in Google again" : "Hide from Google"}
+            </button>
+            <span className="text-xs text-neutral-500">
+              {seller.seoNoindex
+                ? "Hidden by an admin — pages are noindex and out of the sitemap."
+                : "For spam, disputes or duplicate listings. The seller's pages stay online."}
+            </span>
+          </form>
+        ) : null}
       </Section>
 
       <Section title="Verification documents">

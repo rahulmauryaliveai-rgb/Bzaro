@@ -71,6 +71,7 @@ export async function recomputeIndexability(sellerId: string): Promise<Eligibili
       verifiedAt: true,
       deletedAt: true,
       webPresence: true,
+      seoNoindex: true,
       website: { select: { indexable: true, publishedAt: true } },
       members: {
         where: { role: "SELLER_OWNER" },
@@ -116,6 +117,14 @@ export async function recomputeIndexability(sellerId: string): Promise<Eligibili
     // a condition of that page being indexed. Every quality bar still applies.
     seller.webPresence === "CATALOGUE" ? { ...rules, requirePublishedWebsite: false } : rules,
   );
+
+  // D44: an admin can hide a seller from search whatever the gate says. The
+  // score and checklist are still computed, so the seller's dashboard still
+  // shows what to fix.
+  if (seller.seoNoindex && result.eligible) {
+    result.eligible = false;
+    result.blockReason = "hidden_by_admin";
+  }
 
   const changed = seller.website?.indexable !== result.eligible;
 

@@ -9,8 +9,10 @@ import {
   createCategory,
   createLocation,
   updateCategory,
+  updateCategorySeo,
   updateLocation,
 } from "@/server/services/admin-taxonomy.service";
+import { categorySeoSchema, faqsFromForm } from "@/lib/validation/seo";
 import { revalidateHome } from "@/lib/cache/revalidate";
 
 /**
@@ -151,4 +153,34 @@ export async function updateLocationAction(formData: FormData): Promise<void> {
   await audit(user.id, "location.update", locationId, parsed.data);
   revalidateHome("immediate");
   revalidatePath("/admin/locations");
+}
+
+export type CategorySeoState = { ok?: boolean; error?: string };
+
+/** Category page SEO and content (D44): title, description, intro, FAQs. */
+export async function updateCategorySeoAction(
+  _prev: CategorySeoState,
+  formData: FormData,
+): Promise<CategorySeoState> {
+  const user = await requirePermission("admin:taxonomy:manage");
+  const parsed = categorySeoSchema.safeParse({
+    id: formData.get("id"),
+    metaTitle: formData.get("metaTitle") ?? "",
+    metaDescription: formData.get("metaDescription") ?? "",
+    description: formData.get("description") ?? "",
+    ogImageUrl: formData.get("ogImageUrl") ?? "",
+    noindex: formData.get("noindex") === "on",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the fields" };
+  }
+  const faqs = faqsFromForm(formData);
+  if (!faqs.ok) return { error: faqs.error };
+
+  const { id: categoryId, ...fields } = parsed.data;
+  await updateCategorySeo(categoryId, { ...fields, faqs: faqs.faqs });
+  await audit(user.id, "category.seo", categoryId, { ...fields, faqs: faqs.faqs.length });
+  revalidatePath("/admin/categories");
+  revalidatePath(`/admin/categories/${categoryId}`);
+  return { ok: true };
 }

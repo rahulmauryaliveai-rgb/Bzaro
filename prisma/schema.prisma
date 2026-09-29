@@ -538,6 +538,10 @@ model Seller {
   searchBoost Int         @default(0)
   trustSeal   Boolean     @default(false)
 
+  /// Admin override (D44): keep this seller's pages out of search results
+  /// whatever the D2 gate says — spam, disputes, duplicate listings.
+  seoNoindex Boolean @default(false)
+
   verifiedAt   DateTime?
   verifiedById String?
   createdAt    DateTime  @default(now())
@@ -704,6 +708,14 @@ model Category {
   /// Words buyers use for this category ("cctv, camera, dvr") — lower-case.
   /// Feed the post-requirement category suggestions (D43).
   keywords        String[] @default([])
+  /// Buyer questions shown on the category page: [{ q, a }]. Validated by Zod
+  /// (src/lib/validation/seo.ts). Written by an admin, never generated (D44).
+  faqs            Json?
+  /// Admin override: keep this category page out of search results even when
+  /// it has listings (duplicate of another node, being reorganised…).
+  noindex         Boolean  @default(false)
+  /// Social share image; falls back to `imageUrl`.
+  ogImageUrl      String?
   createdAt       DateTime @default(now())
 
   parent       Category?        @relation("CategoryTree", fields: [parentId], references: [id])

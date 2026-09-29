@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { slugify } from "@/lib/utils/slug";
 import { revalidateCategory, revalidateLocation } from "@/lib/cache/revalidate";
 
@@ -114,6 +115,54 @@ export async function updateCategory(
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
       ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
       ...(input.keywords !== undefined ? { keywords: input.keywords } : {}),
+    },
+  });
+  revalidateCategory(id, "immediate");
+}
+
+/** Everything the admin SEO screen for one category needs (D44). */
+export function getCategoryForSeo(id: string) {
+  return db.category.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      path: true,
+      depth: true,
+      description: true,
+      metaTitle: true,
+      metaDescription: true,
+      faqs: true,
+      noindex: true,
+      ogImageUrl: true,
+      imageUrl: true,
+      productCount: true,
+      sellerCount: true,
+      isActive: true,
+    },
+  });
+}
+
+export async function updateCategorySeo(
+  id: string,
+  input: {
+    metaTitle: string | null;
+    metaDescription: string | null;
+    description: string | null;
+    ogImageUrl: string | null;
+    noindex: boolean;
+    faqs: Array<{ q: string; a: string }>;
+  },
+) {
+  await db.category.update({
+    where: { id },
+    data: {
+      metaTitle: input.metaTitle,
+      metaDescription: input.metaDescription,
+      description: input.description,
+      ogImageUrl: input.ogImageUrl,
+      noindex: input.noindex,
+      faqs: input.faqs.length > 0 ? input.faqs : Prisma.DbNull,
     },
   });
   revalidateCategory(id, "immediate");
