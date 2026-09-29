@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/env";
 import { readLocalToken, signLocalAsset } from "@/lib/media/local";
 import { folderFor, UPLOAD_LIMITS } from "@/lib/media/types";
+import { optimizeUpload } from "@/lib/media/optimize";
 
 /**
  * Receiver for the LOCAL media provider: development, and production hosts
@@ -75,14 +76,19 @@ export async function POST(request: NextRequest) {
   // the VPS, following the shared/uploads symlink out of the project root).
   const directory = join(/* turbopackIgnore: true */ process.cwd(), "public", "uploads", folder);
   await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, leaf), Buffer.from(await file.arrayBuffer()));
+  const bytes = await optimizeUpload(
+    Buffer.from(await file.arrayBuffer()),
+    extension,
+    claims.target,
+  );
+  await writeFile(join(directory, leaf), bytes);
 
   // Shaped like a Cloudinary upload response, and signed, so the same
   // `verifyUpload` contract applies to both providers.
   return NextResponse.json({
     public_id: publicId,
     secure_url: `/uploads/${folder}/${leaf}`,
-    bytes: file.size,
+    bytes: bytes.length,
     mime_type: file.type,
     signature: signLocalAsset(publicId),
   });

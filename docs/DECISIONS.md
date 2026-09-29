@@ -1094,3 +1094,19 @@ served `index`.
 - Admin fields per article: SEO title, meta description (with a preview),
   share image, publication date, noindex, and a canonical URL only for
   articles first published elsewhere.
+
+## D46 — Photos are resized when they are uploaded
+
+**Problem (29 Sep 2026 audit).** Local uploads were stored as the original
+phone photo. The homepage hero downloaded one 751 KB JPEG for a tile shown
+at ~400 px, and 61 of 64 homepage images were served full size from
+`/uploads` (Caddy serves them directly, so `/_next/image` cannot resize them).
+
+**Decision.** `/api/media/upload` passes every raster image through
+`optimizeUpload` (sharp, bundled with Next): EXIF auto-rotate, longest side
+capped (1600 px product/gallery, 2000 px cover, 600 px logo), re-encoded in
+the same format (JPEG q80 mozjpeg, WebP q80, PNG level 9), metadata stripped
+(no GPS in public photos). The original is kept if the result is not smaller
+or sharp fails. `scripts/optimize-uploads.mjs` does the same once for files
+already on disk, in place (same names, so URLs keep working), with a dry run
+by default and a dated backup folder of originals on `--apply`.
