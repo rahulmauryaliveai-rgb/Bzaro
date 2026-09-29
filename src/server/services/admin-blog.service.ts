@@ -145,6 +145,16 @@ export async function savePost(input: BlogPostInput): Promise<SavePostResult> {
     : null;
   if (input.id && !existing) return { ok: false, error: "Article not found" };
 
+  // Drafts carry notes like "[Rahul: add one example…]" for the reviewer;
+  // publishing one by accident would put the note on the live page.
+  if (input.intent === "publish" && /\[(?:rahul|todo|note|editor)\b[^\]]*\]/i.test(input.body)) {
+    return {
+      ok: false,
+      error:
+        "The article still has a note in square brackets (e.g. [Rahul: …]). Replace it before publishing.",
+    };
+  }
+
   if (input.intent === "publish" && !input.authorId) {
     return { ok: false, error: "Choose an author before publishing — every article names one." };
   }
