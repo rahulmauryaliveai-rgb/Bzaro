@@ -20,6 +20,15 @@ import { breadcrumbJsonLd, itemListJsonLd } from "@/lib/seo/jsonld";
 import { marketplaceUrl } from "@/lib/utils/url";
 import { categorySeoDescription, categorySeoTitle } from "@/lib/seo/templates";
 import { getCategoryCities, getCategoryContentCount } from "@/server/services/seo.service";
+import { getCategorySuppliers } from "@/server/services/discovery.service";
+import { parseFaqs } from "@/lib/validation/seo";
+import { RichText } from "@/components/shared/RichText";
+import { toSellerHit } from "@/components/marketplace/hits";
+import {
+  CategoryCities,
+  CategoryFaqs,
+  CategorySuppliers,
+} from "@/components/marketplace/CategorySections";
 
 /**
  * Category pages.
@@ -61,7 +70,8 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   // An empty category is thin content (D44): kept out of the index until
   // something is listed under it, but its links are still followed. Deep
   // pagination is left out for the same reason.
-  const indexable = count.total > 0 && query.page <= 5;
+  const indexable = count.total > 0 && query.page <= 5 && !category.noindex;
+  const shareImage = category.ogImageUrl ?? category.imageUrl;
 
   return {
     title: categorySeoTitle(seo),
@@ -75,7 +85,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       title: categorySeoTitle(seo),
       description: categorySeoDescription(seo),
       url: marketplaceUrl(path),
-      ...(category.imageUrl ? { images: [category.imageUrl] } : {}),
+      ...(shareImage ? { images: [shareImage] } : {}),
     },
   };
 }
@@ -89,7 +99,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const query = parseSearchParams(rawQuery);
   const locationId = await locationIdFromPath(query.location);
 
-  const [ancestors, children, results] = await Promise.all([
+  const [ancestors, children, results, suppliers, cities] = await Promise.all([
     getCategoryAncestors(category.ancestorIds),
     getCategoryChildren(category.id),
     search.searchProducts({
@@ -104,7 +114,18 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       page: query.page,
       perPage: RESULTS_PER_PAGE,
     }),
+    getCategorySuppliers(category.id, 8),
+    getCategoryCities(category.id, 12),
   ]);
+  // Intro, suppliers, cities and FAQs belong to the page itself, not to every
+  // filtered or paginated variant — repeating them there is duplicate content.
+  const isLanding =
+    query.page === 1 &&
+    !query.q &&
+    !query.location &&
+    query.minPrice === undefined &&
+    query.maxPrice === undefined;
+  const faqs = parseFaqs(category.faqs);
 
   const basePath = `/category/${slug.join("/")}`;
 
@@ -137,8 +158,11 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           <span className="tabular-nums">{results.total}</span> product
           {results.total === 1 ? "" : "s"} from verified suppliers
         </p>
-        {category.description ? (
-          <p className="mt-3 max-w-2xl leading-relaxed text-neutral-700">{category.description}</p>
+        {isLanding && category.description ? (
+          <RichText
+            text={category.description}
+            className="mt-3 max-w-3xl space-y-3 leading-relaxed text-neutral-700"
+          />
         ) : null}
       </header>
 
@@ -190,6 +214,23 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       )}
 
       <ResultsPagination params={query} pageCount={results.pageCount} basePath={basePath} />
+
+      {isLanding ? (
+        <>
+          <CategorySuppliers
+            categoryName={category.name}
+            categoryPath={category.path}
+            sellers={suppliers.sellers.map(toSellerHit)}
+            total={suppliers.total}
+          />
+          <CategoryCities
+            categoryName={category.name}
+            categoryPath={category.path}
+            cities={cities}
+          />
+          <CategoryFaqs faqs={faqs} />
+        </>
+      ) : null}
     </div>
   );
 }

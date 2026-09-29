@@ -274,6 +274,41 @@ export function getCityCategoryListing(locationId: string, categoryId: string) {
 }
 
 /** Headline numbers for the hero and the stats band. */
+/**
+ * Suppliers anywhere under a category, for the category page (D44): the plan
+ * boost first, then rating and catalogue depth — the same order as the city
+ * listings, so paid placement is consistent across the marketplace.
+ */
+export function getCategorySuppliers(categoryId: string, limit = 12) {
+  return unstable_cache(
+    async () => {
+      const where = {
+        ...LIVE_SELLER,
+        categories: {
+          some: { category: { OR: [{ id: categoryId }, { ancestorIds: { has: categoryId } }] } },
+        },
+      };
+      const [sellers, total] = await Promise.all([
+        db.seller.findMany({
+          where,
+          orderBy: [
+            { searchBoost: "desc" },
+            { ratingAvg: "desc" },
+            { productCount: "desc" },
+            { createdAt: "asc" },
+          ],
+          take: limit,
+          select: sellerCardSelect,
+        }),
+        db.seller.count({ where }),
+      ]);
+      return { sellers, total };
+    },
+    ["discovery-category-suppliers", categoryId, String(limit)],
+    { tags: [cacheTags.discoveryCategory(categoryId)], revalidate: 3600 },
+  )();
+}
+
 export function getPlatformStats() {
   return unstable_cache(
     async () => {

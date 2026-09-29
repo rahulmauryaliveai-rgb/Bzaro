@@ -60,6 +60,8 @@ export type SellerHit = {
   /** Gold plan trust seal (D41). */
   trustSeal?: boolean;
   establishedYear: number | null;
+  /** Mirrors the Prisma `BusinessType` enum; absent on search hits. */
+  businessType?: string | null;
 };
 
 /** One option in a filter panel, with its result count. */

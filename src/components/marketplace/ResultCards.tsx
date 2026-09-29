@@ -1,3 +1,4 @@
+import { BUSINESS_TYPE_LABEL, type BusinessTypeKey } from "@/lib/seo/templates";
 import Link from "next/link";
 import type { ProductHit, SellerHit } from "@/lib/search/types";
 import { formatPrice } from "@/lib/utils/money";
@@ -133,6 +134,12 @@ export function SellerResultCard({ hit }: { hit: SellerHit }) {
         ) : null}
 
         <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+          {hit.businessType && hit.businessType in BUSINESS_TYPE_LABEL ? (
+            <div className="flex gap-1">
+              <dt className="sr-only">Business type</dt>
+              <dd>{BUSINESS_TYPE_LABEL[hit.businessType as BusinessTypeKey]}</dd>
+            </div>
+          ) : null}
           {locality ? (
             <div className="flex gap-1">
               <dt className="sr-only">Location</dt>

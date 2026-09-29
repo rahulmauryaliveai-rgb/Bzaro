@@ -71,6 +71,7 @@ type SellerRow = {
   establishedYear: number | null;
   verifiedAt: Date | null;
   trustSeal?: boolean;
+  businessType?: string | null;
   location: { name: string; parent: { name: string } | null } | null;
 };
 
@@ -91,5 +92,6 @@ export function toSellerHit(seller: SellerRow): SellerHit {
     isVerified: seller.verifiedAt !== null,
     trustSeal: seller.trustSeal ?? false,
     establishedYear: seller.establishedYear,
+    businessType: seller.businessType ?? null,
   };
 }
