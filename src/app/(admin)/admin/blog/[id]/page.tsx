@@ -10,11 +10,15 @@ import { deleteBlogDraftAction } from "@/server/actions/admin-blog";
 import { BlogPostForm } from "@/components/admin/BlogPostForm";
 import { marketplaceUrl } from "@/lib/utils/url";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function EditBlogPostPage({ params }: Props) {
+export default async function EditBlogPostPage({ params, searchParams }: Props) {
   await requirePermission("admin:taxonomy:manage");
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const imported = query.imported === "1";
   const [post, authors, categories] = await Promise.all([
     getPostForAdmin(id),
     listAuthors(),
@@ -50,6 +54,12 @@ export default async function EditBlogPostPage({ params }: Props) {
           </form>
         )}
       </div>
+      {imported && post.status !== "PUBLISHED" ? (
+        <p className="mt-3 rounded-md border border-sky-800 bg-sky-950/40 p-3 text-sm text-sky-200">
+          Imported as a draft. Read it in Preview, add your own example or photo, check the tagged
+          categories, then press <strong>Publish</strong>.
+        </p>
+      ) : null}
       <BlogPostForm
         post={{
           id: post.id,

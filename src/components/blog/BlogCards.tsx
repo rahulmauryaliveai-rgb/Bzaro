@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BookOpen } from "lucide-react";
 
 /** Article cards for the blog list, related articles and category pages (D45). */
 
@@ -38,7 +39,19 @@ export function BlogCard({ post, headingLevel = 2 }: { post: BlogCardData; headi
             decoding="async"
             className="h-full w-full object-cover"
           />
-        ) : null}
+        ) : (
+          // No cover yet: a branded panel, never an empty grey box.
+          <span
+            aria-hidden="true"
+            className="from-brand-700 to-brand-900 relative flex h-full w-full flex-col justify-between bg-linear-to-br p-5 text-white"
+          >
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-white/80 uppercase">
+              <BookOpen className="h-3.5 w-3.5" />
+              Buying guide
+            </span>
+            <BookOpen className="h-12 w-12 self-end text-white/25" strokeWidth={1.5} />
+          </span>
+        )}
       </Link>
       <div className="flex flex-1 flex-col p-4">
         <Heading className="text-base leading-snug font-semibold text-balance">

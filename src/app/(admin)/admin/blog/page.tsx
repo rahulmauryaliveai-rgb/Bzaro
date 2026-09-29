@@ -19,6 +19,12 @@ export default async function AdminBlogPage() {
           New article
         </Link>
         <Link
+          href="/admin/blog/import"
+          className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm hover:bg-neutral-700"
+        >
+          Import draft
+        </Link>
+        <Link
           href="/admin/blog/authors"
           className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm hover:bg-neutral-700"
         >

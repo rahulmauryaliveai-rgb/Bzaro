@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/auth/guards";
 import { blogAuthorSchema, blogPostSchema } from "@/lib/validation/blog";
 import { deleteDraft, saveAuthor, savePost } from "@/server/services/admin-blog.service";
+import { parseDraftMarkdown } from "@/lib/blog/markdown-import";
 
 /** Admin blog editor (D45). */
 
@@ -94,4 +95,67 @@ export async function saveBlogAuthorAction(formData: FormData): Promise<void> {
     },
   });
   revalidatePath("/admin/blog/authors");
+}
+
+/**
+ * Import a draft written elsewhere (D45) — e.g. the daily draft Claude
+ * prepares. Always lands as a DRAFT: publishing stays a human decision.
+ */
+export async function importBlogDraftAction(
+  _prev: BlogFormState,
+  formData: FormData,
+): Promise<BlogFormState> {
+  const user = await requirePermission("admin:taxonomy:manage");
+  const parsed = parseDraftMarkdown(String(formData.get("markdown") ?? ""));
+  if (!parsed.ok) return { error: parsed.error };
+  const { draft } = parsed;
+
+  const categories = draft.categorySlugs.length
+    ? await db.category.findMany({
+        where: { slug: { in: draft.categorySlugs } },
+        select: { id: true, slug: true },
+      })
+    : [];
+  const missing = draft.categorySlugs.filter(
+    (slug) => !categories.some((category) => category.slug.toLowerCase() === slug),
+  );
+
+  const input = blogPostSchema.safeParse({
+    id: "",
+    title: draft.title,
+    slug: draft.slug ?? "",
+    excerpt: draft.excerpt ?? "",
+    body: draft.body,
+    coverImageUrl: draft.coverImageUrl ?? "",
+    coverImageAlt: draft.coverImageAlt ?? "",
+    authorId: String(formData.get("authorId") ?? ""),
+    metaTitle: draft.metaTitle ?? "",
+    metaDescription: draft.metaDescription ?? "",
+    ogImageUrl: "",
+    canonicalUrl: "",
+    noindex: false,
+    categoryIds: categories.map((category) => category.id),
+    productRefs: "",
+    sellerRefs: "",
+    publishedOn: "",
+    intent: "draft",
+  });
+  if (!input.success) {
+    const issue = input.error.issues[0];
+    return { error: `${issue?.path.join(".") ?? "draft"}: ${issue?.message ?? "invalid"}` };
+  }
+
+  const result = await savePost(input.data);
+  if (!result.ok) return { error: result.error };
+  await db.auditLog.create({
+    data: {
+      actorId: user.id,
+      action: "blog.import",
+      entityType: "BlogPost",
+      entityId: result.id,
+      after: { slug: result.slug, unknownCategories: missing },
+    },
+  });
+  revalidatePath("/admin/blog");
+  redirect(`/admin/blog/${result.id}?imported=1`);
 }

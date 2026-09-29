@@ -1110,3 +1110,12 @@ the same format (JPEG q80 mozjpeg, WebP q80, PNG level 9), metadata stripped
 or sharp fails. `scripts/optimize-uploads.mjs` does the same once for files
 already on disk, in place (same names, so URLs keep working), with a dry run
 by default and a dated backup folder of originals on `--apply`.
+
+**Addendum (30 Sep 2026).** The homepage shows the latest three guides
+("Buy with confidence"), hidden until one is live. Cards without a cover
+image show a branded panel. Admin → Blog → **Import draft** accepts a draft
+as text (front-matter header + article body, `src/lib/blog/markdown-import.ts`)
+and always saves it as a DRAFT — publishing stays a human click. A daily
+Claude scheduled task writes one draft in that format for review; it never
+publishes. Starter guides live in `docs/content/blog/*.md` and are published
+once with `npm run db:seed:blog-starter`.

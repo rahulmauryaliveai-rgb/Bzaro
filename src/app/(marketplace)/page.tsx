@@ -27,6 +27,8 @@ import {
 import { ProductResultCard, SellerResultCard } from "@/components/marketplace/ResultCards";
 import { toProductHit, toSellerHit } from "@/components/marketplace/hits";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { BlogCard } from "@/components/blog/BlogCards";
+import { listPublishedPosts } from "@/server/services/blog.service";
 import { marketplaceUrl } from "@/lib/utils/url";
 import { clientEnv } from "@/env.client";
 
@@ -73,7 +75,13 @@ export default async function HomePage() {
     getTopCity(),
     getPlatformStats(),
   ]);
-  const popular = topCity ? await getPopularInCity(topCity.id) : null;
+  const [popular, guides] = await Promise.all([
+    topCity ? getPopularInCity(topCity.id) : Promise.resolve(null),
+    // Latest three guides (D45); the section hides itself until one is live.
+    listPublishedPosts(1)
+      .then((result) => result.posts.slice(0, 3))
+      .catch(() => []),
+  ]);
 
   // Real product photos first; category photos fill any gap, so the hero is
   // never a row of empty panels on a young marketplace.
@@ -187,6 +195,22 @@ export default async function HomePage() {
             <div className="mt-8 grid gap-4 lg:grid-cols-2">
               {content.sellers.map((seller) => (
                 <SellerResultCard key={seller.id} hit={toSellerHit(seller)} />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {guides.length > 0 ? (
+          <section>
+            <SectionHeading
+              eyebrow="Buying guides"
+              title="Buy with confidence"
+              description="Practical guides on what to check, what to ask and how to compare suppliers before you order."
+              action={{ href: "/blog", label: "All guides" }}
+            />
+            <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {guides.map((post) => (
+                <BlogCard key={post.id} post={post} headingLevel={3} />
               ))}
             </div>
           </section>
