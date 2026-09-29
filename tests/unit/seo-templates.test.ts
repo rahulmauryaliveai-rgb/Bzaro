@@ -62,6 +62,18 @@ describe("seller templates", () => {
       "We print school notebooks, registers and diaries for schools across NCR since 2004.",
     );
   });
+  it("words a service business as a service", () => {
+    expect(
+      sellerSeoDescription({
+        ...base,
+        businessName: "Rekha Tution",
+        businessType: "SERVICE_PROVIDER",
+        categoryName: "Coaching & Skill Training",
+      }),
+    ).toBe(
+      "Rekha Tution provides Coaching & Skill Training services in Greater Noida. See business details and send an enquiry on Bzaro.",
+    );
+  });
   it("falls back to a readable sentence", () => {
     expect(
       sellerSeoDescription({

@@ -115,8 +115,19 @@ export function sellerSeoDescription(input: SellerSeoInput): string {
   if (written) return clip(written);
 
   const descriptor = businessDescriptor(input.businessType, input.categoryName);
-  const what = descriptor ? ` is ${article(descriptor)} ${descriptor}` : "";
-  const where = input.city ? `${what ? "" : " is"} based in ${input.city}` : "";
+  // "provides Printing services", never "is a Printing services".
+  const what =
+    input.businessType === "SERVICE_PROVIDER" && input.categoryName
+      ? ` provides ${input.categoryName} services`
+      : descriptor
+        ? ` is ${article(descriptor)} ${descriptor}`
+        : "";
+  const serviceLine = input.businessType === "SERVICE_PROVIDER" && input.categoryName;
+  const where = input.city
+    ? serviceLine
+      ? ` in ${input.city}`
+      : `${what ? "" : " is"} based in ${input.city}`
+    : "";
   const lead =
     what || where
       ? `${input.businessName}${what}${where}.`
