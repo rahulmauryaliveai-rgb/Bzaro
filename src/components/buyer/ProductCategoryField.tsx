@@ -49,11 +49,17 @@ export function ProductCategoryField({
   const [pending, startTransition] = useTransition();
   const latest = useRef("");
 
+  const trimmed = query.trim();
+  // Under two characters there is nothing to suggest. Derived while rendering
+  // rather than cleared with setState inside the effect (react-hooks/
+  // set-state-in-effect): older results simply stop being shown.
+  const active = trimmed.length >= 2;
+  const shown = active ? suggestions : [];
+
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
-      setSuggestions([]);
-      setSearched(false);
+      latest.current = ""; // drop any in-flight result for an older query
       return;
     }
     const timer = setTimeout(() => {
@@ -108,13 +114,13 @@ export function ProductCategoryField({
 
       {!browse ? (
         <div id="category-suggestions" aria-live="polite">
-          {suggestions.length > 0 ? (
+          {shown.length > 0 ? (
             <>
               <p className="mb-1.5 text-xs font-medium text-neutral-600">
                 Category — tap the closest match
               </p>
               <ul className="space-y-1.5">
-                {suggestions.map((option) => {
+                {shown.map((option) => {
                   const active = selected?.id === option.id;
                   return (
                     <li key={option.id}>
@@ -153,7 +159,7 @@ export function ProductCategoryField({
                 })}
               </ul>
             </>
-          ) : searched && !pending ? (
+          ) : active && searched && !pending ? (
             <p className="text-xs text-neutral-600">
               No category matched yet — try a simpler word (e.g. &ldquo;bulb&rdquo;,
               &ldquo;pipe&rdquo;), or browse the list below.
