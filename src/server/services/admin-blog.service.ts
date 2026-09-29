@@ -11,8 +11,8 @@ import {
 
 /** Admin side of the blog (D45). */
 
-export function listPostsForAdmin() {
-  return db.blogPost.findMany({
+export async function listPostsForAdmin() {
+  const rows = await db.blogPost.findMany({
     orderBy: [{ updatedAt: "desc" }],
     take: 200,
     select: {
@@ -26,6 +26,12 @@ export function listPostsForAdmin() {
       author: { select: { name: true } },
     },
   });
+  // Published with a future date = scheduled: invisible until that moment.
+  const now = Date.now();
+  return rows.map((row) => ({
+    ...row,
+    scheduled: row.status === "PUBLISHED" && !!row.publishedAt && row.publishedAt.getTime() > now,
+  }));
 }
 
 export async function getPostForAdmin(id: string) {
@@ -45,6 +51,8 @@ export async function getPostForAdmin(id: string) {
   ]);
   return {
     ...post,
+    scheduled:
+      post.status === "PUBLISHED" && !!post.publishedAt && post.publishedAt.getTime() > Date.now(),
     productRefs: products.map((product) => `${product.seller.slug}/${product.slug}`).join("\n"),
     sellerRefs: sellers.map((seller) => seller.slug).join("\n"),
   };
@@ -94,7 +102,14 @@ async function uniqueSlug(base: string, excludeId: string | null): Promise<strin
 }
 
 export type SavePostResult =
-  | { ok: true; id: string; slug: string; status: "DRAFT" | "PUBLISHED" }
+  | {
+      ok: true;
+      id: string;
+      slug: string;
+      status: "DRAFT" | "PUBLISHED";
+      /** Set for a published article; in the future = scheduled. */
+      publishedAt: Date | null;
+    }
   | { ok: false; error: string };
 
 export async function savePost(input: BlogPostInput): Promise<SavePostResult> {
@@ -197,7 +212,7 @@ export async function savePost(input: BlogPostInput): Promise<SavePostResult> {
     : await db.blogPost.create({ data, select: { id: true } });
 
   revalidateBlog("immediate");
-  return { ok: true, id: row.id, slug, status };
+  return { ok: true, id: row.id, slug, status, publishedAt };
 }
 
 export async function deleteDraft(id: string): Promise<boolean> {

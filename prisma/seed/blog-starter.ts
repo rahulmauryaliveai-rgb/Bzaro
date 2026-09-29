@@ -7,17 +7,30 @@ import { PrismaClient } from "../../src/generated/prisma/client";
 import { parseDraftMarkdown } from "../../src/lib/blog/markdown-import";
 
 /**
- * Publish the starter buying guides in docs/content/blog/*.md (D45).
+ * Load the guides in docs/content/blog/*.md (D45, D48).
+ *
+ * Each file may carry `publish_on: YYYY-MM-DD` — it is stored as published
+ * with that date at 09:00 IST and stays invisible until then, so a batch of
+ * files becomes a publishing schedule with no cron and no API. Files without
+ * a date go live at once.
+ *
+ * `author:` picks an author by slug (`bzaro-editorial-team` is created on
+ * demand); otherwise the first author, or one created from BLOG_AUTHOR_NAME
+ * (default "Rahul Maurya").
  *
  * Idempotent: an article whose slug already exists is left alone, so edits
- * made in Admin → Blog are never overwritten. The author is the first blog
- * author; if there is none, one is created from BLOG_AUTHOR_NAME (default
- * "Rahul Maurya") — add a role, bio and photo in Admin → Blog → Authors.
+ * made in Admin → Blog are never overwritten. Safe to re-run after adding
+ * more files.
  *
- * Run on the server:  npm run db:seed:blog-starter
- * The blog, homepage section and sitemap pick the articles up within the
- * hour; saving any article in Admin → Blog refreshes them immediately.
+ * Run on the server:  npm run db:seed:blog
  */
+
+const EDITORIAL = {
+  slug: "bzaro-editorial-team",
+  name: "Bzaro Editorial Team",
+  role: "Buying guides from the Bzaro team",
+  bio: "Practical guides for business buyers in India: what to check, what to ask and how to compare suppliers before you place an order.",
+};
 
 async function main() {
   const nodeEnv = process.env.NODE_ENV ?? "development";
@@ -41,11 +54,25 @@ async function main() {
       console.log(`✓ author created: ${name} (add role, bio and photo in Admin → Blog → Authors)`);
     }
 
+    const defaultAuthorId = author.id;
+    const authorIdFor = async (slug: string | null): Promise<string> => {
+      if (slug) {
+        const found = await prisma.blogAuthor.findUnique({ where: { slug }, select: { id: true } });
+        if (found) return found.id;
+        if (slug === EDITORIAL.slug) {
+          return (await prisma.blogAuthor.create({ data: EDITORIAL, select: { id: true } })).id;
+        }
+        console.log(`  (author "${slug}" not found — using the default author)`);
+      }
+      return defaultAuthorId;
+    };
+
     const dir = join(process.cwd(), "docs", "content", "blog");
     const files = (await readdir(dir)).filter((file) => file.endsWith(".md")).sort();
     const now = Date.now();
 
-    for (const [index, file] of files.entries()) {
+    let undated = 0;
+    for (const file of files) {
       const parsed = parseDraftMarkdown(await readFile(join(dir, file), "utf8"));
       if (!parsed.ok) {
         console.log(`✗ ${file}: ${parsed.error}`);
@@ -72,13 +99,20 @@ async function main() {
           metaTitle: draft.metaTitle,
           metaDescription: draft.metaDescription,
           categoryIds: categories.map((category) => category.id),
-          authorId: author.id,
+          authorId: await authorIdFor(draft.authorSlug),
           status: "PUBLISHED",
-          // A day apart, so the list has a sensible order.
-          publishedAt: new Date(now - index * 86_400_000),
+          // A dated file waits for its day (09:00 IST); undated ones go live
+          // now, a day apart so the list has a sensible order.
+          publishedAt: draft.publishOn
+            ? new Date(`${draft.publishOn}T09:00:00+05:30`)
+            : new Date(now - undated++ * 86_400_000),
         },
       });
-      console.log(`✓ published /blog/${slug}`);
+      const when =
+        draft.publishOn && new Date(`${draft.publishOn}T09:00:00+05:30`).getTime() > now
+          ? `scheduled for ${draft.publishOn} 09:00 IST`
+          : "published";
+      console.log(`✓ ${when}: /blog/${slug}`);
     }
   } finally {
     await prisma.$disconnect();

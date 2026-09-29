@@ -34,6 +34,14 @@ Plain brown boxes are the most economical. One- or two-colour printing of your l
 4. What is the lead time for the first order, and for repeat orders?
 5. Is delivery included to my location?
 
+
+## Mistakes to avoid
+
+- **Ordering from outer dimensions.** Box makers work from inner size; get this wrong and the first batch will not fit.
+- **Paying for strength you do not need.** A 7-ply box for a light, short-distance product wastes money on every shipment.
+- **Ignoring humidity.** Boxes stored in damp godowns lose strength. Keep stock dry and off the floor.
+- **No reorder plan.** Custom boxes take time to make; keep a buffer and reorder before you run out.
+
 ## Plan for repeat orders
 
 If you ship every week, a manufacturer who can hold a small buffer stock or deliver on a fixed schedule is worth more than the lowest one-time price. Mention your monthly quantity in the enquiry.

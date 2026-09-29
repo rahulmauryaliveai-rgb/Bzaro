@@ -51,6 +51,10 @@ export function BlogPostForm({
   const [metaDescription, setMetaDescription] = useState(post?.metaDescription ?? "");
   const [excerpt, setExcerpt] = useState(post?.excerpt ?? "");
   const [words, setWords] = useState(countWords(post?.body ?? ""));
+  const [publishOn, setPublishOn] = useState(post?.publishedOn ?? "");
+  // A future date turns "Publish" into "Schedule": it goes live that day at 09:00 IST.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const isFuture = publishOn !== "" && publishOn > today;
   const published = post?.status === "PUBLISHED";
 
   return (
@@ -209,7 +213,7 @@ export function BlogPostForm({
 
       <details
         className="rounded-lg border border-neutral-700 bg-neutral-800 p-5"
-        open={Boolean(metaTitle || metaDescription)}
+        open={Boolean(metaTitle || metaDescription || post?.publishedOn)}
       >
         <summary className="cursor-pointer text-sm font-semibold tracking-wide text-neutral-400 uppercase">
           Search & sharing
@@ -259,11 +263,14 @@ export function BlogPostForm({
               <input name="ogImageUrl" defaultValue={post?.ogImageUrl ?? ""} className={input} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className={label}>Publication date (blank = today on first publish)</span>
+              <span className={label}>
+                Publication date — a future date schedules it (goes live 09:00 IST)
+              </span>
               <input
                 type="date"
                 name="publishedOn"
-                defaultValue={post?.publishedOn ?? ""}
+                value={publishOn}
+                onChange={(event) => setPublishOn(event.target.value)}
                 className={input}
               />
             </label>
@@ -309,7 +316,7 @@ export function BlogPostForm({
             disabled={pending}
             className="rounded-md bg-white px-4 py-2 font-medium text-neutral-900 hover:bg-neutral-200 disabled:opacity-60"
           >
-            Publish
+            {isFuture ? "Schedule" : "Publish"}
           </button>
         )}
         {pending ? <span className="text-neutral-400">Saving…</span> : null}

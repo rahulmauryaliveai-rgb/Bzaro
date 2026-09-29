@@ -57,9 +57,24 @@ export async function saveBlogPostAction(
   });
   revalidatePath("/admin/blog");
   if (!parsed.data.id) redirect(`/admin/blog/${result.id}?saved=1`);
+  const scheduled =
+    result.status === "PUBLISHED" &&
+    result.publishedAt &&
+    result.publishedAt.getTime() > Date.now();
   return {
     ok: true,
-    message: result.status === "PUBLISHED" ? "Published." : "Saved as draft.",
+    message: scheduled
+      ? `Scheduled — goes live ${result.publishedAt!.toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}.`
+      : result.status === "PUBLISHED"
+        ? "Published."
+        : "Saved as draft.",
   };
 }
 
@@ -138,7 +153,8 @@ export async function importBlogDraftAction(
     categoryIds: categories.map((category) => category.id),
     productRefs: "",
     sellerRefs: "",
-    publishedOn: "",
+    // A publish_on date is kept, so pressing Publish schedules it for that day.
+    publishedOn: draft.publishOn ?? "",
     intent: "draft",
   });
   if (!input.success) {

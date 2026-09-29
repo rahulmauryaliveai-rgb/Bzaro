@@ -11,6 +11,8 @@
  *   meta_description: (optional)
  *   cover_image: (optional, https://…)
  *   cover_alt: (optional)
+ *   publish_on: (optional, YYYY-MM-DD — goes live that day at 09:00 IST)
+ *   author: (optional, an author's slug, e.g. bzaro-editorial-team)
  *   ---
  *   ## First heading
  *
@@ -29,6 +31,9 @@ export type ImportedDraft = {
   metaDescription: string | null;
   coverImageUrl: string | null;
   coverImageAlt: string | null;
+  /** YYYY-MM-DD; the article goes live that day at 09:00 IST. */
+  publishOn: string | null;
+  authorSlug: string | null;
   body: string;
 };
 
@@ -41,6 +46,8 @@ const KEYS = new Set([
   "meta_description",
   "cover_image",
   "cover_alt",
+  "publish_on",
+  "author",
 ]);
 
 export function parseDraftMarkdown(
@@ -73,6 +80,10 @@ export function parseDraftMarkdown(
   if (body.length < 200) return { ok: false, error: "The article body is too short." };
 
   const optional = (value: string | undefined) => (value && value.trim() ? value.trim() : null);
+  const publishOn = optional(fields.publish_on);
+  if (publishOn && !/^\d{4}-\d{2}-\d{2}$/.test(publishOn)) {
+    return { ok: false, error: "publish_on must be YYYY-MM-DD" };
+  }
   return {
     ok: true,
     draft: {
@@ -88,6 +99,8 @@ export function parseDraftMarkdown(
       metaDescription: optional(fields.meta_description),
       coverImageUrl: optional(fields.cover_image),
       coverImageAlt: optional(fields.cover_alt),
+      publishOn,
+      authorSlug: optional(fields.author)?.toLowerCase() ?? null,
       body,
     },
   };

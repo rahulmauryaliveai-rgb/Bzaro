@@ -60,7 +60,8 @@ export function sanitiseBody(body: string): string {
 
 const RED_FLAGS = [
   /\bin today'?s fast[- ]paced\b/i,
-  /#\s?1\b/,
+  // "#1 supplier", but not a "## 1." numbered heading
+  /(?<![#\w])#\s?1\b(?!\.)/,
   /\bbest (?:supplier|manufacturer|price|quality) in india\b/i,
   /\bcheapest\b/i,
   /\bleading (?:supplier|manufacturer)\b/i,

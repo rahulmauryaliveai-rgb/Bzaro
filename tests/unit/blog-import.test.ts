@@ -23,6 +23,17 @@ describe("parseDraftMarkdown", () => {
     if (result.ok) expect(result.draft.body.startsWith("## Start here")).toBe(true);
   });
 
+  it("reads a publication date and author", () => {
+    const result = parseDraftMarkdown(
+      `---\ntitle: T title\npublish_on: 2026-10-01\nauthor: Bzaro-Editorial-Team\n---\n${body}`,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      draft: { publishOn: "2026-10-01", authorSlug: "bzaro-editorial-team" },
+    });
+    expect(parseDraftMarkdown(`---\ntitle: T\npublish_on: 1 Oct\n---\n${body}`).ok).toBe(false);
+  });
+
   it("accepts Windows line endings", () => {
     expect(parseDraftMarkdown(`---\r\ntitle: T title\r\n---\r\n${body}`).ok).toBe(true);
   });

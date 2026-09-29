@@ -33,7 +33,18 @@ export default async function EditBlogPostPage({ params, searchParams }: Props) 
       </Link>
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{post.title}</h1>
-        {post.status === "PUBLISHED" ? (
+        {post.scheduled && post.publishedAt ? (
+          <span className="rounded bg-sky-900/60 px-2 py-0.5 text-sm text-sky-300">
+            Scheduled for{" "}
+            {post.publishedAt.toLocaleString("en-IN", {
+              timeZone: "Asia/Kolkata",
+              day: "numeric",
+              month: "short",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </span>
+        ) : post.status === "PUBLISHED" ? (
           <a
             href={marketplaceUrl(`/blog/${post.slug}`)}
             target="_blank"

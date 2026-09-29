@@ -18,6 +18,7 @@ export default async function AdminBlogPage() {
     Promise.resolve(autopilotConfigured()),
   ]);
   const upcoming = await nextTopic(autopilot.used);
+  const scheduledCount = posts.filter((post) => post.scheduled).length;
 
   return (
     <div className="max-w-5xl">
@@ -49,6 +50,12 @@ export default async function AdminBlogPage() {
         </a>
         . Tag each article with the categories, products and suppliers it is about — those links
         appear on both sides automatically.
+      </p>
+
+      <p className="mt-4 text-sm text-neutral-300">
+        {scheduledCount > 0
+          ? `${scheduledCount} guide${scheduledCount === 1 ? "" : "s"} scheduled — each goes live on its date at 09:00 IST, no action needed.`
+          : "No guides scheduled. Set a future publication date on an article and press Schedule."}
       </p>
 
       <section className="mt-6 rounded-lg border border-neutral-700 bg-neutral-800 p-4 text-sm">
@@ -131,12 +138,18 @@ export default async function AdminBlogPage() {
                 <td className="py-2.5 pr-3">
                   <span
                     className={`rounded px-1.5 py-0.5 text-xs ${
-                      post.status === "PUBLISHED"
-                        ? "bg-emerald-900/60 text-emerald-300"
-                        : "bg-neutral-800 text-neutral-300"
+                      post.status !== "PUBLISHED"
+                        ? "bg-neutral-800 text-neutral-300"
+                        : post.scheduled
+                          ? "bg-sky-900/60 text-sky-300"
+                          : "bg-emerald-900/60 text-emerald-300"
                     }`}
                   >
-                    {post.status === "PUBLISHED" ? "Published" : "Draft"}
+                    {post.status !== "PUBLISHED"
+                      ? "Draft"
+                      : post.scheduled
+                        ? "Scheduled"
+                        : "Published"}
                   </span>
                   {post.noindex ? (
                     <span className="ml-1 text-xs text-amber-400">noindex</span>

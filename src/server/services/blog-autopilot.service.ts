@@ -64,7 +64,17 @@ async function saveState(state: AutopilotState, result: string): Promise<void> {
 
 /** Next unused topic; after the list, a category that has no guide yet. */
 export async function nextTopic(used: string[]): Promise<BlogTopic | null> {
-  const fromList = BLOG_TOPICS.find((topic) => !used.includes(topic.key));
+  // A topic already written by hand or scheduled (its key is the article's
+  // slug, D48) is skipped too.
+  const taken = new Set(
+    (
+      await db.blogPost.findMany({
+        where: { slug: { in: BLOG_TOPICS.map((topic) => topic.key) } },
+        select: { slug: true },
+      })
+    ).map((post) => post.slug.toLowerCase()),
+  );
+  const fromList = BLOG_TOPICS.find((topic) => !used.includes(topic.key) && !taken.has(topic.key));
   if (fromList) return fromList;
 
   const covered = new Set(

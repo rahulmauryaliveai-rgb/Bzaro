@@ -1146,3 +1146,19 @@ Trade-off, stated plainly: unreviewed AI articles are the kind of content
 Google's "scaled content" guidance targets when they are thin or repetitive.
 One focused guide a day with these checks is a reasonable pace, but someone
 should still read a few each week, add real examples, and delete weak ones.
+
+## D48 — Scheduled guides, no API needed
+
+**Decision (30 Sep 2026).** Any article can be **scheduled**: set a future
+publication date and press **Schedule** in Admin → Blog. It is stored as
+published with that date (09:00 IST) and stays invisible — list, article
+page, homepage, category pages, sitemap — until then, because every public
+query already filters on `publishedAt <= now`. No cron, no API.
+
+Batches go in as files: `docs/content/blog/*.md` may carry
+`publish_on: YYYY-MM-DD` and `author: <slug>`; `npm run db:seed:blog` loads
+every file once (existing slugs untouched), so a month of guides becomes a
+schedule in one command. The first batch — 30 guides, one a day from
+1 Oct 2026, under "Bzaro Editorial Team" — was written in a Claude session
+and needs no API key. The D47 autopilot stays available but off, and skips
+any topic whose slug already exists.

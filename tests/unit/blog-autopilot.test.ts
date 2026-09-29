@@ -34,6 +34,11 @@ describe("checkGeneratedArticle", () => {
     expect(result).toMatchObject({ ok: true, publish: false });
   });
 
+  it("does not mistake a numbered heading for a #1 claim", () => {
+    const result = checkGeneratedArticle(header + "## 1. First check\n\n" + goodBody);
+    expect(result).toMatchObject({ ok: true, publish: true });
+  });
+
   it("holds back thin articles and rejects malformed ones", () => {
     expect(checkGeneratedArticle(header + section(1))).toMatchObject({ ok: true, publish: false });
     expect(checkGeneratedArticle("Here is your article: ...").ok).toBe(false);

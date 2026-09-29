@@ -36,6 +36,15 @@ Two quotes with the same kilowatt figure can differ a lot in what they include. 
 
 Ask who cleans the panels and how often, what happens if generation drops, and how quickly they respond to a fault. A local installer with a service team in your city is often the safer choice.
 
+
+## Mistakes to avoid
+
+- **Sizing by roof area instead of use.** A system should match the units you use, not just the space available.
+- **Comparing only the kilowatt price.** Quotes with the same capacity can differ in panels, inverter, structure and warranty.
+- **Weak structure on a flat roof.** Wind loads are real; ask how the structure is anchored and what material it uses.
+- **Ignoring shade.** A water tank or a neighbour's building that shades panels in the afternoon cuts output; ask the installer to check shade at different times of day.
+- **No cleaning plan.** Dust on panels quietly reduces generation. Agree who cleans them and how often.
+
 ## Before you sign
 
 Ask for a site visit, a written generation estimate, and the names of two or three installations you can see or call. Check that the final agreement lists every item from the quote.

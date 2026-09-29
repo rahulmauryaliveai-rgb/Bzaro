@@ -35,6 +35,14 @@ This decides the hard disk size, which is where many quotes quietly differ. A sh
 
 If a quote is missing any of these, ask before you compare prices.
 
+
+## Mistakes to avoid
+
+- **Counting cameras before deciding what each must see.** Start from the spots that matter and let the camera count follow.
+- **Pointing cameras at bright doors or windows.** Faces come out as dark silhouettes. Ask the installer how each camera handles backlight.
+- **Keeping the default password.** Change the recorder and app passwords on the day of installation and note who has access.
+- **No one checks the recording.** Once a month, play back a random day to confirm every camera is still recording.
+
 ## Before you pay
 
 Ask to see live and recorded footage from your own phone before the installer leaves, check the night view of at least one outdoor camera, and make sure you — not only the installer — have the admin password for the recorder.
