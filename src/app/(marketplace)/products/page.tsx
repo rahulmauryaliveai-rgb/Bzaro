@@ -6,9 +6,14 @@ import { SearchBar } from "@/components/marketplace/SearchBar";
 import { SortSelect } from "@/components/marketplace/SortSelect";
 import { FilterPanel } from "@/components/marketplace/FilterPanel";
 import { ProductResultCard } from "@/components/marketplace/ResultCards";
-import { ResultsPagination } from "@/components/marketplace/ResultsPagination";
+import {
+  MarketplaceBreadcrumbs,
+  ResultsPagination,
+} from "@/components/marketplace/ResultsPagination";
 import { marketplaceUrl } from "@/lib/utils/url";
 import { clientEnv } from "@/env.client";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
 
 /**
  * Product directory.
@@ -17,6 +22,11 @@ import { clientEnv } from "@/env.client";
  * query-first surface — it is the landing page for "show me everything" and the
  * fallback when a search finds nothing.
  */
+
+const TRAIL = [
+  { href: "/", label: "Home" },
+  { href: "/products", label: "Products" },
+];
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -30,7 +40,12 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     title: "All products",
     description: `Browse products from verified suppliers on ${platform}.`,
     alternates: { canonical: marketplaceUrl("/products") },
-    robots: query.page > 5 ? { index: false, follow: true } : { index: true, follow: true },
+    // Filtered and deep-paginated variants consolidate on the plain directory
+    // (canonical above) and stay out of the index themselves (D44).
+    robots:
+      query.page > 5 || query.q || query.category || query.location
+        ? { index: false, follow: true }
+        : { index: true, follow: true },
   };
 }
 
@@ -59,6 +74,8 @@ export default async function ProductsDirectoryPage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
+      <JsonLd data={breadcrumbJsonLd(TRAIL, marketplaceUrl())} />
+      <MarketplaceBreadcrumbs trail={TRAIL} />
       <header className="mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Products</h1>
         <p className="mt-2 text-neutral-600">

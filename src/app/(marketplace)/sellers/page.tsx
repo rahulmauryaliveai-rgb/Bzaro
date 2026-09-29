@@ -4,9 +4,19 @@ import { parseSearchParams, RESULTS_PER_PAGE } from "@/lib/validation/search";
 import { categoryIdFromPath, locationIdFromPath } from "@/server/services/taxonomy.service";
 import { SearchBar } from "@/components/marketplace/SearchBar";
 import { SellerResultCard } from "@/components/marketplace/ResultCards";
-import { ResultsPagination } from "@/components/marketplace/ResultsPagination";
+import {
+  MarketplaceBreadcrumbs,
+  ResultsPagination,
+} from "@/components/marketplace/ResultsPagination";
 import { marketplaceUrl } from "@/lib/utils/url";
 import { clientEnv } from "@/env.client";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
+
+const TRAIL = [
+  { href: "/", label: "Home" },
+  { href: "/sellers", label: "Suppliers" },
+];
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -20,7 +30,12 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     title: "Supplier directory",
     description: `Browse verified suppliers, manufacturers and service providers on ${platform}.`,
     alternates: { canonical: marketplaceUrl("/sellers") },
-    robots: query.page > 5 ? { index: false, follow: true } : { index: true, follow: true },
+    // Filtered and deep-paginated variants consolidate on the plain directory
+    // (canonical above) and stay out of the index themselves (D44).
+    robots:
+      query.page > 5 || query.q || query.category || query.location
+        ? { index: false, follow: true }
+        : { index: true, follow: true },
   };
 }
 
@@ -44,6 +59,8 @@ export default async function SellersPage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      <JsonLd data={breadcrumbJsonLd(TRAIL, marketplaceUrl())} />
+      <MarketplaceBreadcrumbs trail={TRAIL} />
       <header className="mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Suppliers</h1>
         <p className="mt-2 text-neutral-600">

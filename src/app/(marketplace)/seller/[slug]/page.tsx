@@ -6,7 +6,10 @@ import { getMarketplaceSeller, getSellerProducts } from "@/server/services/marke
 import { MarketplaceBreadcrumbs } from "@/components/marketplace/ResultsPagination";
 import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
-import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
+import { breadcrumbJsonLd, marketplaceSellerJsonLd } from "@/lib/seo/jsonld";
+import { getCategorySuppliers } from "@/server/services/discovery.service";
+import { SellerResultCard } from "@/components/marketplace/ResultCards";
+import { toSellerHit } from "@/components/marketplace/hits";
 import { formatPrice } from "@/lib/utils/money";
 import {
   marketplaceUrl,
@@ -14,7 +17,12 @@ import {
   sellerSurfaceOf,
   sellerVisitUrl,
 } from "@/lib/utils/url";
-import { sellerSeoDescription, sellerSeoTitle } from "@/lib/seo/templates";
+import {
+  BUSINESS_TYPE_LABEL,
+  sellerSeoDescription,
+  sellerSeoTitle,
+  type BusinessTypeKey,
+} from "@/lib/seo/templates";
 import { SaveSellerButton } from "@/components/buyer/SaveSellerButton";
 import { TrustSeal } from "@/components/marketplace/TrustSeal";
 
@@ -79,11 +87,33 @@ export default async function MarketplaceSellerPage({ params }: Props) {
 
   if (!seller) notFound();
 
-  const products = await getSellerProducts(seller.id, seller.slug, 8);
-
   const locality = [seller.location?.name, seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
+
+  const primaryCategoryId =
+    seller.categories.find((entry) => entry.isPrimary)?.categoryId ??
+    seller.categories[0]?.categoryId;
+  const [products, similar] = await Promise.all([
+    getSellerProducts(seller.id, seller.slug, 8),
+    primaryCategoryId
+      ? getCategorySuppliers(primaryCategoryId, 5)
+      : Promise.resolve({ sellers: [], total: 0 }),
+  ]);
+  const similarSellers = similar.sellers.filter((row) => row.id !== seller.id).slice(0, 4);
+
+  // D44: the business schema belongs on the canonical copy only. When the
+  // seller's own site is canonical, it carries its own LocalBusiness block.
+  const siteIndexable = seller.website?.indexable ?? false;
+  const canonicalUrl = sellerCanonicalUrl(sellerSurfaceOf(seller), siteIndexable);
+  const marketplaceIsCanonical = canonicalUrl === marketplaceUrl(`/seller/${seller.slug}`);
+  const address = [seller.addressLine1, seller.addressLine2, locality, seller.postalCode]
+    .filter(Boolean)
+    .join(", ");
+  const typeLabel =
+    seller.businessType && seller.businessType in BUSINESS_TYPE_LABEL
+      ? BUSINESS_TYPE_LABEL[seller.businessType as BusinessTypeKey]
+      : null;
 
   const primaryCategory =
     seller.categories.find((entry) => entry.isPrimary)?.category ?? seller.categories[0]?.category;
@@ -98,7 +128,31 @@ export default async function MarketplaceSellerPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <JsonLd data={breadcrumbJsonLd(trail, marketplaceUrl())} />
+      <JsonLd
+        data={[
+          breadcrumbJsonLd(trail, marketplaceUrl()),
+          ...(marketplaceIsCanonical
+            ? [
+                marketplaceSellerJsonLd({
+                  url: canonicalUrl,
+                  businessName: seller.businessName,
+                  legalName: seller.legalName,
+                  description: seller.description,
+                  phone: seller.phone,
+                  logoUrl: seller.logoUrl,
+                  imageUrl: seller.coverImageUrl ?? seller.logoUrl,
+                  establishedYear: seller.establishedYear,
+                  street: [seller.addressLine1, seller.addressLine2].filter(Boolean).join(", "),
+                  city: seller.location?.name ?? null,
+                  state: seller.location?.parent?.name ?? null,
+                  postalCode: seller.postalCode,
+                  ratingAvg: seller.ratingAvg,
+                  ratingCount: seller.ratingCount,
+                }),
+              ]
+            : []),
+        ]}
+      />
 
       <MarketplaceBreadcrumbs trail={trail} />
 
@@ -193,6 +247,29 @@ export default async function MarketplaceSellerPage({ params }: Props) {
         </section>
       ) : null}
 
+      <section className="mt-10 max-w-3xl" aria-labelledby="business-details">
+        <h2 id="business-details" className="text-lg font-semibold">
+          Business details
+        </h2>
+        <dl className="mt-3 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+          {typeLabel ? <Detail label="Business type" value={typeLabel} /> : null}
+          {seller.establishedYear ? (
+            <Detail label="Established" value={String(seller.establishedYear)} />
+          ) : null}
+          {seller.employeeCount ? <Detail label="Employees" value={seller.employeeCount} /> : null}
+          {seller.gstin ? (
+            <Detail
+              label="GST"
+              value={seller.gstinVerifiedAt ? "Registered · verified by Bzaro" : "Registered"}
+            />
+          ) : null}
+          {seller.certifications.length > 0 ? (
+            <Detail label="Certifications" value={seller.certifications.join(", ")} />
+          ) : null}
+          {address ? <Detail label="Address" value={address} /> : null}
+        </dl>
+      </section>
+
       {seller.categories.length > 0 ? (
         <section className="mt-8">
           <h2 className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase">
@@ -265,6 +342,19 @@ export default async function MarketplaceSellerPage({ params }: Props) {
         </section>
       ) : null}
 
+      {similarSellers.length > 0 ? (
+        <section className="mt-14" aria-labelledby="similar-suppliers">
+          <h2 id="similar-suppliers" className="mb-4 text-lg font-semibold">
+            Similar suppliers
+          </h2>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {similarSellers.map((row) => (
+              <SellerResultCard key={row.id} hit={toSellerHit(row)} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {locality && seller.location ? (
         <section className="mt-12 border-t border-neutral-200 pt-6">
           <p className="text-sm text-neutral-600">
@@ -278,6 +368,15 @@ export default async function MarketplaceSellerPage({ params }: Props) {
           </p>
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-neutral-500">{label}</dt>
+      <dd className="mt-0.5 text-neutral-900">{value}</dd>
     </div>
   );
 }

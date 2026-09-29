@@ -52,7 +52,17 @@ export function getMarketplaceSeller(slug: string) {
           verifiedAt: true,
           webPresence: true,
           createdAt: true,
-          location: { select: { name: true, path: true, parent: { select: { name: true } } } },
+          certifications: true,
+          gstinVerifiedAt: true,
+          location: {
+            select: {
+              name: true,
+              slug: true,
+              type: true,
+              path: true,
+              parent: { select: { name: true } },
+            },
+          },
           categories: {
             select: {
               categoryId: true,
@@ -110,7 +120,9 @@ export function getMarketplaceProduct(sellerSlug: string, productSlug: string) {
             orderBy: { sortOrder: "asc" },
             select: { id: true, url: true, alt: true, width: true, height: true },
           },
-          category: { select: { name: true, path: true, ancestorIds: true } },
+          category: {
+            select: { id: true, parentId: true, name: true, path: true, ancestorIds: true },
+          },
           seller: {
             select: {
               id: true,
@@ -128,7 +140,9 @@ export function getMarketplaceProduct(sellerSlug: string, productSlug: string) {
               ratingAvg: true,
               ratingCount: true,
               productCount: true,
-              location: { select: { name: true, parent: { select: { name: true } } } },
+              location: {
+                select: { name: true, slug: true, type: true, parent: { select: { name: true } } },
+              },
             },
           },
         },

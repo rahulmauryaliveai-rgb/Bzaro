@@ -309,6 +309,46 @@ export function getCategorySuppliers(categoryId: string, limit = 12) {
   )();
 }
 
+/**
+ * Comparable products from OTHER sellers in the same category (D44): the
+ * buyer on a product page usually wants to compare, and these links are the
+ * marketplace's cross-seller value. Same category first, then its parent.
+ */
+export function getRelatedProducts(
+  categoryId: string,
+  parentId: string | null,
+  excludeSellerId: string,
+  limit = 4,
+) {
+  return unstable_cache(
+    async () => {
+      const pick = (where: Prisma.ProductWhereInput, take: number) =>
+        db.product.findMany({
+          where: { ...LIVE_PRODUCT, sellerId: { not: excludeSellerId }, ...where },
+          orderBy: [
+            { seller: { searchBoost: "desc" } },
+            { isFeatured: "desc" },
+            { createdAt: "desc" },
+          ],
+          take,
+          select: productCardSelect,
+        });
+      const same = await pick({ categoryId }, limit);
+      if (same.length >= limit || !parentId) return same;
+      const wider = await pick(
+        {
+          id: { notIn: same.map((row) => row.id) },
+          OR: [{ categoryId: parentId }, { category: { ancestorIds: { has: parentId } } }],
+        },
+        limit - same.length,
+      );
+      return [...same, ...wider];
+    },
+    ["discovery-related-products", categoryId, parentId ?? "-", excludeSellerId, String(limit)],
+    { tags: [cacheTags.discoveryCategory(categoryId)], revalidate: 3600 },
+  )();
+}
+
 export function getPlatformStats() {
   return unstable_cache(
     async () => {

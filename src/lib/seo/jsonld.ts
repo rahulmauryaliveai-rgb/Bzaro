@@ -112,6 +112,60 @@ export function sellerJsonLd(seller: SellerPublic, baseUrl: string): JsonLdObjec
   });
 }
 
+/**
+ * LocalBusiness for a seller's MARKETPLACE profile (D44) — the canonical copy
+ * for Free sellers and for sellers whose own site is not yet indexable. Only
+ * facts shown on that page: name, description, phone, address, founding year,
+ * and a rating only when real reviews exist.
+ */
+export function marketplaceSellerJsonLd(seller: {
+  url: string;
+  businessName: string;
+  legalName: string | null;
+  description: string | null;
+  phone: string | null;
+  logoUrl: string | null;
+  imageUrl: string | null;
+  establishedYear: number | null;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  ratingAvg: number;
+  ratingCount: number;
+}): JsonLdObject {
+  const address = compact({
+    "@type": "PostalAddress",
+    streetAddress: seller.street || null,
+    addressLocality: seller.city,
+    addressRegion: seller.state,
+    postalCode: seller.postalCode,
+    addressCountry: "IN",
+  });
+  return compact({
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    "@id": `${seller.url}#business`,
+    name: seller.businessName,
+    legalName: seller.legalName,
+    description: seller.description ? stripRich(seller.description) : null,
+    url: seller.url,
+    telephone: seller.phone,
+    image: seller.imageUrl,
+    logo: seller.logoUrl,
+    foundingDate: seller.establishedYear ? String(seller.establishedYear) : null,
+    address: Object.keys(address).length > 2 ? address : null,
+    aggregateRating:
+      seller.ratingCount > 0
+        ? {
+            "@type": "AggregateRating",
+            ratingValue: seller.ratingAvg.toFixed(1),
+            reviewCount: seller.ratingCount,
+          }
+        : null,
+  });
+}
+
 export function productJsonLd(params: {
   product: {
     name: string;
@@ -126,6 +180,8 @@ export function productJsonLd(params: {
   };
   url: string;
   sellerName: string;
+  /** Category name as shown on the page, e.g. "LED Lights". */
+  category?: string | null;
 }): JsonLdObject {
   const { product } = params;
 
@@ -133,6 +189,8 @@ export function productJsonLd(params: {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
+    url: params.url,
+    category: params.category ?? null,
     description: product.description ?? product.shortDescription,
     sku: product.sku,
     image: product.images.map((image) => image.url),

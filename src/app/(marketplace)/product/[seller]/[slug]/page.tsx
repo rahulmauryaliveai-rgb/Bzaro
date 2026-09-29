@@ -4,6 +4,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { getMarketplaceProduct, getSellerProducts } from "@/server/services/marketplace.service";
+import { getRelatedProducts } from "@/server/services/discovery.service";
+import { getCategoryAncestors } from "@/server/services/taxonomy.service";
+import { ProductResultCard } from "@/components/marketplace/ResultCards";
+import { toProductHit } from "@/components/marketplace/hits";
 import { MarketplaceBreadcrumbs } from "@/components/marketplace/ResultsPagination";
 import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
@@ -101,7 +105,13 @@ export default async function MarketplaceProductPage({ params }: Props) {
 
   if (!product) notFound();
 
-  const related = await getSellerProducts(product.seller.id, product.seller.slug, 5);
+  const [related, ancestors, comparable] = await Promise.all([
+    getSellerProducts(product.seller.id, product.seller.slug, 5),
+    product.category ? getCategoryAncestors(product.category.ancestorIds) : Promise.resolve([]),
+    product.category
+      ? getRelatedProducts(product.category.id, product.category.parentId, product.seller.id, 4)
+      : Promise.resolve([]),
+  ]);
   const specs = specificationsSchema.safeParse(product.specifications);
   const specifications = specs.success ? specs.data : [];
 
@@ -120,11 +130,15 @@ export default async function MarketplaceProductPage({ params }: Props) {
 
   const trail = [
     { href: "/", label: "Home" },
+    // The full category trail, so the breadcrumb (and its JSON-LD) links every
+    // level of the taxonomy, not just the leaf.
+    ...ancestors.map((node) => ({ href: `/category${node.path}`, label: node.name })),
     ...(product.category
       ? [{ href: `/category${product.category.path}`, label: product.category.name }]
       : []),
     { href: `/product/${sellerSlug}/${slug}`, label: product.name },
   ];
+  const sellerCity = product.seller.location?.type === "CITY" ? product.seller.location : null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -135,6 +149,7 @@ export default async function MarketplaceProductPage({ params }: Props) {
             // The Offer URL points at the canonical location.
             url: canonicalUrl,
             sellerName: product.seller.businessName,
+            category: product.category?.name ?? null,
           }),
           breadcrumbJsonLd(trail, marketplaceUrl()),
         ]}
@@ -307,6 +322,53 @@ export default async function MarketplaceProductPage({ params }: Props) {
               ))}
           </ul>
         </section>
+      ) : null}
+
+      {comparable.length > 0 && product.category ? (
+        <section className="mt-16">
+          <h2 className="mb-5 text-lg font-semibold">
+            Compare {product.category.name} from other suppliers
+          </h2>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {comparable.map((item) => (
+              <ProductResultCard key={item.id} hit={toProductHit(item)} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {product.category ? (
+        <nav aria-label="Explore" className="mt-14 border-t border-neutral-200 pt-6 text-sm">
+          <p className="font-medium text-neutral-900">Explore</p>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            <li>
+              <Link
+                href={`/category${product.category.path}`}
+                className="inline-block rounded-full border border-neutral-300 px-3.5 py-1.5 hover:bg-neutral-50"
+              >
+                All {product.category.name} suppliers
+              </Link>
+            </li>
+            {sellerCity ? (
+              <li>
+                <Link
+                  href={`/${sellerCity.slug}/category${product.category.path}`}
+                  className="inline-block rounded-full border border-neutral-300 px-3.5 py-1.5 hover:bg-neutral-50"
+                >
+                  {product.category.name} in {sellerCity.name}
+                </Link>
+              </li>
+            ) : null}
+            <li>
+              <Link
+                href={`/seller/${product.seller.slug}`}
+                className="inline-block rounded-full border border-neutral-300 px-3.5 py-1.5 hover:bg-neutral-50"
+              >
+                {product.seller.businessName} profile
+              </Link>
+            </li>
+          </ul>
+        </nav>
       ) : null}
     </div>
   );
