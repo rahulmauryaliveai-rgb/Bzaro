@@ -18,7 +18,8 @@ import { SortSelect } from "@/components/marketplace/SortSelect";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, itemListJsonLd } from "@/lib/seo/jsonld";
 import { marketplaceUrl } from "@/lib/utils/url";
-import { clientEnv } from "@/env.client";
+import { categorySeoDescription, categorySeoTitle } from "@/lib/seo/templates";
+import { getCategoryCities, getCategoryContentCount } from "@/server/services/seo.service";
 
 /**
  * Category pages.
@@ -44,19 +45,38 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!category) return { title: "Category not found", robots: { index: false, follow: false } };
 
   const query = parseSearchParams(rawQuery);
-  const platform = clientEnv.NEXT_PUBLIC_PLATFORM_NAME;
   const path = `/category/${slug.join("/")}`;
+  const [count, cities] = await Promise.all([
+    getCategoryContentCount(category.id),
+    getCategoryCities(category.id, 3),
+  ]);
+  const seo = {
+    name: category.name,
+    metaTitle: category.metaTitle,
+    metaDescription: category.metaDescription,
+    description: category.description,
+    productCount: count.products,
+    cities: cities.map((city) => city.name),
+  };
+  // An empty category is thin content (D44): kept out of the index until
+  // something is listed under it, but its links are still followed. Deep
+  // pagination is left out for the same reason.
+  const indexable = count.total > 0 && query.page <= 5;
 
   return {
-    title: category.metaTitle ?? `${category.name} suppliers and manufacturers`,
-    description:
-      category.metaDescription ??
-      category.description ??
-      `Find verified ${category.name.toLowerCase()} suppliers on ${platform}. Compare products, prices and contact suppliers directly.`,
+    title: categorySeoTitle(seo),
+    description: categorySeoDescription(seo),
     // Canonical drops pagination and filters so page 2 does not compete with
     // page 1 for the same term.
     alternates: { canonical: marketplaceUrl(path) },
-    robots: query.page > 5 ? { index: false, follow: true } : { index: true, follow: true },
+    robots: indexable ? { index: true, follow: true } : { index: false, follow: true },
+    openGraph: {
+      type: "website",
+      title: categorySeoTitle(seo),
+      description: categorySeoDescription(seo),
+      url: marketplaceUrl(path),
+      ...(category.imageUrl ? { images: [category.imageUrl] } : {}),
+    },
   };
 }
 

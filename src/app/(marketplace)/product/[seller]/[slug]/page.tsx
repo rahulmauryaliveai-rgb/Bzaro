@@ -9,16 +9,22 @@ import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, productJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
-import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
+import {
+  marketplaceUrl,
+  sellerCanonicalUrl,
+  sellerSurfaceOf,
+  sellerVisitUrl,
+} from "@/lib/utils/url";
+import { productSeoDescription, productSeoTitle, type ProductSeoInput } from "@/lib/seo/templates";
 
 /**
  * Marketplace product page.
  *
- * ── This page is deliberately NOT canonical (decision D1) ────────────────────
- * `rel="canonical"` points at the seller's own microsite. The seller's
- * subdomain owns product content; the marketplace owns discovery. That is the
- * whole bargain: sellers get real, defensible SEO value from their microsite,
- * which is what makes a microsite worth having rather than decorative.
+ * ── Canonical: the seller's site when it is indexable (D1, D32, D44) ─────────
+ * For a seller whose own site has cleared the D2 quality gate, `rel=canonical`
+ * points at that site: the seller's subdomain owns product content, the
+ * marketplace owns discovery. Otherwise — Free sellers, and website sellers
+ * whose site is still blocked by robots.txt — this page IS the canonical copy.
  *
  * So why does this page exist at all? Because a buyer arriving from search or a
  * category listing needs cross-seller context — breadcrumbs back into the
@@ -39,23 +45,53 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!product) return { title: "Product not found", robots: { index: false, follow: false } };
 
+  const seo = productSeo(product);
+  const indexable = product.seller.website?.indexable ?? false;
+  const canonical = sellerCanonicalUrl(
+    sellerSurfaceOf(product.seller),
+    indexable,
+    `/products/${product.slug}`,
+  );
+
   return {
-    title: product.metaTitle ?? `${product.name} — ${product.seller.businessName}`,
-    description:
-      product.metaDescription ??
-      product.shortDescription ??
-      product.description?.slice(0, 160) ??
-      `${product.name} from ${product.seller.businessName}.`,
-    // Decision D32: the seller's highest surface is canonical. For a seller
-    // with a website this page is indexable-but-deferential and consolidates
-    // onto the subdomain; for a catalogue-tier seller it IS the canonical.
-    alternates: { canonical: sellerSiteUrl(product.seller, `/products/${product.slug}`) },
+    title: productSeoTitle(seo),
+    description: productSeoDescription(seo),
+    // D44: the seller's own site once it clears the D2 gate, this page
+    // otherwise — never a URL that robots.txt blocks.
+    alternates: { canonical },
+    robots: indexable ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
       type: "website",
       title: product.name,
-      url: marketplaceUrl(`/product/${seller}/${slug}`),
+      description: productSeoDescription(seo),
+      url: canonical,
       ...(product.images[0] ? { images: [product.images[0].url] } : {}),
     },
+  };
+}
+
+type ProductForSeo = NonNullable<Awaited<ReturnType<typeof getMarketplaceProduct>>>;
+
+function productSeo(product: ProductForSeo): ProductSeoInput {
+  return {
+    name: product.name,
+    sellerName: product.seller.businessName,
+    city: product.seller.location?.name ?? null,
+    metaTitle: product.metaTitle,
+    metaDescription: product.metaDescription,
+    shortDescription: product.shortDescription,
+    description: product.description,
+    brand: product.brand,
+    priceLabel: formatPrice({
+      minor: product.priceMinor,
+      maxMinor: product.priceMaxMinor,
+      currency: product.currency,
+      unit: product.unit,
+      onRequest: product.priceOnRequest,
+    }),
+    minOrderLabel: product.minOrderQty
+      ? `${product.minOrderQty}${product.unit ? ` ${product.unit}` : ""}`
+      : null,
   };
 }
 
@@ -70,9 +106,14 @@ export default async function MarketplaceProductPage({ params }: Props) {
   const specifications = specs.success ? specs.data : [];
 
   const hasWebsite = product.seller.webPresence !== "CATALOGUE";
-  const micrositeUrl = sellerSiteUrl(product.seller, `/products/${product.slug}`);
-  // JSON-LD and canonical use micrositeUrl; only the clickable link is tagged.
-  const micrositeVisitUrl = sellerVisitUrl(product.seller, `/products/${product.slug}`);
+  const surface = sellerSurfaceOf(product.seller);
+  // JSON-LD and canonical use the canonical URL; only the clickable link is tagged.
+  const canonicalUrl = sellerCanonicalUrl(
+    surface,
+    product.seller.website?.indexable ?? false,
+    `/products/${product.slug}`,
+  );
+  const micrositeVisitUrl = sellerVisitUrl(surface, `/products/${product.slug}`);
   const locality = [product.seller.location?.name, product.seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
@@ -91,8 +132,8 @@ export default async function MarketplaceProductPage({ params }: Props) {
         data={[
           productJsonLd({
             product,
-            // The Offer URL points at the canonical location, not this page.
-            url: micrositeUrl,
+            // The Offer URL points at the canonical location.
+            url: canonicalUrl,
             sellerName: product.seller.businessName,
           }),
           breadcrumbJsonLd(trail, marketplaceUrl()),

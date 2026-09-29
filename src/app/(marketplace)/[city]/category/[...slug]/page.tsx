@@ -14,7 +14,7 @@ import { PostRequirementCta } from "@/components/marketplace/Discovery";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, itemListJsonLd } from "@/lib/seo/jsonld";
 import { marketplaceUrl } from "@/lib/utils/url";
-import { clientEnv } from "@/env.client";
+import { cityCategorySeoDescription, cityCategorySeoTitle } from "@/lib/seo/templates";
 
 /**
  * City × category listing: /mumbai/category/electronics/lighting/led-bulbs
@@ -37,11 +37,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const [city, category] = await Promise.all([getCityBySlug(citySlug), getCategoryByPath(slug)]);
   if (!city || !category) return { title: "Not found", robots: { index: false, follow: false } };
 
-  const platform = clientEnv.NEXT_PUBLIC_PLATFORM_NAME;
+  const listing = await getCityCategoryListing(city.id, category.id);
+  const empty = listing.sellerTotal === 0 && listing.products.length === 0;
+  const canonical = marketplaceUrl(`/${city.slug}/category${category.path}`);
   return {
-    title: `${category.name} suppliers in ${city.name}`,
-    description: `Verified ${category.name.toLowerCase()} suppliers, wholesalers and manufacturers in ${city.name} on ${platform}. Compare products and get the best price on WhatsApp.`,
-    alternates: { canonical: marketplaceUrl(`/${city.slug}/category${category.path}`) },
+    title: cityCategorySeoTitle(category.name, city.name),
+    description: cityCategorySeoDescription(category.name, city.name, listing.sellerTotal),
+    alternates: { canonical },
+    // A city × category pair with no suppliers is a thin doorway page (D44).
+    robots: empty ? { index: false, follow: true } : { index: true, follow: true },
+    openGraph: {
+      type: "website",
+      title: cityCategorySeoTitle(category.name, city.name),
+      url: canonical,
+    },
   };
 }
 

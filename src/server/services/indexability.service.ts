@@ -70,6 +70,7 @@ export async function recomputeIndexability(sellerId: string): Promise<Eligibili
       email: true,
       verifiedAt: true,
       deletedAt: true,
+      webPresence: true,
       website: { select: { indexable: true, publishedAt: true } },
       members: {
         where: { role: "SELLER_OWNER" },
@@ -110,7 +111,10 @@ export async function recomputeIndexability(sellerId: string): Promise<Eligibili
       flaggedContent,
       websitePublishedAt: seller.website?.publishedAt ?? null,
     },
-    rules,
+    // D44: a Free (catalogue-tier) seller has no website to publish — their
+    // marketplace profile IS their page — so "publish your website" cannot be
+    // a condition of that page being indexed. Every quality bar still applies.
+    seller.webPresence === "CATALOGUE" ? { ...rules, requirePublishedWebsite: false } : rules,
   );
 
   const changed = seller.website?.indexable !== result.eligible;

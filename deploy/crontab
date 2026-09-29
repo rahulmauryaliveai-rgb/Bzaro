@@ -7,9 +7,11 @@ LOG=/var/log/bzaro/cron.log
 
 17 *  * * *  root  $RUN rollup-analytics        >> $LOG 2>&1
 35 *  * * *  root  $RUN expire-market-leads     >> $LOG 2>&1
+# Order matters: the plan tier decides the indexability rules (D44), and the
+# counters feed the category sitemap.
+10 3  * * *  root  $RUN recompute-web-presence  >> $LOG 2>&1
 20 3  * * *  root  $RUN recompute-indexability  >> $LOG 2>&1
 40 3  * * *  root  $RUN refresh-counters        >> $LOG 2>&1
-50 3  * * *  root  $RUN recompute-web-presence  >> $LOG 2>&1
 10 4  * * *  root  $RUN prune-events            >> $LOG 2>&1
 30 4  * * *  root  $RUN refresh-lead-stats      >> $LOG 2>&1
 0  5  25 * *  root  $RUN create-partitions       >> $LOG 2>&1

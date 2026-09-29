@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getLocationSellerCount } from "@/server/services/seo.service";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -44,7 +45,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!city) return { title: "Not found", robots: { index: false, follow: false } };
 
   const platform = clientEnv.NEXT_PUBLIC_PLATFORM_NAME;
+  const sellerCount = await getLocationSellerCount(city.id);
   return {
+    // A city with no suppliers yet is a thin doorway page (D44).
+    robots: sellerCount === 0 ? { index: false, follow: true } : { index: true, follow: true },
     title: `Suppliers and manufacturers in ${city.name}`,
     description: `Find verified suppliers, wholesalers and manufacturers in ${city.name} on ${platform}. Browse by category, compare products and contact suppliers directly.`,
     alternates: { canonical: marketplaceUrl(`/${city.slug}`) },

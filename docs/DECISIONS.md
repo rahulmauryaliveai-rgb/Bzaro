@@ -1031,3 +1031,40 @@ trigram-similar, plus admin-curated `Category.keywords`) with the live
 catalogue (categories of published products whose names match). Deeper
 categories win ties: a subcategory sends the lead to sellers of exactly that
 thing instead of a whole group — better leads for Pro and Gold.
+
+## D44 — One indexable copy per page, and no empty pages in the index
+
+**Problem found (29 Sep 2026 audit).** Marketplace seller and product pages
+pointed `rel=canonical` at the seller's subdomain whenever the seller was on a
+website plan — even when that site had not cleared the D2 gate and its
+robots.txt said `Disallow: /`. Google was told to index a copy it may not
+crawl, so neither copy was indexed. Separately, the seller/product sitemaps
+only listed sellers with an indexable *website*, so Free sellers were never
+listed; the category and location sitemaps read nightly counters that were
+leaf-only (parents showed "0 products"); and empty category/city pages were
+served `index`.
+
+**Decision.**
+
+- `sellerCanonicalUrl(seller, siteIndexable, path)` is the canonical rule:
+  the seller's own site only when it is on a website plan AND indexable;
+  otherwise the marketplace page. Canonical tags, sitemaps and JSON-LD use it;
+  "Visit website" links keep `sellerSiteUrl`.
+- For a Free (catalogue-tier) seller the D2 gate waives "publish your website"
+  (they have none); every quality bar still applies. Their marketplace profile
+  and products can now be indexed and listed in the sitemap.
+- Marketplace seller/product/service pages are `noindex, follow` until the
+  seller clears D2 — thin profiles stay out, links are still followed.
+- Category, location, city and city×category pages are `noindex, follow`
+  while nothing live sits under them. Sitemaps derive categories and
+  locations from live listings (subtree-aware), not from counters.
+- `refresh-counters` rolls counts up the tree; the cron runs
+  web-presence → indexability → counters, and `deploy.sh` now installs a
+  changed `deploy/crontab`.
+- Titles and descriptions come from `src/lib/seo/templates.ts`: what a person
+  wrote wins; generated wording claims only what the seller told us (business
+  type), never "wholesale", "manufacturer", "best" or "#1" by default.
+- The sitemap no longer lists `/register` (blocked by robots.txt) or bare
+  `/search`; it adds `/post-requirement` and `/pricing`.
+- The marketplace has its own 404 page (search, categories, post a
+  requirement) and the homepage declares `Organization` alongside `WebSite`.

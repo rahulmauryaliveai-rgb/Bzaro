@@ -7,7 +7,9 @@ import { cacheTags } from "@/lib/cache/tags";
  * Sitemap data.
  *
  * ── Only indexable sellers appear ────────────────────────────────────────────
- * The D2 eligibility gate governs sitemaps and meta-robots together. If they
+ * The D2 eligibility gate governs sitemaps and meta-robots together. Since D44
+ * a Free (catalogue-tier) seller can clear it too, and is listed at their
+ * marketplace URL — see `sellerCanonicalUrl`. If they
  * disagree — a sitemap advertising URLs that serve `noindex` — that is a
  * contradictory signal, and it is the specific pattern that makes a large
  * auto-generated site look manipulative rather than merely incomplete.
@@ -36,7 +38,12 @@ export function listIndexableSellers(offset = 0, limit = SITEMAP_PAGE_SIZE) {
         orderBy: { createdAt: "asc" },
         skip: offset,
         take: limit,
-        select: { slug: true, updatedAt: true, webPresence: true },
+        select: {
+          slug: true,
+          updatedAt: true,
+          webPresence: true,
+          website: { select: { indexable: true, customDomain: true, customDomainStatus: true } },
+        },
       }),
     ["sitemap-sellers", String(offset), String(limit)],
     { tags: [cacheTags.sitemap()], revalidate: SITEMAP_REVALIDATE },
@@ -77,7 +84,15 @@ export function listIndexableProducts(offset = 0, limit = SITEMAP_PAGE_SIZE) {
         select: {
           slug: true,
           updatedAt: true,
-          seller: { select: { slug: true, webPresence: true } },
+          seller: {
+            select: {
+              slug: true,
+              webPresence: true,
+              website: {
+                select: { indexable: true, customDomain: true, customDomainStatus: true },
+              },
+            },
+          },
         },
       }),
     ["sitemap-products", String(offset), String(limit)],
@@ -117,7 +132,15 @@ export function listIndexableServices(offset = 0, limit = SITEMAP_PAGE_SIZE) {
         select: {
           slug: true,
           updatedAt: true,
-          seller: { select: { slug: true, webPresence: true } },
+          seller: {
+            select: {
+              slug: true,
+              webPresence: true,
+              website: {
+                select: { indexable: true, customDomain: true, customDomainStatus: true },
+              },
+            },
+          },
         },
       }),
     ["sitemap-services", String(offset), String(limit)],
@@ -129,33 +152,77 @@ export function listIndexableServices(offset = 0, limit = SITEMAP_PAGE_SIZE) {
  * Taxonomy pages.
  *
  * Only nodes with content: an empty category page is thin content, and the
- * whole point of the gate is to keep those out of the index.
+ * whole point of the gate is to keep those out of the index. Derived from live
+ * listings rather than the nightly counters, so a category appears the hour
+ * its first product goes live (and never waits on a cron that did not run).
+ * A category counts when anything in its subtree is live.
  */
 export function listSitemapCategories() {
   return unstable_cache(
-    async () =>
-      db.category.findMany({
-        where: { isActive: true, productCount: { gt: 0 } },
+    async () => {
+      const live = {
+        status: "PUBLISHED" as const,
+        deletedAt: null,
+        moderationStatus: "APPROVED" as const,
+        seller: { status: "VERIFIED" as const, deletedAt: null },
+        categoryId: { not: null },
+      };
+      const [products, services] = await Promise.all([
+        db.product.findMany({
+          where: live,
+          distinct: ["categoryId"],
+          select: { category: { select: { id: true, ancestorIds: true } } },
+        }),
+        db.service.findMany({
+          where: live,
+          distinct: ["categoryId"],
+          select: { category: { select: { id: true, ancestorIds: true } } },
+        }),
+      ]);
+      const ids = new Set<string>();
+      for (const row of [...products, ...services]) {
+        if (!row.category) continue;
+        ids.add(row.category.id);
+        for (const ancestor of row.category.ancestorIds) ids.add(ancestor);
+      }
+      if (ids.size === 0) return [];
+      return db.category.findMany({
+        where: { id: { in: [...ids] }, isActive: true },
         orderBy: { path: "asc" },
         take: SITEMAP_PAGE_SIZE,
         select: { path: true },
-      }),
+      });
+    },
     ["sitemap-categories"],
-    { tags: [cacheTags.categoryTree()], revalidate: SITEMAP_REVALIDATE },
+    { tags: [cacheTags.categoryTree(), cacheTags.sitemap()], revalidate: SITEMAP_REVALIDATE },
   )();
 }
 
+/** Location pages with at least one verified seller anywhere beneath them. */
 export function listSitemapLocations() {
   return unstable_cache(
-    async () =>
-      db.location.findMany({
-        where: { isActive: true, sellerCount: { gt: 0 } },
+    async () => {
+      const sellers = await db.seller.findMany({
+        where: { status: "VERIFIED", deletedAt: null, locationId: { not: null } },
+        distinct: ["locationId"],
+        select: { location: { select: { id: true, ancestorIds: true } } },
+      });
+      const ids = new Set<string>();
+      for (const row of sellers) {
+        if (!row.location) continue;
+        ids.add(row.location.id);
+        for (const ancestor of row.location.ancestorIds) ids.add(ancestor);
+      }
+      if (ids.size === 0) return [];
+      return db.location.findMany({
+        where: { id: { in: [...ids] }, isActive: true },
         orderBy: { path: "asc" },
         take: SITEMAP_PAGE_SIZE,
         select: { path: true },
-      }),
+      });
+    },
     ["sitemap-locations"],
-    { tags: [cacheTags.locationTree()], revalidate: SITEMAP_REVALIDATE },
+    { tags: [cacheTags.locationTree(), cacheTags.sitemap()], revalidate: SITEMAP_REVALIDATE },
   )();
 }
 

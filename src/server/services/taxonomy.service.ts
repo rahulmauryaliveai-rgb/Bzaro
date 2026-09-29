@@ -43,6 +43,7 @@ export function getCategoryByPath(segments: string[]) {
           description: true,
           metaTitle: true,
           metaDescription: true,
+          imageUrl: true,
           depth: true,
           ancestorIds: true,
           parentId: true,

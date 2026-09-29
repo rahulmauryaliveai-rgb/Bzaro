@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { recomputeIndexability } from "@/server/services/indexability.service";
+import { rollUp } from "@/lib/utils/tree";
 import { pruneExpiredTokens } from "@/lib/tokens";
 import { pruneExpiredOtpChallenges } from "@/lib/otp/challenge";
 import { pruneExpiredEmailOtps } from "@/lib/otp/email-challenge";
@@ -121,26 +122,52 @@ export async function refreshCountersJob(): Promise<JobResult> {
     }
   }
 
-  // Category and location counts drive the homepage and facet displays.
-  const categories = await db.category.findMany({ select: { id: true } });
+  // Category and location counts drive the homepage, the facet displays and
+  // the category/location sitemaps (only nodes with content are listed).
+  // Counts ROLL UP (D44): "Electronics" counts every product filed under
+  // Lighting, Cables and the rest of its subtree — a parent showing "0
+  // products" while its children are full reads as an empty page to buyers
+  // and search engines alike.
+  const [categories, productsByCategory] = await Promise.all([
+    db.category.findMany({ select: { id: true, ancestorIds: true, productCount: true } }),
+    db.product.groupBy({
+      by: ["categoryId"],
+      where: { status: "PUBLISHED", deletedAt: null, moderationStatus: "APPROVED" },
+      _count: { _all: true },
+    }),
+  ]);
+  const categoryTotals = rollUp(
+    categories,
+    productsByCategory.flatMap((row) =>
+      row.categoryId ? [{ id: row.categoryId, count: row._count._all }] : [],
+    ),
+  );
   for (const category of categories) {
-    const count = await db.product.count({
-      where: {
-        categoryId: category.id,
-        status: "PUBLISHED",
-        deletedAt: null,
-        moderationStatus: "APPROVED",
-      },
-    });
-    await db.category.update({ where: { id: category.id }, data: { productCount: count } });
+    const count = categoryTotals.get(category.id) ?? 0;
+    if (count !== category.productCount) {
+      await db.category.update({ where: { id: category.id }, data: { productCount: count } });
+    }
   }
 
-  const locations = await db.location.findMany({ select: { id: true } });
+  const [locations, sellersByLocation] = await Promise.all([
+    db.location.findMany({ select: { id: true, ancestorIds: true, sellerCount: true } }),
+    db.seller.groupBy({
+      by: ["locationId"],
+      where: { status: "VERIFIED", deletedAt: null },
+      _count: { _all: true },
+    }),
+  ]);
+  const locationTotals = rollUp(
+    locations,
+    sellersByLocation.flatMap((row) =>
+      row.locationId ? [{ id: row.locationId, count: row._count._all }] : [],
+    ),
+  );
   for (const location of locations) {
-    const count = await db.seller.count({
-      where: { locationId: location.id, status: "VERIFIED", deletedAt: null },
-    });
-    await db.location.update({ where: { id: location.id }, data: { sellerCount: count } });
+    const count = locationTotals.get(location.id) ?? 0;
+    if (count !== location.sellerCount) {
+      await db.location.update({ where: { id: location.id }, data: { sellerCount: count } });
+    }
   }
 
   return {

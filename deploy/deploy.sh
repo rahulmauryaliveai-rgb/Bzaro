@@ -217,6 +217,13 @@ echo "→ switching $CURRENT → releases/$ID"
 switch_to "$NEW"
 SWITCHED=1
 
+# The job schedule ships with the code (deploy/crontab). Keep the installed
+# copy in step so a reordered or new job does not wait for setup-vps.sh.
+if [[ "$ENVIRONMENT" == live && -d /etc/cron.d ]] && ! cmp -s deploy/crontab /etc/cron.d/bzaro; then
+  echo "→ crontab changed — installing /etc/cron.d/bzaro"
+  install -m 644 deploy/crontab /etc/cron.d/bzaro
+fi
+
 if (( MANAGE_CADDY )); then
 # Caddy mounts shared/Caddyfile. Rewrite it in place (same inode, so the bind
 # mount sees it) and reload gracefully; no container restart, no TLS blip.

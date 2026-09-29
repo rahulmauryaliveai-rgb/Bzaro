@@ -153,6 +153,43 @@ export function sellerSiteUrl(seller: SellerSurface, sitePath = "/"): string {
   return tenantUrl(seller.slug, sitePath);
 }
 
+/** Flatten a seller row with a nested `website` into a `SellerSurface`. */
+export function sellerSurfaceOf(seller: {
+  slug: string;
+  webPresence: WebPresenceTier;
+  website?: { customDomain?: string | null; customDomainStatus?: string | null } | null;
+}): SellerSurface {
+  return {
+    slug: seller.slug,
+    webPresence: seller.webPresence,
+    customDomain: seller.website?.customDomain ?? null,
+    customDomainStatus: seller.website?.customDomainStatus ?? null,
+  };
+}
+
+/**
+ * The ONE URL search engines should index for a seller page — decision D44.
+ *
+ * `sellerSiteUrl` answers "where does this seller live?"; this answers "which
+ * copy should Google index?". They differ in one case: a seller on a website
+ * plan whose site has not cleared the D2 quality gate. That site's robots.txt
+ * blocks crawlers, so pointing canonical at it would leave the page indexed
+ * nowhere. Until the site is indexable, the marketplace page is canonical.
+ *
+ * Canonical tags, sitemaps and JSON-LD `url` fields use this. Clickable
+ * "Visit website" links keep using `sellerSiteUrl`.
+ */
+export function sellerCanonicalUrl(
+  seller: SellerSurface,
+  siteIndexable: boolean,
+  sitePath = "/",
+): string {
+  if (seller.webPresence !== "CATALOGUE" && siteIndexable) {
+    return sellerSiteUrl(seller, sitePath);
+  }
+  return marketplaceUrl(marketplacePathFor(seller.slug, sitePath));
+}
+
 /**
  * A "Visit store" link from the marketplace, tagged so the storefront can set
  * the first-touch attribution cookie (`?ref=bzaro`, see src/proxy.ts).

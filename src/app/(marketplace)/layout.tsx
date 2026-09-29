@@ -32,8 +32,10 @@ export const metadata: Metadata = {
     template: `%s | ${clientEnv.NEXT_PUBLIC_PLATFORM_NAME}`,
   },
   description:
-    "Find verified suppliers, manufacturers and service providers. Free listing for sellers; websites on the Gold plan.",
+    "Find verified suppliers, manufacturers and service providers across India. Compare products, check business details and send one enquiry to get quotes.",
   robots: { index: true, follow: true },
+  openGraph: { type: "website", siteName: clientEnv.NEXT_PUBLIC_PLATFORM_NAME, locale: "en_IN" },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function MarketplaceLayout({ children }: { children: React.ReactNode }) {

@@ -8,9 +8,15 @@ import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, serviceJsonLd } from "@/lib/seo/jsonld";
 import { formatMoney } from "@/lib/utils/money";
-import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
+import {
+  marketplaceUrl,
+  sellerCanonicalUrl,
+  sellerSurfaceOf,
+  sellerVisitUrl,
+} from "@/lib/utils/url";
+import { productSeoDescription, productSeoTitle } from "@/lib/seo/templates";
 
-/** Canonical points at the microsite, same rationale as the product page (D1). */
+/** Canonical follows the same rule as the product page (D1, D44). */
 
 type Props = { params: Promise<{ seller: string; slug: string }> };
 
@@ -22,14 +28,28 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!service) return { title: "Service not found", robots: { index: false, follow: false } };
 
+  const indexable = service.seller.website?.indexable ?? false;
+  const canonical = sellerCanonicalUrl(
+    sellerSurfaceOf(service.seller),
+    indexable,
+    `/services/${service.slug}`,
+  );
+  const seo = {
+    name: service.name,
+    sellerName: service.seller.businessName,
+    city: service.seller.location?.name ?? null,
+    metaTitle: service.metaTitle,
+    metaDescription: service.metaDescription,
+    shortDescription: service.shortDescription,
+    description: service.description,
+  };
+
   return {
-    title: service.metaTitle ?? `${service.name} — ${service.seller.businessName}`,
-    description:
-      service.metaDescription ??
-      service.shortDescription ??
-      service.description?.slice(0, 160) ??
-      `${service.name} from ${service.seller.businessName}.`,
-    alternates: { canonical: sellerSiteUrl(service.seller, `/services/${service.slug}`) },
+    title: productSeoTitle(seo),
+    description: productSeoDescription(seo),
+    alternates: { canonical },
+    robots: indexable ? { index: true, follow: true } : { index: false, follow: true },
+    openGraph: { type: "website", title: service.name, url: canonical },
   };
 }
 
@@ -43,9 +63,11 @@ export default async function MarketplaceServicePage({ params }: Props) {
   const deliverables = parsed.success ? parsed.data : [];
 
   const hasWebsite = service.seller.webPresence !== "CATALOGUE";
-  const micrositeUrl = sellerSiteUrl(service.seller, `/services/${service.slug}`);
-  // JSON-LD and canonical use micrositeUrl; only the clickable link is tagged.
-  const micrositeVisitUrl = sellerVisitUrl(service.seller, `/services/${service.slug}`);
+  const surface = sellerSurfaceOf(service.seller);
+  const siteIndexable = service.seller.website?.indexable ?? false;
+  // JSON-LD and canonical use the canonical URL; only the clickable link is tagged.
+  const canonicalUrl = sellerCanonicalUrl(surface, siteIndexable, `/services/${service.slug}`);
+  const micrositeVisitUrl = sellerVisitUrl(surface, `/services/${service.slug}`);
   const locality = [service.seller.location?.name, service.seller.location?.parent?.name]
     .filter(Boolean)
     .join(", ");
@@ -64,9 +86,9 @@ export default async function MarketplaceServicePage({ params }: Props) {
         data={[
           serviceJsonLd({
             service,
-            url: micrositeUrl,
+            url: canonicalUrl,
             sellerName: service.seller.businessName,
-            baseUrl: sellerSiteUrl(service.seller),
+            baseUrl: sellerCanonicalUrl(surface, siteIndexable),
           }),
           breadcrumbJsonLd(trail, marketplaceUrl()),
         ]}
@@ -103,7 +125,7 @@ export default async function MarketplaceServicePage({ params }: Props) {
               kind: "service",
               serviceName: service.name,
               sellerName: service.seller.businessName,
-              url: micrositeUrl,
+              url: canonicalUrl,
             }}
           />
         ) : null}

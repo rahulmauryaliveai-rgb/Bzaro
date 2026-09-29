@@ -9,7 +9,7 @@ import {
   SITEMAP_PAGE_SIZE,
 } from "@/server/services/sitemap.service";
 import { renderSitemap, xmlResponse, type SitemapEntry } from "@/lib/seo/sitemap";
-import { marketplaceUrl, sellerSiteUrl } from "@/lib/utils/url";
+import { marketplaceUrl, sellerCanonicalUrl, sellerSurfaceOf } from "@/lib/utils/url";
 
 /**
  * Sharded apex sitemaps, referenced by the index at /sitemap.xml.
@@ -54,10 +54,13 @@ export async function GET(_request: Request, { params }: Props) {
       return xmlResponse(
         renderSitemap([
           { url: marketplaceUrl("/"), changeFrequency: "daily", priority: 1.0 },
-          { url: marketplaceUrl("/search"), changeFrequency: "weekly", priority: 0.7 },
           { url: marketplaceUrl("/sellers"), changeFrequency: "daily", priority: 0.8 },
           { url: marketplaceUrl("/products"), changeFrequency: "daily", priority: 0.8 },
-          { url: marketplaceUrl("/register"), changeFrequency: "monthly", priority: 0.5 },
+          { url: marketplaceUrl("/post-requirement"), changeFrequency: "monthly", priority: 0.6 },
+          { url: marketplaceUrl("/pricing"), changeFrequency: "monthly", priority: 0.5 },
+          // Not /search (a bare search box is not a destination) and not
+          // /register (robots.txt blocks it — listing it is a Search Console
+          // error).
         ]),
       );
 
@@ -107,7 +110,7 @@ export async function GET(_request: Request, { params }: Props) {
           sellers.map((seller) => ({
             // Canonical location per D32: subdomain, or the marketplace page
             // for a catalogue-tier seller.
-            url: sellerSiteUrl(seller),
+            url: sellerCanonicalUrl(sellerSurfaceOf(seller), seller.website?.indexable ?? false),
             lastModified: seller.updatedAt,
             changeFrequency: "weekly" as const,
             priority: 0.9,
@@ -123,7 +126,11 @@ export async function GET(_request: Request, { params }: Props) {
       ]);
 
       const entries: SitemapEntry[] = products.map((product) => ({
-        url: sellerSiteUrl(product.seller, `/products/${product.slug}`),
+        url: sellerCanonicalUrl(
+          sellerSurfaceOf(product.seller),
+          product.seller.website?.indexable ?? false,
+          `/products/${product.slug}`,
+        ),
         lastModified: product.updatedAt,
         changeFrequency: "monthly" as const,
         priority: 0.8,
@@ -134,7 +141,11 @@ export async function GET(_request: Request, { params }: Props) {
       // index.
       for (const service of services) {
         entries.push({
-          url: sellerSiteUrl(service.seller, `/services/${service.slug}`),
+          url: sellerCanonicalUrl(
+            sellerSurfaceOf(service.seller),
+            service.seller.website?.indexable ?? false,
+            `/services/${service.slug}`,
+          ),
           lastModified: service.updatedAt,
           changeFrequency: "monthly",
           priority: 0.8,

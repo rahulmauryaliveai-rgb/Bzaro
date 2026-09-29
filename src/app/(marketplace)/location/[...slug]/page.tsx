@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getLocationSellerCount } from "@/server/services/seo.service";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { search } from "@/lib/search";
@@ -39,6 +40,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
   const query = parseSearchParams(rawQuery);
   const platform = clientEnv.NEXT_PUBLIC_PLATFORM_NAME;
+  const sellerCount = await getLocationSellerCount(location.id);
 
   return {
     title: location.metaTitle ?? `Suppliers and manufacturers in ${location.name}`,
@@ -46,7 +48,11 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       location.metaDescription ??
       `Find verified suppliers, manufacturers and service providers in ${location.name} on ${platform}.`,
     alternates: { canonical: marketplaceUrl(`/location/${slug.join("/")}`) },
-    robots: query.page > 5 ? { index: false, follow: true } : { index: true, follow: true },
+    // Empty locations and deep pagination stay out of the index (D44).
+    robots:
+      query.page > 5 || sellerCount === 0
+        ? { index: false, follow: true }
+        : { index: true, follow: true },
   };
 }
 

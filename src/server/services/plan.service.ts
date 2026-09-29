@@ -6,6 +6,7 @@ import { revalidateTag } from "next/cache";
 import { cacheTags } from "@/lib/cache/tags";
 import { periodKeyFor, topUpCreditsForPlanChange } from "@/server/services/credit.service";
 import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
+import { recomputeIndexability } from "@/server/services/indexability.service";
 import {
   cancelGatewaySubscription,
   isBillingGatewayConfigured,
@@ -127,6 +128,13 @@ export async function recomputeWebPresence(
   });
   revalidateTenant(seller.slug, mode);
   revalidateTag(cacheTags.sitemap(), "max");
+  // The tier decides which page is canonical and whether "publish your
+  // website" applies (D44), so re-run the D2 gate now rather than at 03:20.
+  // Only outside a transaction: the gate reads through `db` and would not see
+  // an uncommitted tier change.
+  if (next !== seller.webPresence && client === db) {
+    await recomputeIndexability(sellerId).catch(() => undefined);
+  }
   if (perksChanged) {
     await revalidateSellerDiscovery(sellerId, mode).catch(() => undefined);
   }

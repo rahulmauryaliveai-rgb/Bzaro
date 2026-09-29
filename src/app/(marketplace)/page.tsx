@@ -100,20 +100,32 @@ export default async function HomePage() {
   return (
     <>
       <JsonLd
-        data={{
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          name: platform,
-          url: marketplaceUrl(),
-          potentialAction: {
-            "@type": "SearchAction",
-            target: {
-              "@type": "EntryPoint",
-              urlTemplate: marketplaceUrl("/search?q={search_term_string}"),
-            },
-            "query-input": "required search_term_string",
+        data={[
+          {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "@id": marketplaceUrl("/#organization"),
+            name: platform,
+            url: marketplaceUrl(),
+            logo: marketplaceUrl("/brand/bzaro-logo.png"),
           },
-        }}
+          {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "@id": marketplaceUrl("/#website"),
+            name: platform,
+            url: marketplaceUrl(),
+            publisher: { "@id": marketplaceUrl("/#organization") },
+            potentialAction: {
+              "@type": "SearchAction",
+              target: {
+                "@type": "EntryPoint",
+                urlTemplate: marketplaceUrl("/search?q={search_term_string}"),
+              },
+              "query-input": "required search_term_string",
+            },
+          },
+        ]}
       />
 
       <HomeHero

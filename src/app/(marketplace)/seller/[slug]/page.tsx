@@ -1,5 +1,4 @@
 import { RichText } from "@/components/shared/RichText";
-import { stripRich } from "@/lib/text/rich";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,7 +8,13 @@ import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd } from "@/lib/seo/jsonld";
 import { formatPrice } from "@/lib/utils/money";
-import { marketplaceUrl, sellerSiteUrl, sellerVisitUrl } from "@/lib/utils/url";
+import {
+  marketplaceUrl,
+  sellerCanonicalUrl,
+  sellerSurfaceOf,
+  sellerVisitUrl,
+} from "@/lib/utils/url";
+import { sellerSeoDescription, sellerSeoTitle } from "@/lib/seo/templates";
 import { SaveSellerButton } from "@/components/buyer/SaveSellerButton";
 import { TrustSeal } from "@/components/marketplace/TrustSeal";
 
@@ -32,23 +37,38 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!seller) return { title: "Supplier not found", robots: { index: false, follow: false } };
 
-  const locality = [seller.location?.name, seller.location?.parent?.name]
-    .filter(Boolean)
-    .join(", ");
+  const primaryCategory =
+    seller.categories.find((entry) => entry.isPrimary)?.category ?? seller.categories[0]?.category;
+  const seo = {
+    businessName: seller.businessName,
+    businessType: seller.businessType,
+    categoryName: primaryCategory?.name ?? null,
+    city: seller.location?.name ?? null,
+    description: seller.description,
+    productCount: seller.productCount,
+  };
+  const indexable = seller.website?.indexable ?? false;
+  const canonical = sellerCanonicalUrl(sellerSurfaceOf(seller), indexable);
 
   return {
-    title: `${seller.businessName}${locality ? ` — ${locality}` : ""}`,
-    description:
-      (seller.description ? stripRich(seller.description).slice(0, 160) : null) ??
-      `${seller.businessName}: products, services and contact details.`,
-    // Decision D32: canonical is the seller's highest surface — this page for
-    // a catalogue-tier seller, their subdomain or domain otherwise.
-    alternates: { canonical: sellerSiteUrl(seller) },
+    title: sellerSeoTitle(seo),
+    description: sellerSeoDescription(seo),
+    // D44: the one indexable copy — the seller's own site once it clears the
+    // D2 gate, this page otherwise.
+    alternates: { canonical },
+    // Thin profiles (no description, no products, unverified contact) stay out
+    // of the index until they clear the same gate; links are still followed.
+    robots: indexable ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
       type: "website",
       title: seller.businessName,
-      url: marketplaceUrl(`/seller/${slug}`),
-      ...(seller.coverImageUrl ? { images: [seller.coverImageUrl] } : {}),
+      description: sellerSeoDescription(seo),
+      url: canonical,
+      ...(seller.coverImageUrl
+        ? { images: [seller.coverImageUrl] }
+        : seller.logoUrl
+          ? { images: [seller.logoUrl] }
+          : {}),
     },
   };
 }
@@ -154,7 +174,7 @@ export default async function MarketplaceSellerPage({ params }: Props) {
         ) : null}
         {seller.webPresence !== "CATALOGUE" ? (
           <a
-            href={sellerVisitUrl(seller)}
+            href={sellerVisitUrl(sellerSurfaceOf(seller))}
             className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
           >
             Visit website ↗
@@ -199,7 +219,7 @@ export default async function MarketplaceSellerPage({ params }: Props) {
             <h2 className="text-lg font-semibold">Products</h2>
             {seller.webPresence !== "CATALOGUE" ? (
               <a
-                href={sellerVisitUrl(seller, "/products")}
+                href={sellerVisitUrl(sellerSurfaceOf(seller), "/products")}
                 className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900"
               >
                 View full catalogue ↗
