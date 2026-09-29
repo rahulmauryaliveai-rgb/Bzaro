@@ -2,11 +2,22 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
 import { listPostsForAdmin } from "@/server/services/admin-blog.service";
 import { marketplaceUrl } from "@/lib/utils/url";
+import {
+  autopilotConfigured,
+  getAutopilotState,
+  nextTopic,
+} from "@/server/services/blog-autopilot.service";
+import { runAutopilotNowAction, setAutopilotPausedAction } from "@/server/actions/admin-blog";
 
 /** Blog articles (D45): drafts and published, newest edit first. */
 export default async function AdminBlogPage() {
   await requirePermission("admin:taxonomy:manage");
-  const posts = await listPostsForAdmin();
+  const [posts, autopilot, configured] = await Promise.all([
+    listPostsForAdmin(),
+    getAutopilotState(),
+    Promise.resolve(autopilotConfigured()),
+  ]);
+  const upcoming = await nextTopic(autopilot.used);
 
   return (
     <div className="max-w-5xl">
@@ -39,6 +50,57 @@ export default async function AdminBlogPage() {
         . Tag each article with the categories, products and suppliers it is about — those links
         appear on both sides automatically.
       </p>
+
+      <section className="mt-6 rounded-lg border border-neutral-700 bg-neutral-800 p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="font-medium">
+            Daily autopilot:{" "}
+            {!configured ? (
+              <span className="text-neutral-400">
+                off (set ANTHROPIC_API_KEY and BLOG_AUTOPILOT=1)
+              </span>
+            ) : autopilot.paused ? (
+              <span className="text-amber-300">paused</span>
+            ) : (
+              <span className="text-emerald-300">on — one guide every day at 9:05 IST</span>
+            )}
+          </p>
+          {configured ? (
+            <div className="ml-auto flex gap-2">
+              <form action={setAutopilotPausedAction}>
+                <input type="hidden" name="paused" value={autopilot.paused ? "0" : "1"} />
+                <button
+                  type="submit"
+                  className="rounded-md border border-neutral-600 px-3 py-1.5 hover:bg-neutral-700"
+                >
+                  {autopilot.paused ? "Resume" : "Pause"}
+                </button>
+              </form>
+              <form action={runAutopilotNowAction}>
+                <button
+                  type="submit"
+                  className="rounded-md border border-neutral-600 px-3 py-1.5 hover:bg-neutral-700"
+                >
+                  Write one now
+                </button>
+              </form>
+            </div>
+          ) : null}
+        </div>
+        <p className="mt-2 text-xs text-neutral-400">
+          Next topic: {upcoming?.title ?? "none left — add topics in src/lib/blog/topics.ts"}
+          {autopilot.lastRunAt ? (
+            <>
+              {" · "}Last run {autopilot.lastRunAt.slice(0, 16).replace("T", " ")} UTC:{" "}
+              {autopilot.lastResult}
+            </>
+          ) : null}
+        </p>
+        <p className="mt-1 text-xs text-neutral-500">
+          Guides that pass the checks are published as &quot;Bzaro Editorial Team&quot;; any that
+          fail a check are saved as drafts here for you to fix or delete. Read a few each week.
+        </p>
+      </section>
 
       {posts.length === 0 ? (
         <p className="mt-8 rounded-lg border border-dashed border-neutral-700 p-8 text-center text-sm text-neutral-400">

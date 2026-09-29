@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/guards";
 import { blogAuthorSchema, blogPostSchema } from "@/lib/validation/blog";
 import { deleteDraft, saveAuthor, savePost } from "@/server/services/admin-blog.service";
 import { parseDraftMarkdown } from "@/lib/blog/markdown-import";
+import { runBlogAutopilot, setAutopilotPaused } from "@/server/services/blog-autopilot.service";
 
 /** Admin blog editor (D45). */
 
@@ -158,4 +159,36 @@ export async function importBlogDraftAction(
   });
   revalidatePath("/admin/blog");
   redirect(`/admin/blog/${result.id}?imported=1`);
+}
+
+/** Pause or resume the daily autopilot (D47). */
+export async function setAutopilotPausedAction(formData: FormData): Promise<void> {
+  const user = await requirePermission("admin:taxonomy:manage");
+  const paused = formData.get("paused") === "1";
+  await setAutopilotPaused(paused);
+  await db.auditLog.create({
+    data: {
+      actorId: user.id,
+      action: paused ? "blog.autopilot_paused" : "blog.autopilot_resumed",
+      entityType: "Setting",
+      entityId: "blog.autopilot",
+    },
+  });
+  revalidatePath("/admin/blog");
+}
+
+/** Write (and, if it passes the checks, publish) today's guide right now. */
+export async function runAutopilotNowAction(): Promise<void> {
+  const user = await requirePermission("admin:taxonomy:manage");
+  const run = await runBlogAutopilot();
+  await db.auditLog.create({
+    data: {
+      actorId: user.id,
+      action: "blog.autopilot_run",
+      entityType: "Setting",
+      entityId: "blog.autopilot",
+      after: run as object,
+    },
+  });
+  revalidatePath("/admin/blog");
 }

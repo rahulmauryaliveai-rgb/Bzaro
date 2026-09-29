@@ -1119,3 +1119,30 @@ and always saves it as a DRAFT — publishing stays a human click. A daily
 Claude scheduled task writes one draft in that format for review; it never
 publishes. Starter guides live in `docs/content/blog/*.md` and are published
 once with `npm run db:seed:blog-starter`.
+
+## D47 — The blog writes and publishes itself, one guide a day
+
+**Decision (30 Sep 2026, owner's request: "do it daily by yourself").** A
+server cron job, `blog-autopilot` (09:05 IST), writes one buying guide with
+the Claude API and publishes it with no human step. Off until
+`BLOG_AUTOPILOT=1` and `ANTHROPIC_API_KEY` are set in the server `.env`;
+model from `BLOG_AUTOPILOT_MODEL` (default `claude-sonnet-5-5`, roughly ₹2–3
+per article).
+
+- Topics come from `src/lib/blog/topics.ts` in order; after the list, a root
+  category with no guide yet. Each topic is used once.
+- The brief forbids superlatives, invented prices/statistics/suppliers and
+  copied wording, and allows links only to Bzaro category, requirement,
+  supplier and blog pages. The answer is parsed and checked
+  (`src/lib/blog/autopilot.ts`): outside links are unwrapped, notes removed;
+  red-flag phrases, fewer than ~550 words or fewer than 3 sections → saved
+  as a DRAFT instead of published.
+- Published as **"Bzaro Editorial Team"**, not under a real person's name —
+  no person wrote it. At most one published guide per IST day.
+- Admin → Blog shows status, last result and the next topic, with Pause /
+  Resume and "Write one now".
+
+Trade-off, stated plainly: unreviewed AI articles are the kind of content
+Google's "scaled content" guidance targets when they are thin or repetitive.
+One focused guide a day with these checks is a reasonable pace, but someone
+should still read a few each week, add real examples, and delete weak ones.

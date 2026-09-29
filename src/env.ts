@@ -113,6 +113,13 @@ const serverSchema = z.object({
   RAZORPAY_BILLING_KEY_SECRET: z.string().optional(),
   RAZORPAY_BILLING_WEBHOOK_SECRET: z.string().optional(),
 
+  // ── Blog autopilot (D47) ──
+  // One buying guide a day, written with the Claude API and published after
+  // automatic checks. Off unless BLOG_AUTOPILOT=1 and a key is set.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  BLOG_AUTOPILOT: z.string().optional(),
+  BLOG_AUTOPILOT_MODEL: z.string().optional(),
+
   // ── Buyer OTP + lead notifications ──
   // Both providers follow the mail pattern: unset → console implementation.
   // WHATSAPP_* are read only by the Cloud API adapter (later phase).

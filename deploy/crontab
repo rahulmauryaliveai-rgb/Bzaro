@@ -12,6 +12,8 @@ LOG=/var/log/bzaro/cron.log
 10 3  * * *  root  $RUN recompute-web-presence  >> $LOG 2>&1
 20 3  * * *  root  $RUN recompute-indexability  >> $LOG 2>&1
 40 3  * * *  root  $RUN refresh-counters        >> $LOG 2>&1
+# One buying guide a day, 09:05 IST (D47). Does nothing unless BLOG_AUTOPILOT=1.
+35 3  * * *  root  $RUN blog-autopilot          >> $LOG 2>&1
 10 4  * * *  root  $RUN prune-events            >> $LOG 2>&1
 30 4  * * *  root  $RUN refresh-lead-stats      >> $LOG 2>&1
 0  5  25 * *  root  $RUN create-partitions       >> $LOG 2>&1

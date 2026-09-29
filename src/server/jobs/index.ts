@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { rollUp } from "@/lib/utils/tree";
+import { runBlogAutopilot } from "@/server/services/blog-autopilot.service";
 import { pruneExpiredTokens } from "@/lib/tokens";
 import { pruneExpiredOtpChallenges } from "@/lib/otp/challenge";
 import { pruneExpiredEmailOtps } from "@/lib/otp/email-challenge";
@@ -371,7 +372,20 @@ export async function recomputeWebPresenceJob(): Promise<JobResult> {
   };
 }
 
+/** One buying guide a day via the Claude API (D47). */
+export async function blogAutopilotJob(): Promise<JobResult> {
+  const startedAt = Date.now();
+  const run = await runBlogAutopilot();
+  return {
+    job: "blog-autopilot",
+    ok: run.status !== "failed",
+    durationMs: Date.now() - startedAt,
+    details: run,
+  };
+}
+
 export const JOBS = {
+  "blog-autopilot": blogAutopilotJob,
   "recompute-indexability": recomputeIndexabilityJob,
   "refresh-counters": refreshCountersJob,
   "create-partitions": createPartitionsJob,
