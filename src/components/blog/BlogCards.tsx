@@ -21,8 +21,10 @@ const dateFormat = new Intl.DateTimeFormat("en-IN", {
   timeZone: "Asia/Kolkata",
 });
 
-export function formatBlogDate(date: Date | null): string {
-  return date ? dateFormat.format(date) : "";
+export function formatBlogDate(date: Date | string | null): string {
+  if (!date) return "";
+  const value = date instanceof Date ? date : new Date(date);
+  return Number.isNaN(value.getTime()) ? "" : dateFormat.format(value);
 }
 
 export function BlogCard({ post, headingLevel = 2 }: { post: BlogCardData; headingLevel?: 2 | 3 }) {

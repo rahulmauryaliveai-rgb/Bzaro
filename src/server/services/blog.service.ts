@@ -16,6 +16,27 @@ import { cacheTags } from "@/lib/cache/tags";
 const REVALIDATE = 3600;
 export const BLOG_PAGE_SIZE = 12;
 
+const DATE_KEYS = new Set(["publishedAt", "updatedAt", "createdAt"]);
+
+/**
+ * `unstable_cache` stores results as JSON, so every Date comes back as an
+ * ISO string. Pages call `.toISOString()` / format these, which threw on the
+ * homepage and /blog as soon as the first article existed. Turn them back
+ * into Dates on the way out of the cache.
+ */
+export function reviveDates<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => reviveDates(item)) as T;
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      out[key] =
+        DATE_KEYS.has(key) && typeof item === "string" ? new Date(item) : reviveDates(item);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 /** Published, and not scheduled in the future. */
 function publishedNow(): Prisma.BlogPostWhereInput {
   return { status: "PUBLISHED", publishedAt: { lte: new Date() } };
@@ -53,7 +74,7 @@ export function listPublishedPosts(page = 1) {
     },
     ["blog-list", String(page)],
     { tags: [cacheTags.blog()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 /** One article with its author and the live listings it is tagged with. */
@@ -137,7 +158,7 @@ export function getPublishedPost(slug: string) {
     },
     ["blog-post", slug],
     { tags: [cacheTags.blog()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 /** Other articles on the same categories, newest first; topped up with the latest. */
@@ -164,7 +185,7 @@ export function getRelatedPosts(postId: string, categoryIds: string[], limit = 3
     },
     ["blog-related", postId, categoryIds.join(","), String(limit)],
     { tags: [cacheTags.blog()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 /** Articles tagged with a category or any of its ancestors (category pages). */
@@ -179,7 +200,7 @@ export function getPostsForCategory(categoryId: string, ancestorIds: string[], l
       }),
     ["blog-for-category", categoryId, String(limit)],
     { tags: [cacheTags.blog()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 /** Articles that feature a product or a supplier ("Featured in" blocks). */
@@ -199,7 +220,7 @@ export function getPostsMentioning(input: { productId?: string; sellerId?: strin
     },
     ["blog-mentioning", input.productId ?? "-", input.sellerId ?? "-", String(limit)],
     { tags: [cacheTags.blog()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 export function getAuthorWithPosts(slug: string) {
@@ -228,7 +249,7 @@ export function getAuthorWithPosts(slug: string) {
     },
     ["blog-author", slug],
     { tags: [cacheTags.blog()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 /** Every indexable article, for the sitemap. */
@@ -243,7 +264,7 @@ export function listSitemapPosts() {
       }),
     ["sitemap-blog"],
     { tags: [cacheTags.blog(), cacheTags.sitemap()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
 
 /** Authors with at least one live article, for the sitemap. */
@@ -256,5 +277,5 @@ export function listSitemapAuthors() {
       }),
     ["sitemap-blog-authors"],
     { tags: [cacheTags.blog(), cacheTags.sitemap()], revalidate: REVALIDATE },
-  )();
+  )().then(reviveDates);
 }
