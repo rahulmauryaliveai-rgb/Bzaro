@@ -1888,3 +1888,67 @@ model Setting {
   value     Json
   updatedAt DateTime @updatedAt
 }
+
+// ── Blog (D45) ──────────────────────────────────────────────────────────────
+// Buyer guides written by the Bzaro team. Bodies use the article markers in
+// src/lib/text/rich.ts (headings and links on top of the seller markers) —
+// stored as text, never HTML.
+
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// A real person who writes for the blog. E-E-A-T: every post names one.
+model BlogAuthor {
+  id          String   @id @default(cuid())
+  slug        String   @unique @db.Citext
+  name        String
+  /// "Founder, Bzaro" — shown under the name.
+  role        String?
+  bio         String?  @db.Text
+  avatarUrl   String?
+  linkedinUrl String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts BlogPost[]
+}
+
+model BlogPost {
+  id            String     @id @default(cuid())
+  slug          String     @unique @db.Citext
+  title         String
+  /// One or two sentences for the listing and the meta description fallback.
+  excerpt       String?
+  body          String     @db.Text
+  coverImageUrl String?
+  coverImageAlt String?
+  status        BlogStatus @default(DRAFT)
+  /// Set on first publish; shown as the publication date.
+  publishedAt   DateTime?
+  authorId      String?
+
+  metaTitle       String?
+  metaDescription String?
+  ogImageUrl      String?
+  noindex         Boolean @default(false)
+  /// Admin-only, for an article first published elsewhere. Blank = this page.
+  canonicalUrl    String?
+
+  /// Internal linking (D45): the categories, products and suppliers this
+  /// article is about. Drive "related" blocks both ways — never auto-inserted
+  /// links in the body.
+  categoryIds String[] @default([])
+  productIds  String[] @default([])
+  sellerIds   String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author BlogAuthor? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([categoryIds], type: Gin)
+  @@index([authorId])
+}

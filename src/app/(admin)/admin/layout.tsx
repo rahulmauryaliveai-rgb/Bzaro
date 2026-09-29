@@ -35,6 +35,7 @@ const NAV = [
   { href: "/admin/moderation", label: "Moderation", permission: "admin:content:moderate" },
   { href: "/admin/categories", label: "Categories", permission: "admin:taxonomy:manage" },
   { href: "/admin/locations", label: "Locations", permission: "admin:taxonomy:manage" },
+  { href: "/admin/blog", label: "Blog", permission: "admin:taxonomy:manage" },
   { href: "/admin/enquiries", label: "Enquiries", permission: "admin:enquiry:read" },
   { href: "/admin/leads", label: "Leads", permission: "admin:lead:read" },
   { href: "/admin/leads/flags", label: "Lead flags", permission: "admin:lead:refund" },

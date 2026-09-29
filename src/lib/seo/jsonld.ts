@@ -283,3 +283,39 @@ export function itemListJsonLd(
     })),
   };
 }
+
+/**
+ * BlogPosting for an article (D45). Author is a Person with their author page;
+ * publisher references the Organization declared on the homepage.
+ */
+export function blogPostingJsonLd(post: {
+  url: string;
+  headline: string;
+  description: string | null;
+  image: string | null;
+  datePublished: Date | null;
+  dateModified: Date;
+  authorName: string | null;
+  authorUrl: string | null;
+  publisherId: string;
+  wordCount: number;
+}): JsonLdObject {
+  return compact({
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "@id": `${post.url}#article`,
+    mainEntityOfPage: post.url,
+    url: post.url,
+    headline: post.headline.slice(0, 110),
+    description: post.description,
+    image: post.image,
+    datePublished: post.datePublished?.toISOString() ?? null,
+    dateModified: post.dateModified.toISOString(),
+    wordCount: post.wordCount,
+    inLanguage: "en-IN",
+    author: post.authorName
+      ? compact({ "@type": "Person", name: post.authorName, url: post.authorUrl })
+      : null,
+    publisher: { "@id": post.publisherId },
+  });
+}

@@ -1,7 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Bold, Eye, Italic, List, ListOrdered, Pencil, Underline } from "lucide-react";
+import {
+  Bold,
+  Eye,
+  Heading2,
+  Heading3,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  Pencil,
+  Underline,
+} from "lucide-react";
 import { RichText } from "@/components/shared/RichText";
 
 /**
@@ -11,6 +22,9 @@ import { RichText } from "@/components/shared/RichText";
  * Preview shows exactly what buyers will see.
  *
  * Shortcuts: Ctrl/⌘+B bold, Ctrl/⌘+I italic, Ctrl/⌘+U underline.
+ *
+ * `article` (blog, D45) adds heading and link buttons; seller text never has
+ * them.
  */
 
 type Props = {
@@ -21,6 +35,7 @@ type Props = {
   maxLength?: number;
   placeholder?: string;
   onValueChange?: (value: string) => void;
+  article?: boolean;
 };
 
 const WRAP = { bold: "**", italic: "*", underline: "__" } as const;
@@ -38,6 +53,7 @@ export function RichTextEditor({
   maxLength = 5000,
   placeholder,
   onValueChange,
+  article = false,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState(defaultValue);
@@ -119,6 +135,41 @@ export function RichTextEditor({
     commit(next, caret, caret);
   }
 
+  function heading(level: 2 | 3) {
+    const area = ref.current;
+    if (!area) return;
+    const { selectionStart: start, value: text } = area;
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    const nextBreak = text.indexOf("\n", lineStart);
+    const lineEnd = nextBreak === -1 ? text.length : nextBreak;
+    const line = text.slice(lineStart, lineEnd);
+    const marker = `${"#".repeat(level)} `;
+    const bare = line.replace(/^\s*#{2,3}\s+/, "");
+    const toggledOff = line.startsWith(marker);
+    const content = toggledOff ? bare : `${marker}${bare || "Heading"}`;
+    // A heading is its own block: blank lines around it.
+    const above = text.slice(0, lineStart);
+    const below = text.slice(lineEnd);
+    const gapAbove = !toggledOff && above.length > 0 && !above.endsWith("\n\n") ? "\n" : "";
+    const gapBelow = !toggledOff && below.length > 0 && !below.startsWith("\n\n") ? "\n" : "";
+    const next = above + gapAbove + content + gapBelow + below;
+    const caret = lineStart + gapAbove.length + content.length;
+    commit(next, toggledOff ? caret : caret - (bare ? bare.length : 7), caret);
+  }
+
+  function link() {
+    const area = ref.current;
+    if (!area) return;
+    const { selectionStart: start, selectionEnd: end, value: text } = area;
+    const label = text.slice(start, end).trim() || "link text";
+    const url = "/category/";
+    const insert = `[${label}](${url})`;
+    const next = text.slice(0, start) + insert + text.slice(end);
+    // Select the URL so the author types over it.
+    const urlStart = start + label.length + 3;
+    commit(next, urlStart, urlStart + url.length);
+  }
+
   const button =
     "inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-200 disabled:opacity-40";
 
@@ -180,6 +231,41 @@ export function RichTextEditor({
         >
           <ListOrdered className="h-4 w-4" aria-hidden="true" />
         </button>
+        {article ? (
+          <>
+            <span className="mx-1 h-5 w-px bg-neutral-300" aria-hidden="true" />
+            <button
+              type="button"
+              className={button}
+              onClick={() => heading(2)}
+              disabled={preview}
+              aria-label="Heading"
+              title="Heading"
+            >
+              <Heading2 className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className={button}
+              onClick={() => heading(3)}
+              disabled={preview}
+              aria-label="Sub-heading"
+              title="Sub-heading"
+            >
+              <Heading3 className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className={button}
+              onClick={link}
+              disabled={preview}
+              aria-label="Link"
+              title="Link: [text](/category/…) or [text](https://…)"
+            >
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           onClick={() => setPreview((on) => !on)}
@@ -221,7 +307,7 @@ export function RichTextEditor({
       {preview ? (
         <div className="min-h-40 px-3 py-3 text-sm text-neutral-800">
           {value.trim() ? (
-            <RichText text={value} className="space-y-3 leading-relaxed" />
+            <RichText text={value} article={article} className="space-y-3 leading-relaxed" />
           ) : (
             <p className="text-neutral-400">Nothing to preview yet.</p>
           )}

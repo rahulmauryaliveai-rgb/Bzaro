@@ -32,6 +32,8 @@ export const cacheTags = {
   home: () => "home",
   /** Sitemap shards. */
   sitemap: () => "sitemap",
+  /** Blog listing, articles, authors and the "related articles" blocks (D45). */
+  blog: () => "blog",
   /** The category tree, read by nearly every public page. */
   categoryTree: () => "category-tree",
   /** The location tree. */

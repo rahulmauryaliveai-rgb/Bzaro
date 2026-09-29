@@ -9,6 +9,7 @@ import {
   SITEMAP_PAGE_SIZE,
 } from "@/server/services/sitemap.service";
 import { renderSitemap, xmlResponse, type SitemapEntry } from "@/lib/seo/sitemap";
+import { listSitemapAuthors, listSitemapPosts } from "@/server/services/blog.service";
 import { marketplaceUrl, sellerCanonicalUrl, sellerSurfaceOf } from "@/lib/utils/url";
 
 /**
@@ -87,6 +88,27 @@ export async function GET(_request: Request, { params }: Props) {
             priority: 0.7,
           })),
         ),
+      );
+    }
+
+    case "blog": {
+      const [posts, authors] = await Promise.all([listSitemapPosts(), listSitemapAuthors()]);
+      return xmlResponse(
+        renderSitemap([
+          { url: marketplaceUrl("/blog"), changeFrequency: "weekly" as const, priority: 0.7 },
+          ...posts.map((post) => ({
+            url: marketplaceUrl(`/blog/${post.slug}`),
+            lastModified: post.updatedAt,
+            changeFrequency: "monthly" as const,
+            priority: 0.7,
+          })),
+          ...authors.map((author) => ({
+            url: marketplaceUrl(`/blog/author/${author.slug}`),
+            lastModified: author.updatedAt,
+            changeFrequency: "monthly" as const,
+            priority: 0.4,
+          })),
+        ]),
       );
     }
 

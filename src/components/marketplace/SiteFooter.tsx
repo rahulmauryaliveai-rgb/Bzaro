@@ -29,6 +29,7 @@ export async function SiteFooter() {
           <FooterLink href="/sellers">Supplier directory</FooterLink>
           <FooterLink href="/post-requirement">Post a requirement</FooterLink>
           <FooterLink href="/products">Latest products</FooterLink>
+          <FooterLink href="/blog">Buying guides</FooterLink>
         </FooterColumn>
 
         <FooterColumn title="For sellers">

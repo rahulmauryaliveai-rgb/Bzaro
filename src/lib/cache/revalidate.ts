@@ -109,3 +109,8 @@ export function revalidateDiscovery(
 ): void {
   apply(discoveryTags(input), mode);
 }
+
+/** A blog article or author changed (D45): listing, articles, related blocks, sitemap. */
+export function revalidateBlog(mode: RevalidateMode = "immediate"): void {
+  apply([cacheTags.blog(), cacheTags.sitemap()], mode);
+}

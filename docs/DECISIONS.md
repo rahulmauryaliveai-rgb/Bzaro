@@ -1068,3 +1068,29 @@ served `index`.
   `/search`; it adds `/post-requirement` and `/pricing`.
 - The marketplace has its own 404 page (search, categories, post a
   requirement) and the homepage declares `Organization` alongside `WebSite`.
+
+## D45 — A blog of buyer guides, linked to listings by tag
+
+**Decision.** `/blog` (list), `/blog/<slug>` (article) and
+`/blog/author/<slug>` (author) on the marketplace, written in Admin → Blog.
+
+- Bodies use the rich-text markers plus two article-only ones: `## ` / `### `
+  headings and `[text](/path or https://…)` links. Stored as text, rendered as
+  React elements; unsafe link targets (javascript:, data:, http:, `//host`)
+  render literally. Seller text never gets headings or links.
+- Every published article names a real author (role, bio, photo, LinkedIn) —
+  the E-E-A-T half of "who wrote this". Publishing without one is refused.
+- Internal linking is by TAG, never by auto-inserting keywords into the body.
+  An article lists the categories, products and suppliers it is about (pasted
+  links, resolved to ids server-side). Those drive: "Find suppliers" on the
+  article; "<Category> buying guides" on category pages (the category or any
+  ancestor); "Buying guides" on product pages (articles featuring the product
+  or its supplier, else its category); "<Seller> in our guides" on supplier
+  pages. Deleted or suspended listings drop out silently.
+- Structured data: BlogPosting (author Person, publisher = the homepage
+  Organization), BreadcrumbList, ProfilePage for authors. A `blog.xml` shard
+  lists articles and authors with live articles; page 2+ of the list is
+  noindex (robots.txt already blocks `?page=`).
+- Admin fields per article: SEO title, meta description (with a preview),
+  share image, publication date, noindex, and a canonical URL only for
+  articles first published elsewhere.

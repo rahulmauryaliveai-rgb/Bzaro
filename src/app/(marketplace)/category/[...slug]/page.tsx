@@ -21,6 +21,8 @@ import { marketplaceUrl } from "@/lib/utils/url";
 import { categorySeoDescription, categorySeoTitle } from "@/lib/seo/templates";
 import { getCategoryCities, getCategoryContentCount } from "@/server/services/seo.service";
 import { getCategorySuppliers } from "@/server/services/discovery.service";
+import { getPostsForCategory } from "@/server/services/blog.service";
+import { RelatedArticles } from "@/components/blog/BlogCards";
 import { parseFaqs } from "@/lib/validation/seo";
 import { RichText } from "@/components/shared/RichText";
 import { toSellerHit } from "@/components/marketplace/hits";
@@ -99,7 +101,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const query = parseSearchParams(rawQuery);
   const locationId = await locationIdFromPath(query.location);
 
-  const [ancestors, children, results, suppliers, cities] = await Promise.all([
+  const [ancestors, children, results, suppliers, cities, guides] = await Promise.all([
     getCategoryAncestors(category.ancestorIds),
     getCategoryChildren(category.id),
     search.searchProducts({
@@ -116,6 +118,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     }),
     getCategorySuppliers(category.id, 8),
     getCategoryCities(category.id, 12),
+    getPostsForCategory(category.id, category.ancestorIds, 3),
   ]);
   // Intro, suppliers, cities and FAQs belong to the page itself, not to every
   // filtered or paginated variant — repeating them there is duplicate content.
@@ -229,6 +232,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             cities={cities}
           />
           <CategoryFaqs faqs={faqs} />
+          <RelatedArticles title={`${category.name} buying guides`} posts={guides} />
         </>
       ) : null}
     </div>

@@ -8,6 +8,8 @@ import { ContactIntent } from "@/components/buyer/ContactIntent";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbJsonLd, marketplaceSellerJsonLd } from "@/lib/seo/jsonld";
 import { getCategorySuppliers } from "@/server/services/discovery.service";
+import { getPostsMentioning } from "@/server/services/blog.service";
+import { RelatedArticles } from "@/components/blog/BlogCards";
 import { SellerResultCard } from "@/components/marketplace/ResultCards";
 import { toSellerHit } from "@/components/marketplace/hits";
 import { formatPrice } from "@/lib/utils/money";
@@ -94,11 +96,12 @@ export default async function MarketplaceSellerPage({ params }: Props) {
   const primaryCategoryId =
     seller.categories.find((entry) => entry.isPrimary)?.categoryId ??
     seller.categories[0]?.categoryId;
-  const [products, similar] = await Promise.all([
+  const [products, similar, guides] = await Promise.all([
     getSellerProducts(seller.id, seller.slug, 8),
     primaryCategoryId
       ? getCategorySuppliers(primaryCategoryId, 5)
       : Promise.resolve({ sellers: [], total: 0 }),
+    getPostsMentioning({ sellerId: seller.id }, 3),
   ]);
   const similarSellers = similar.sellers.filter((row) => row.id !== seller.id).slice(0, 4);
 
@@ -341,6 +344,8 @@ export default async function MarketplaceSellerPage({ params }: Props) {
           </ul>
         </section>
       ) : null}
+
+      <RelatedArticles title={`${seller.businessName} in our guides`} posts={guides} />
 
       {similarSellers.length > 0 ? (
         <section className="mt-14" aria-labelledby="similar-suppliers">

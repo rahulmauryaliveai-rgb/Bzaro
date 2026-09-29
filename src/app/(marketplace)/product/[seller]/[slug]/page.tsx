@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { getMarketplaceProduct, getSellerProducts } from "@/server/services/marketplace.service";
 import { getRelatedProducts } from "@/server/services/discovery.service";
+import { getPostsForCategory, getPostsMentioning } from "@/server/services/blog.service";
+import { RelatedArticles } from "@/components/blog/BlogCards";
 import { getCategoryAncestors } from "@/server/services/taxonomy.service";
 import { ProductResultCard } from "@/components/marketplace/ResultCards";
 import { toProductHit } from "@/components/marketplace/hits";
@@ -105,12 +107,18 @@ export default async function MarketplaceProductPage({ params }: Props) {
 
   if (!product) notFound();
 
-  const [related, ancestors, comparable] = await Promise.all([
+  const [related, ancestors, comparable, guides] = await Promise.all([
     getSellerProducts(product.seller.id, product.seller.slug, 5),
     product.category ? getCategoryAncestors(product.category.ancestorIds) : Promise.resolve([]),
     product.category
       ? getRelatedProducts(product.category.id, product.category.parentId, product.seller.id, 4)
       : Promise.resolve([]),
+    // Guides that feature this product, else guides on its category (D45).
+    getPostsMentioning({ productId: product.id, sellerId: product.seller.id }, 3).then((posts) =>
+      posts.length > 0 || !product.category
+        ? posts
+        : getPostsForCategory(product.category.id, product.category.ancestorIds, 3),
+    ),
   ]);
   const specs = specificationsSchema.safeParse(product.specifications);
   const specifications = specs.success ? specs.data : [];
@@ -336,6 +344,8 @@ export default async function MarketplaceProductPage({ params }: Props) {
           </div>
         </section>
       ) : null}
+
+      <RelatedArticles title="Buying guides" posts={guides} />
 
       {product.category ? (
         <nav aria-label="Explore" className="mt-14 border-t border-neutral-200 pt-6 text-sm">
