@@ -1147,6 +1147,15 @@ Google's "scaled content" guidance targets when they are thin or repetitive.
 One focused guide a day with these checks is a reasonable pace, but someone
 should still read a few each week, add real examples, and delete weak ones.
 
+### D47a — Three guides a week while supply is thin (3 Oct 2026)
+
+**Decision (owner).** The `blog-autopilot` cron runs Mon/Wed/Fri at 09:05 IST
+(`35 3 * * 1,3,5` UTC in `deploy/crontab`) instead of daily. With five
+sellers and a handful of products, a daily AI guide would soon make the blog
+most of the site's indexable content — a poor site-quality signal. Return to
+daily once the target categories have real suppliers. `deploy.sh` reinstalls
+`/etc/cron.d/bzaro` on the next live deploy, so no manual cron edit is needed.
+
 ## D48 — Scheduled guides, no API needed
 
 **Decision (30 Sep 2026).** Any article can be **scheduled**: set a future

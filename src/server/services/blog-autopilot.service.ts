@@ -9,7 +9,8 @@ import { BLOG_TOPICS, type BlogTopic } from "@/lib/blog/topics";
 import { AUTOPILOT_SYSTEM, autopilotUserPrompt, checkGeneratedArticle } from "@/lib/blog/autopilot";
 
 /**
- * Blog autopilot (D47): one buying guide a day, no human step.
+ * Blog autopilot (D47): one buying guide per run, no human step. Runs Mon/Wed/Fri
+ * while the marketplace is thin (D47a); the schedule lives in deploy/crontab.
  *
  * Runs from the `blog-autopilot` cron job on the server. Picks the next topic,
  * asks the Claude API for an article, runs the checks in
