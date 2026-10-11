@@ -6,6 +6,7 @@ import { forSeller } from "@/lib/db-tenant";
 import { db } from "@/lib/db";
 import { revalidateProduct } from "@/lib/cache/revalidate";
 import { productImageSchema } from "@/lib/validation/catalog";
+import type { ModerationStatus } from "@/generated/prisma/enums";
 import {
   matchPhotos,
   MAX_PHOTOS_PER_PRODUCT,
@@ -197,18 +198,6 @@ export async function attachPhotoAction(input: {
     return { ok: false, error: "That upload could not be verified." };
   }
 
-  const tdb = forSeller(scope.sellerId);
-
-  // The ownership check. Reading through the tenant client means another
-  // seller's product id matches nothing, and is reported as not existing
-  // rather than as forbidden — a 403 would confirm the id is real.
-  const product = await tdb.product.findFirst({
-    where: { id: productId, deletedAt: null },
-    select: { id: true, moderationStatus: true },
-  });
-
-  if (!product) return { ok: false, error: "That product no longer exists." };
-
   const image = parsed.data;
 
   // Clamped rather than rejected: a bad value from the client costs a photo
@@ -218,40 +207,76 @@ export async function attachPhotoAction(input: {
     : 0;
 
   try {
-    await db.$transaction(async (tx) => {
-      // ── The cap, counted and enforced in ONE transaction ──
-      // Counting outside the transaction is the same race as `sortOrder`: three
-      // concurrent attaches each read 11, each decide there is room, and the
-      // product ends up with 14 photos. Inside a transaction the count and the
-      // insert cannot be interleaved by another attach, so the twelfth photo is
-      // the last one that succeeds.
-      const existing = await tx.productImage.count({
-        where: { productId, sellerId: scope.sellerId },
-      });
+    await db.$transaction(
+      async (tx) => {
+        // ── Lock the product row, THEN count ────────────────────────────────
+        // A transaction on its own does not make this safe, which is the trap:
+        // under READ COMMITTED (Postgres' default) two concurrent attaches both
+        // run COUNT and both see 11. Neither blocks the other, because the rows
+        // they are about to insert do not exist yet, so there is nothing for
+        // them to contend on — and the product ends up with 13 photos.
+        //
+        // `FOR UPDATE` on the parent Product row gives them something to
+        // contend on. The second attach blocks here until the first commits,
+        // then counts and sees the committed insert. Attaches for one product
+        // are serialised; attaches for different products never touch the same
+        // row and stay fully parallel, which is what the three-at-a-time
+        // uploader needs.
+        //
+        // This also IS the ownership check: `sellerId` is in the WHERE, so a
+        // foreign or deleted product returns no row and no lock is taken.
+        // Raw SQL bypasses the `forSeller()` extension, so that predicate is
+        // written out by hand rather than inherited — the one place in this
+        // file where tenant scoping is not mechanical.
+        const locked = await tx.$queryRaw<Array<{ moderationStatus: ModerationStatus }>>`
+          SELECT "moderationStatus"
+            FROM "Product"
+           WHERE "id" = ${productId}
+             AND "sellerId" = ${scope.sellerId}
+             AND "deletedAt" IS NULL
+             FOR UPDATE`;
 
-      if (existing >= MAX_PHOTOS_PER_PRODUCT) throw new PhotoCapReached();
+        const product = locked[0];
+        if (!product) throw new ProductGone();
 
-      await tx.productImage.create({
-        data: {
-          productId,
-          sellerId: scope.sellerId,
-          provider: image.provider ?? "CLOUDINARY",
-          publicId: image.publicId ?? "",
-          url: image.url,
-          alt: image.alt?.trim() || null,
-          width: image.width ?? null,
-          height: image.height ?? null,
-          bytes: image.bytes ?? null,
-          mimeType: image.mimeType?.trim() || null,
-          sortOrder,
-          // Inherited from the product: a photo added to an approved product is
-          // approved, one added to a pending product waits with it (D38).
-          moderationStatus: product.moderationStatus,
-        },
-        select: { id: true },
-      });
-    });
+        const existing = await tx.productImage.count({
+          where: { productId, sellerId: scope.sellerId },
+        });
+
+        if (existing >= MAX_PHOTOS_PER_PRODUCT) throw new PhotoCapReached();
+
+        await tx.productImage.create({
+          data: {
+            productId,
+            sellerId: scope.sellerId,
+            provider: image.provider ?? "CLOUDINARY",
+            publicId: image.publicId ?? "",
+            url: image.url,
+            alt: image.alt?.trim() || null,
+            width: image.width ?? null,
+            height: image.height ?? null,
+            bytes: image.bytes ?? null,
+            mimeType: image.mimeType?.trim() || null,
+            sortOrder,
+            // Inherited from the product: a photo added to an approved product
+            // is approved, one added to a pending product waits with it (D38).
+            moderationStatus: product.moderationStatus,
+          },
+          select: { id: true },
+        });
+      },
+      {
+        // Up to three attaches queue on one product's lock, each holding it for
+        // a count and an insert. Generous next to that, and still short enough
+        // that a stuck transaction surfaces as an error rather than a hang.
+        timeout: 15_000,
+      },
+    );
   } catch (error) {
+    if (error instanceof ProductGone) {
+      // Not found rather than forbidden: a 403 would confirm the id is real.
+      return { ok: false, error: "That product no longer exists." };
+    }
     if (error instanceof PhotoCapReached) {
       return {
         ok: false,
@@ -264,11 +289,24 @@ export async function attachPhotoAction(input: {
   return { ok: true, sortOrder };
 }
 
-/** Thrown inside the attach transaction to roll it back and report the cap. */
+/**
+ * Thrown inside the attach transaction to roll it back and report a reason.
+ *
+ * Sentinels rather than returning a result, because the work happens inside
+ * `$transaction` — returning early from the callback would COMMIT, and the
+ * point of both of these is that nothing should be written.
+ */
 class PhotoCapReached extends Error {
   constructor() {
     super("photo cap reached");
     this.name = "PhotoCapReached";
+  }
+}
+
+class ProductGone extends Error {
+  constructor() {
+    super("product not found for this seller");
+    this.name = "ProductGone";
   }
 }
 

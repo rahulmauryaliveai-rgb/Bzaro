@@ -79,6 +79,15 @@ jobs:
       # generated columns and CHECK constraints. If any of that is malformed,
       # CI fails here rather than in production.
       - run: npm run db:deploy
+
+      # Tests that need a REAL Postgres rather than the WASM dev database:
+      # row-level locking cannot be exercised on PGlite, which serialises
+      # connections and deadlocks against itself. A dedicated variable because
+      # vitest.config.ts stubs DATABASE_URL with an obvious fake.
+      - run: npx vitest run tests/integration
+        env:
+          INTEGRATION_DATABASE_URL: postgresql://marketplace:marketplace@localhost:5432/marketplace
+
       - run: npm run db:seed
 
       - run: npx playwright install --with-deps chromium
