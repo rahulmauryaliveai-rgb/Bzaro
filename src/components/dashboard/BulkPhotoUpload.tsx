@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { confirmUploadAction, requestUploadAction } from "@/server/actions/media";
 import {
   attachPhotoAction,
+  clearProductPhotosAction,
   finishPhotoBatchAction,
   matchPhotosAction,
 } from "@/server/actions/import-photos";
@@ -104,19 +105,37 @@ export function BulkPhotoUpload({ products }: { products: PhotoTarget[] }) {
     // Matched files, plus the ones the seller assigned by hand. Anything still
     // unassigned is left alone — an unrecognised file is not a file to guess
     // about.
-    const queue: Array<{ fileName: string; productId: string; position: number }> = [];
+    const queue: Array<{ fileName: string; productId: string; sortOrder: number }> = [];
 
     for (const group of phase.match.products) {
       // The 12-photo cap, enforced client-side so the seller is not told
-      // "already full" twelve times. The server enforces it too.
+      // "already full" twelve times. The server enforces it too, inside a
+      // transaction, because this check cannot be trusted.
       const room = MAX_PHOTOS_PER_PRODUCT - group.existingCount;
       for (const file of group.files.slice(0, Math.max(0, room))) {
-        queue.push({ fileName: file.fileName, productId: file.productId, position: file.position });
+        queue.push({
+          fileName: file.fileName,
+          productId: file.productId,
+          // Decided by the matcher, so concurrent uploads cannot fight over a
+          // slot. See MatchedFile.sortOrder.
+          sortOrder: file.sortOrder,
+        });
       }
     }
 
+    // Hand-assigned files land after whatever the matcher placed for that
+    // product, rather than all claiming slot 0.
+    const nextFree = new Map<string, number>();
+    for (const item of queue) {
+      nextFree.set(item.productId, Math.max(nextFree.get(item.productId) ?? 0, item.sortOrder + 1));
+    }
+
     for (const [fileName, productId] of assigned) {
-      if (productId) queue.push({ fileName, productId, position: 1 });
+      if (!productId) continue;
+      const slot = nextFree.get(productId) ?? existingCountFor(phase.match, productId);
+      if (slot >= MAX_PHOTOS_PER_PRODUCT) continue;
+      queue.push({ fileName, productId, sortOrder: slot });
+      nextFree.set(productId, slot + 1);
     }
 
     if (queue.length === 0) {
@@ -125,15 +144,30 @@ export function BulkPhotoUpload({ products }: { products: PhotoTarget[] }) {
     }
 
     setError(null);
+
+    // ── Replace: clear everything first, once, before a single byte goes up ──
+    // Not inside the attaches. Three run concurrently, so "clear on the first
+    // one" raced the other two and deleted photos that had already landed —
+    // and if that first attempt failed before attaching, nothing cleared at
+    // all and Replace quietly behaved like Add.
+    if (mode === "replace") {
+      setPhase({ kind: "uploading", done: 0, total: queue.length, current: "Clearing old photos…" });
+
+      const productIds = [...new Set(queue.map((item) => item.productId))];
+      const cleared = await clearProductPhotosAction(productIds);
+
+      if (!cleared.ok) {
+        setError(cleared.error);
+        setPhase({ kind: "ready", match: phase.match });
+        return;
+      }
+    }
+
     setPhase({ kind: "uploading", done: 0, total: queue.length, current: queue[0]!.fileName });
 
     const failed: Array<{ fileName: string; error: string }> = [];
     let done = 0;
     let uploaded = 0;
-
-    // "Replace" must clear a product's photos exactly once, on its first file
-    // — clearing on each would delete each photo as the next one arrived.
-    const cleared = new Set<string>();
 
     /** One worker, pulling from the shared queue. */
     const worker = async () => {
@@ -146,15 +180,10 @@ export function BulkPhotoUpload({ products }: { products: PhotoTarget[] }) {
         if (!file) {
           failed.push({ fileName: item.fileName, error: "the file could not be read" });
         } else {
-          const isFirst = mode === "replace" && !cleared.has(item.productId);
-          if (isFirst) cleared.add(item.productId);
-
           const result = await uploadOne({
             file,
             productId: item.productId,
-            position: item.position,
-            replace: mode === "replace",
-            isFirst,
+            sortOrder: item.sortOrder,
           });
 
           if (result.ok) uploaded += 1;
@@ -232,6 +261,17 @@ export function BulkPhotoUpload({ products }: { products: PhotoTarget[] }) {
 }
 
 /**
+ * How many photos a product already has, for a hand-assigned file.
+ *
+ * A file the matcher could not place has no group, so its slot is read from
+ * whichever group the product does have — and zero when it has none, which is
+ * correct for a product with no photos at all.
+ */
+function existingCountFor(match: PhotoMatch, productId: string): number {
+  return match.products.find((group) => group.productId === productId)?.existingCount ?? 0;
+}
+
+/**
  * The name to match on.
  *
  * A folder selection reports `webkitRelativePath` ("photos/batch1/A.jpg"); the
@@ -254,9 +294,7 @@ function relativeName(file: File): string {
 async function uploadOne(input: {
   file: File;
   productId: string;
-  position: number;
-  replace: boolean;
-  isFirst: boolean;
+  sortOrder: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   let lastError = "upload failed";
 
@@ -297,11 +335,9 @@ async function uploadOne(input: {
           bytes: confirmed.bytes ?? undefined,
           mimeType: confirmed.mimeType ?? undefined,
         },
-        position: input.position,
-        replace: input.replace,
-        // Only the FIRST attempt may clear existing photos: a retry after a
-        // successful clear must not clear again.
-        isFirst: input.isFirst && attempt === 1,
+        // Fixed before any upload began, so a retry lands in the same slot as
+        // the attempt it replaces.
+        sortOrder: input.sortOrder,
       });
 
       if (!attached.ok) return { ok: false, error: attached.error };

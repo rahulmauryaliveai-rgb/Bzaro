@@ -5,7 +5,7 @@ import { revalidateProduct } from "@/lib/cache/revalidate";
 import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
 import { recomputeIndexability } from "@/server/services/indexability.service";
 import { getModerationSignals } from "@/server/services/catalog.service";
-import { decideModeration } from "@/lib/validation/moderation";
+import { decideModeration, editRequiresRereview } from "@/lib/validation/moderation";
 import { getActivePlan } from "@/server/services/plan.service";
 import { uniqueSlug } from "@/lib/utils/slug";
 import { parseMoneyToMinor } from "@/lib/utils/money";
@@ -202,6 +202,15 @@ export async function runImport(input: {
   const signals = await getModerationSignals(sellerId);
   const moderationStatus = decideModeration(signals).status;
 
+  // Whether an UPDATE sends already-approved content back for review (D38).
+  // The signals are the same for every row in the batch, so this is one
+  // boolean rather than a decision re-derived a thousand times — but it must
+  // be applied, because without it an import is a way to edit an approved
+  // product on a seller who has since been suspended and keep it live. That is
+  // exactly what `updateProduct` guards against for a single save, and the
+  // import has to match it or it becomes the softer path.
+  const rereviewOnUpdate = editRequiresRereview(signals, "APPROVED");
+
   const slugs = await takenSlugs(sellerId);
   const issues: RowIssue[] = [];
 
@@ -213,7 +222,7 @@ export async function runImport(input: {
     const chunk = importable.slice(start, start + CHUNK_SIZE);
 
     try {
-      const result = await writeChunk({ sellerId, chunk, moderationStatus, slugs });
+      const result = await writeChunk({ sellerId, chunk, moderationStatus, rereviewOnUpdate, slugs });
       created += result.created;
       updated += result.updated;
     } catch (error) {
@@ -227,6 +236,7 @@ export async function runImport(input: {
             sellerId,
             chunk: [row],
             moderationStatus,
+            rereviewOnUpdate,
             slugs,
           });
           created += single.created;
@@ -283,6 +293,8 @@ type ChunkInput = {
   sellerId: string;
   chunk: ParsedRow[];
   moderationStatus: "PENDING" | "APPROVED";
+  /** Whether an update returns approved content to review (D38). */
+  rereviewOnUpdate: boolean;
   slugs: Set<string>;
 };
 
@@ -296,7 +308,7 @@ type ChunkInput = {
 async function writeChunk(
   input: ChunkInput,
 ): Promise<{ created: number; updated: number }> {
-  const { sellerId, chunk, moderationStatus, slugs } = input;
+  const { sellerId, chunk, moderationStatus, rereviewOnUpdate, slugs } = input;
 
   return db.$transaction(
     async (tx) => {
@@ -313,7 +325,7 @@ async function writeChunk(
           // — which is exactly when it is worth making impossible.
           const result = await tx.product.updateMany({
             where: { id: row.productId, sellerId, deletedAt: null },
-            data: await updateData(tx, row.productId, sellerId, row.input),
+            data: await updateData(tx, row.productId, sellerId, row.input, rereviewOnUpdate),
           });
           if (result.count > 0) updated += 1;
           continue;
@@ -385,10 +397,11 @@ async function updateData(
   productId: string,
   sellerId: string,
   input: ProductInput,
+  rereviewOnUpdate: boolean,
 ) {
   const existing = await tx.product.findFirst({
     where: { id: productId, sellerId },
-    select: { priceMinor: true, priceOnRequest: true },
+    select: { priceMinor: true, priceOnRequest: true, moderationStatus: true },
   });
 
   const currency = input.currency || "INR";
@@ -438,7 +451,35 @@ async function updateData(
   if (input.specifications.length > 0) data.specifications = input.specifications;
   if (input.tags.length > 0) data.tags = input.tags;
 
+  const moderationStatus = moderationForImportUpdate(
+    rereviewOnUpdate,
+    existing?.moderationStatus ?? null,
+  );
+  if (moderationStatus) data.moderationStatus = moderationStatus;
+
   return data;
+}
+
+/**
+ * Whether an imported UPDATE sends content back for review (D38).
+ *
+ * Mirrors `updateProduct`: only APPROVED content can be sent back, and only
+ * when the seller is no longer entitled to auto-approval — suspended, say.
+ * Without this a spreadsheet re-upload is a way to edit live content on a
+ * seller who has lost verification and keep it live, making the import the
+ * softer of two paths to the same write.
+ *
+ * Returns null — meaning "do not write the column" — in every other case. A
+ * product that is already PENDING, REJECTED or FLAGGED is left exactly as it
+ * is: its status is a decision made ABOUT it, and an update must not launder a
+ * rejection into "pending" any more than it may into "approved".
+ */
+export function moderationForImportUpdate(
+  rereviewOnUpdate: boolean,
+  currentStatus: string | null,
+): "PENDING" | null {
+  if (!rereviewOnUpdate) return null;
+  return currentStatus === "APPROVED" ? "PENDING" : null;
 }
 
 function emptyToNull(value: string | null | undefined): string | null {

@@ -120,6 +120,19 @@ export type MatchedFile = {
   productName: string;
   sku: string;
   position: number;
+  /**
+   * The row's final `sortOrder`, decided HERE and passed through to the attach.
+   *
+   * It cannot be computed at attach time. Three photos upload concurrently, so
+   * an attach that counted the product's existing images would race the other
+   * two and two photos would claim the same slot — leaving the gallery in an
+   * order that depends on which upload happened to finish first, which is the
+   * opposite of what naming a file `_1` is for.
+   *
+   * Deciding it once, before anything uploads, makes the order a property of
+   * the file names rather than of the network.
+   */
+  sortOrder: number;
 };
 
 export type UnmatchedFile = {
@@ -190,6 +203,8 @@ export function matchPhotos(input: {
       productName: product.name,
       sku: product.sku,
       position: parsed.position,
+      // Filled in below, once the group is known and sorted.
+      sortOrder: 0,
     };
 
     if (files) files.push(entry);
@@ -202,14 +217,23 @@ export function matchPhotos(input: {
     const product = byId.get(productId)!;
     const existingCount = mode === "replace" ? 0 : product.imageCount;
 
+    // Sorted by the number the seller gave, so photo 1 is the main photo
+    // regardless of the order the browser handed us the files.
+    const sorted = files.sort((left, right) => left.position - right.position);
+
+    // Replacing starts the gallery again from zero, so `_1` really is slot 0.
+    // Adding lands after whatever is already there, so a second batch extends
+    // the gallery instead of fighting the first batch for the main slot.
+    for (const file of sorted) {
+      file.sortOrder = existingCount + file.position - 1;
+    }
+
     return {
       productId,
       productName: product.name,
       sku: product.sku,
       existingCount,
-      // Sorted by the number the seller gave, so photo 1 is the main photo
-      // regardless of the order the browser handed us the files.
-      files: files.sort((left, right) => left.position - right.position),
+      files: sorted,
       overCapBy: Math.max(0, existingCount + files.length - MAX_PHOTOS_PER_PRODUCT),
     };
   });

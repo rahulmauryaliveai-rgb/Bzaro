@@ -112,7 +112,60 @@ export async function listAssignableProductsAction(): Promise<PhotoTarget[]> {
   return listPhotoTargets(scope.sellerId);
 }
 
-export type AttachResult = { ok: true; position: number } | { ok: false; error: string };
+export type ClearResult = { ok: true; cleared: number } | { ok: false; error: string };
+
+/**
+ * Delete every photo on these products, once, before a replace batch starts.
+ *
+ * ── Why this is its own call ───────────────────────────────────────────────
+ * Clearing used to happen inside the first attach of each product, flagged by
+ * an `isFirst` argument. With three uploads running concurrently that was
+ * wrong twice over:
+ *
+ *   - "first" meant first to be QUEUED, not first to arrive. If the second
+ *     photo finished uploading before the first, it attached, and then the
+ *     first photo's attach cleared it away again. The seller ended up with
+ *     fewer photos than they uploaded, varying by network timing.
+ *   - If attempt 1 of the designated first file failed before reaching the
+ *     attach, nothing ever cleared, and the "replace" silently behaved like
+ *     "add" — the one outcome a seller choosing Replace would notice least
+ *     and want least.
+ *
+ * Doing it once, up front, for every product in the batch removes both. It
+ * also makes the destructive step explicit and ordered: photos are gone before
+ * any upload starts, so there is no window in which old and new coexist and
+ * the cap arithmetic is wrong.
+ */
+export async function clearProductPhotosAction(productIds: string[]): Promise<ClearResult> {
+  const scope = await requireSeller();
+
+  const ids = (Array.isArray(productIds) ? productIds : [])
+    .map((id) => String(id).trim())
+    .filter(Boolean)
+    .slice(0, MAX_FILES_PER_BATCH);
+
+  if (ids.length === 0) return { ok: true, cleared: 0 };
+
+  const tdb = forSeller(scope.sellerId);
+
+  // Narrow to the ids that are genuinely this seller's. A foreign id is simply
+  // absent from the result rather than refused, so one crafted id cannot stop
+  // the seller's own batch.
+  const owned = await tdb.product.findMany({
+    where: { id: { in: ids }, deletedAt: null },
+    select: { id: true },
+  });
+
+  if (owned.length === 0) return { ok: true, cleared: 0 };
+
+  const result = await db.productImage.deleteMany({
+    where: { productId: { in: owned.map((product) => product.id) }, sellerId: scope.sellerId },
+  });
+
+  return { ok: true, cleared: result.count };
+}
+
+export type AttachResult = { ok: true; sortOrder: number } | { ok: false; error: string };
 
 /**
  * Attach one verified upload to one product.
@@ -122,19 +175,15 @@ export type AttachResult = { ok: true; position: number } | { ok: false; error: 
  * photograph and can be retried on its own — a batch call would make the
  * client's retry logic re-send everything.
  *
- * `replace` clears the product's existing photos the FIRST time it is called
- * for that product in a batch, which the client signals with `isFirst`.
- * Clearing on every call would delete each photo as the next one arrived and
- * leave exactly one at the end.
+ * `sortOrder` is decided by the matcher, not here: see `MatchedFile.sortOrder`
+ * for why counting rows at attach time cannot work with concurrent uploads.
  */
 export async function attachPhotoAction(input: {
   productId: string;
   /** The verified asset, as `confirmUploadAction` returned it. */
   asset: unknown;
-  /** 1–12, from the file name. */
-  position: number;
-  replace: boolean;
-  isFirst: boolean;
+  /** Decided at match time from the file name. */
+  sortOrder: number;
 }): Promise<AttachResult> {
   const scope = await requireSeller();
 
@@ -155,57 +204,72 @@ export async function attachPhotoAction(input: {
   // rather than as forbidden — a 403 would confirm the id is real.
   const product = await tdb.product.findFirst({
     where: { id: productId, deletedAt: null },
-    select: { id: true, moderationStatus: true, _count: { select: { images: true } } },
+    select: { id: true, moderationStatus: true },
   });
 
   if (!product) return { ok: false, error: "That product no longer exists." };
 
-  const position = Number.isInteger(input.position)
-    ? Math.min(Math.max(input.position, 1), MAX_PHOTOS_PER_PRODUCT)
-    : 1;
-
-  let existingCount = product._count.images;
-
-  if (input.replace && input.isFirst) {
-    // Scoped by sellerId as well as productId. The product is already known to
-    // be this seller's, so this is the belt to the braces above.
-    await db.productImage.deleteMany({ where: { productId, sellerId: scope.sellerId } });
-    existingCount = 0;
-  }
-
-  if (existingCount >= MAX_PHOTOS_PER_PRODUCT) {
-    return {
-      ok: false,
-      error: `This product already has ${MAX_PHOTOS_PER_PRODUCT} photos, which is the maximum.`,
-    };
-  }
-
   const image = parsed.data;
 
-  await db.productImage.create({
-    data: {
-      productId,
-      sellerId: scope.sellerId,
-      provider: image.provider ?? "CLOUDINARY",
-      publicId: image.publicId ?? "",
-      url: image.url,
-      alt: image.alt?.trim() || null,
-      width: image.width ?? null,
-      height: image.height ?? null,
-      bytes: image.bytes ?? null,
-      mimeType: image.mimeType?.trim() || null,
-      // `_1` means the main photo, so the file name decides the order. Offset
-      // by the photos already there when adding rather than replacing, so a
-      // second batch lands after the first instead of fighting it for slot 1.
-      sortOrder: existingCount + position - 1,
-      // Inherited from the product: a photo added to an approved product is
-      // approved, one added to a pending product waits with it (D38).
-      moderationStatus: product.moderationStatus,
-    },
-    select: { id: true },
-  });
+  // Clamped rather than rejected: a bad value from the client costs a photo
+  // in the wrong position, not a failed upload the seller has to repeat.
+  const sortOrder = Number.isInteger(input.sortOrder)
+    ? Math.min(Math.max(input.sortOrder, 0), MAX_PHOTOS_PER_PRODUCT - 1)
+    : 0;
 
-  return { ok: true, position };
+  try {
+    await db.$transaction(async (tx) => {
+      // ── The cap, counted and enforced in ONE transaction ──
+      // Counting outside the transaction is the same race as `sortOrder`: three
+      // concurrent attaches each read 11, each decide there is room, and the
+      // product ends up with 14 photos. Inside a transaction the count and the
+      // insert cannot be interleaved by another attach, so the twelfth photo is
+      // the last one that succeeds.
+      const existing = await tx.productImage.count({
+        where: { productId, sellerId: scope.sellerId },
+      });
+
+      if (existing >= MAX_PHOTOS_PER_PRODUCT) throw new PhotoCapReached();
+
+      await tx.productImage.create({
+        data: {
+          productId,
+          sellerId: scope.sellerId,
+          provider: image.provider ?? "CLOUDINARY",
+          publicId: image.publicId ?? "",
+          url: image.url,
+          alt: image.alt?.trim() || null,
+          width: image.width ?? null,
+          height: image.height ?? null,
+          bytes: image.bytes ?? null,
+          mimeType: image.mimeType?.trim() || null,
+          sortOrder,
+          // Inherited from the product: a photo added to an approved product is
+          // approved, one added to a pending product waits with it (D38).
+          moderationStatus: product.moderationStatus,
+        },
+        select: { id: true },
+      });
+    });
+  } catch (error) {
+    if (error instanceof PhotoCapReached) {
+      return {
+        ok: false,
+        error: `This product already has ${MAX_PHOTOS_PER_PRODUCT} photos, which is the maximum.`,
+      };
+    }
+    throw error;
+  }
+
+  return { ok: true, sortOrder };
+}
+
+/** Thrown inside the attach transaction to roll it back and report the cap. */
+class PhotoCapReached extends Error {
+  constructor() {
+    super("photo cap reached");
+    this.name = "PhotoCapReached";
+  }
 }
 
 /**

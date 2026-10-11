@@ -507,6 +507,28 @@ export async function setCatalogStatus(
 }
 
 /**
+ * The columns a product's soft delete writes (D49).
+ *
+ * ── Why `sku` is released ──────────────────────────────────────────────────
+ * `UNIQUE (sellerId, sku)` does not know what `deletedAt` means, so a deleted
+ * product holding its code blocks the seller from ever reusing it:
+ * re-importing that SKU fails with "a product with this code already exists",
+ * naming a product they deleted and can no longer see. Deleting and re-adding
+ * under the same code is ordinary — tidying up, or fixing a bad import — so
+ * the code goes back into circulation.
+ *
+ * Nothing depends on it surviving: `OrderItem` carries its own `sku` snapshot
+ * column precisely so an order survives the product's deletion, and the
+ * Shiprocket payload is built from `productId`.
+ *
+ * Exported as a function rather than inlined so the rule is one testable
+ * thing — see `tests/unit/publish.test.ts`.
+ */
+export function softDeleteProductData(deletedAt: Date): { deletedAt: Date; sku: null } {
+  return { deletedAt, sku: null };
+}
+
+/**
  * Soft delete.
  *
  * `deletedAt` rather than a real delete: enquiries reference products, and a
@@ -524,7 +546,12 @@ export async function deleteCatalogItem(
 
   const result =
     kind === "product"
-      ? await tdb.product.updateMany({ where: { id, ...NOT_DELETED }, data: { deletedAt } })
+      ? await tdb.product.updateMany({
+          where: { id, ...NOT_DELETED },
+          // Releases the SKU as well as marking the row deleted — see
+          // `softDeleteProductData` for why.
+          data: softDeleteProductData(deletedAt),
+        })
       : await tdb.service.updateMany({ where: { id, ...NOT_DELETED }, data: { deletedAt } });
 
   if (result.count === 0) return false;

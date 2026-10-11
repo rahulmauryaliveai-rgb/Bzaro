@@ -263,3 +263,116 @@ describe("matchPhotos", () => {
     expect(result.unmatched).toHaveLength(1);
   });
 });
+
+// ── Bug 2: concurrent uploads fought over sortOrder ─────────────────────────
+
+/**
+ * Regression from the review of 939e5ae.
+ *
+ * `sortOrder` used to be computed inside the attach, as "how many photos does
+ * this product have right now, plus my position". With three uploads running
+ * concurrently that is a read-modify-write race: all three read the same
+ * count, all three claim overlapping slots, and the gallery order ends up
+ * depending on which upload happened to finish first — the exact opposite of
+ * what naming a file `_1` is for.
+ *
+ * It is decided here instead, once, before anything is uploaded. These tests
+ * pin that the number is a function of the file name and the existing count
+ * and of nothing else, so it cannot drift back to being timing-dependent.
+ */
+describe("matchPhotos sortOrder", () => {
+  it("numbers an empty product's photos from zero, in file-name order", () => {
+    const result = matchPhotos({
+      // Shuffled, as a browser would hand them over.
+      fileNames: ["LED-9W-CW_3.jpg", "LED-9W-CW.jpg", "LED-9W-CW_2.jpg"],
+      products: PRODUCTS,
+      mode: "add",
+    });
+
+    const files = result.products[0]!.files;
+    expect(files.map((file) => file.position)).toEqual([1, 2, 3]);
+    // `_1` is the main photo, so it must be slot 0 whatever the upload order.
+    expect(files.map((file) => file.sortOrder)).toEqual([0, 1, 2]);
+  });
+
+  it("lands a second batch after the photos already there", () => {
+    // product-panel already has 10. Adding two more must extend the gallery,
+    // not fight the first batch for the main slot.
+    const result = matchPhotos({
+      fileNames: ["PNL-36W-22_1.jpg", "PNL-36W-22_2.jpg"],
+      products: PRODUCTS,
+      mode: "add",
+    });
+
+    expect(result.products[0]!.files.map((file) => file.sortOrder)).toEqual([10, 11]);
+  });
+
+  it("starts from zero again when the seller chose to replace", () => {
+    // The old photos are deleted before any upload begins, so `_1` really is
+    // the main photo rather than the eleventh.
+    const result = matchPhotos({
+      fileNames: ["PNL-36W-22_1.jpg", "PNL-36W-22_2.jpg"],
+      products: PRODUCTS,
+      mode: "replace",
+    });
+
+    expect(result.products[0]!.files.map((file) => file.sortOrder)).toEqual([0, 1]);
+  });
+
+  it("gives every photo in a batch a distinct slot", () => {
+    // The property the race broke. Two photos sharing a slot is an arbitrary
+    // gallery order, which is invisible until a buyer sees the wrong main image.
+    const fileNames = Array.from({ length: 12 }, (_, index) => `LED-9W-CW_${index + 1}.jpg`);
+
+    const result = matchPhotos({ fileNames, products: PRODUCTS, mode: "add" });
+    const slots = result.products[0]!.files.map((file) => file.sortOrder);
+
+    expect(new Set(slots).size).toBe(12);
+    expect(slots).toEqual([...Array(12).keys()]);
+  });
+
+  it("keeps slots distinct per product, not across the batch", () => {
+    const result = matchPhotos({
+      fileNames: ["LED-9W-CW_1.jpg", "LED-9W-CW_2.jpg", "PNL-36W-22_1.jpg"],
+      products: PRODUCTS,
+      mode: "replace",
+    });
+
+    const bulb = result.products.find((group) => group.sku === "LED-9W-CW")!;
+    const panel = result.products.find((group) => group.sku === "PNL-36W-22")!;
+
+    expect(bulb.files.map((file) => file.sortOrder)).toEqual([0, 1]);
+    // Its own product, so it starts at 0 too.
+    expect(panel.files.map((file) => file.sortOrder)).toEqual([0]);
+  });
+
+  it("never exceeds the last valid slot for a product at the cap", () => {
+    // product-full has 12. Adding is refused by `overCapBy`, and the client
+    // drops those files — but if one did get through, its slot must still be
+    // inside the range the attach will clamp to.
+    const result = matchPhotos({
+      fileNames: ["FULL-1_1.jpg"],
+      products: PRODUCTS,
+      mode: "add",
+    });
+
+    const group = result.products[0]!;
+    expect(group.overCapBy).toBe(1);
+    expect(group.files[0]!.sortOrder).toBe(12);
+  });
+
+  it("is a pure function of the names and the existing count", () => {
+    // Called twice with the same input, the same numbers come out. If this
+    // ever depended on a clock, a counter or the database, it would not.
+    const input = {
+      fileNames: ["LED-9W-CW_2.jpg", "LED-9W-CW.jpg"],
+      products: PRODUCTS,
+      mode: "add" as const,
+    };
+
+    const first = matchPhotos(input).products[0]!.files.map((file) => file.sortOrder);
+    const second = matchPhotos(input).products[0]!.files.map((file) => file.sortOrder);
+
+    expect(first).toEqual(second);
+  });
+});

@@ -221,6 +221,90 @@ test.describe("a seller manages their catalogue", () => {
     expect(status, "the product should still exist").toBe(200);
   });
 
+
+  test("a deleted product's SKU can be used again (D49)", async () => {
+    // Regression from the review of 939e5ae. `UNIQUE (sellerId, sku)` has no
+    // idea what `deletedAt` means, so a soft-deleted product used to keep its
+    // product code reserved forever: re-adding or re-importing that SKU failed
+    // with "a product with this code already exists", naming a product the
+    // seller had deleted and could no longer see anywhere in the dashboard.
+    //
+    // Deleting and re-adding under the same code is ordinary — tidying up, or
+    // fixing a bad import by deleting and re-uploading — so the soft delete
+    // now clears `sku`. This drives the real form against the real index,
+    // which is the only place the property can actually be proven.
+    const sku = `D49REUSE-${STAMP}`.toUpperCase();
+
+    // ── Create it ──
+    const first = await page(owner, "/dashboard/products/new");
+    const created = await owner.post(`${APEX}/dashboard/products/new`, {
+      maxRedirects: 0,
+      multipart: {
+        ...actionFields(first.html),
+        name: "Reuse Probe One",
+        slug: `e2e-${STAMP}-reuse-1`,
+        sku,
+        currency: "INR",
+        status: "DRAFT",
+      },
+    });
+
+    expect(created.status(), "creating should redirect into the editor").toBe(303);
+    const reuseId =
+      (created.headers()["location"] ?? "").split("/dashboard/products/")[1]?.split("?")[0] ?? "";
+    expect(reuseId).toBeTruthy();
+
+    // ── Prove the code really is taken while it is alive ──
+    const blocked = await page(owner, "/dashboard/products/new");
+    const refused = await owner.post(`${APEX}/dashboard/products/new`, {
+      maxRedirects: 0,
+      multipart: {
+        ...actionFields(blocked.html),
+        name: "Reuse Probe Clash",
+        slug: `e2e-${STAMP}-reuse-clash`,
+        sku,
+        currency: "INR",
+        status: "DRAFT",
+      },
+    });
+
+    // No redirect: the duplicate is reported on the field, not saved.
+    expect(refused.status(), "a live product's SKU must stay reserved").not.toBe(303);
+
+    // ── Delete it ──
+    const editor = await page(owner, `/dashboard/products/${reuseId}`);
+    const deleted = await owner.post(`${APEX}/dashboard/products/${reuseId}`, {
+      maxRedirects: 0,
+      multipart: {
+        ...actionFields(editor.html),
+        kind: "product",
+        id: reuseId,
+        confirm: "on",
+      },
+    });
+
+    expect(deleted.status(), "deleting should redirect to the list").toBe(303);
+
+    // ── The code is free again ──
+    const second = await page(owner, "/dashboard/products/new");
+    const recreated = await owner.post(`${APEX}/dashboard/products/new`, {
+      maxRedirects: 0,
+      multipart: {
+        ...actionFields(second.html),
+        name: "Reuse Probe Two",
+        slug: `e2e-${STAMP}-reuse-2`,
+        sku,
+        currency: "INR",
+        status: "DRAFT",
+      },
+    });
+
+    expect(
+      recreated.status(),
+      "a deleted product must not keep its SKU reserved",
+    ).toBe(303);
+  });
+
   test("creating a service works too", async () => {
     const { html } = await page(owner, "/dashboard/services/new");
 
