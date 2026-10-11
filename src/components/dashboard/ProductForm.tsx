@@ -286,6 +286,8 @@ export function ProductForm({
             label="SKU"
             name="sku"
             maxLength={60}
+            placeholder="LED-9W-CW"
+            hint="Your own product code. Letters, numbers and hyphen (-). Name photo files after it to upload photos in bulk."
             defaultValue={values.sku ?? ""}
             error={errors.sku}
           />

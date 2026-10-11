@@ -21,6 +21,8 @@ export type CatalogRow = {
   id: string;
   slug: string;
   name: string;
+  /** Products only. Shown so a seller knows what to name a photo file (D49). */
+  sku?: string | null;
   status: string;
   moderationStatus: string;
   priceMinor: number | null;
@@ -119,6 +121,8 @@ export function CatalogList({
               </p>
 
               <p className="mt-0.5 text-xs text-neutral-500">
+                {row.sku ? <span className="font-mono">{row.sku}</span> : null}
+                {row.sku ? " · " : ""}
                 {row.viewCount} views · {row.enquiryCount} enquiries
               </p>
             </div>

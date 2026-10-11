@@ -1,5 +1,5 @@
 import "server-only";
-import { db } from "@/lib/db";
+import { db, Prisma } from "@/lib/db";
 import { forSeller } from "@/lib/db-tenant";
 import { revalidateProduct, revalidateService } from "@/lib/cache/revalidate";
 import { revalidateSellerDiscovery } from "@/server/services/discovery.service";
@@ -31,9 +31,34 @@ export type CatalogKind = "product" | "service";
 
 export type SaveResult =
   | { ok: true; id: string; slug: string; moderation: "PENDING" | "APPROVED"; reason: string }
-  | { ok: false; reason: "not_found"; message: string };
+  | { ok: false; reason: "not_found"; message: string }
+  | { ok: false; reason: "duplicate_sku"; message: string; field: "sku" };
 
 const NOT_DELETED = { deletedAt: null } as const;
+
+/**
+ * Is this the per-seller SKU uniqueness constraint failing? (D49)
+ *
+ * Checked rather than pre-queried: a "is this code free" read followed by a
+ * write is a race, and the index is the only thing that actually decides. The
+ * constraint name is matched so an unrelated unique violation — the slug, say —
+ * is not mis-reported as a duplicate product code.
+ */
+function isDuplicateSku(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  const target = error.meta?.target;
+  const fields = Array.isArray(target) ? target.map(String) : [String(target ?? "")];
+  return fields.some((field) => field.includes("sku"));
+}
+
+const DUPLICATE_SKU: Extract<SaveResult, { reason: "duplicate_sku" }> = {
+  ok: false,
+  reason: "duplicate_sku",
+  message: "You already have a product with this SKU. Every product needs its own code.",
+  field: "sku",
+};
 
 /** Empty form field → NULL, so the database never stores "". */
 function emptyToNull(value: string | null | undefined): string | null {
@@ -120,6 +145,9 @@ export async function listProducts(sellerId: string) {
       id: true,
       slug: true,
       name: true,
+      // Shown on the list so a seller can see the code a photo file must be
+      // named after, without opening the editor (D49).
+      sku: true,
       status: true,
       moderationStatus: true,
       priceMinor: true,
@@ -130,8 +158,11 @@ export async function listProducts(sellerId: string) {
       enquiryCount: true,
       viewCount: true,
       updatedAt: true,
+      categoryId: true,
       category: { select: { name: true } },
       images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true, alt: true } },
+      // Drives the "Missing photos" filter and the publish-readiness check.
+      _count: { select: { images: true } },
     },
     orderBy: [{ updatedAt: "desc" }],
   });
@@ -146,6 +177,23 @@ export async function getProductForEdit(sellerId: string, id: string) {
   });
 }
 
+/**
+ * The SKU a product is already stored with, so validation can keep accepting
+ * it after the D49 format rule (see `productSchemaKeeping`). Returns null for
+ * an id belonging to another seller — the tenant client sees no such row, and
+ * the save then validates against the strict rule, which is the safe default.
+ */
+export async function getStoredSku(sellerId: string, id: string): Promise<string | null> {
+  const tdb = forSeller(sellerId);
+
+  const row = await tdb.product.findFirst({
+    where: { id, ...NOT_DELETED },
+    select: { sku: true },
+  });
+
+  return row?.sku ?? null;
+}
+
 export async function createProduct(
   sellerId: string,
   sellerSlug: string,
@@ -155,20 +203,27 @@ export async function createProduct(
   const signals = await getModerationSignals(sellerId);
   const decision = decideModeration(signals);
 
-  const product = await db.product.create({
-    data: {
-      sellerId,
-      slug,
-      ...productData(input),
-      moderationStatus: decision.status,
-      images: {
-        create: input.images.map((image, index) =>
-          imageRow(image, sellerId, index, decision.status),
-        ),
+  let product: { id: string; slug: string };
+
+  try {
+    product = await db.product.create({
+      data: {
+        sellerId,
+        slug,
+        ...productData(input),
+        moderationStatus: decision.status,
+        images: {
+          create: input.images.map((image, index) =>
+            imageRow(image, sellerId, index, decision.status),
+          ),
+        },
       },
-    },
-    select: { id: true, slug: true },
-  });
+      select: { id: true, slug: true },
+    });
+  } catch (error) {
+    if (isDuplicateSku(error)) return DUPLICATE_SKU;
+    throw error;
+  }
 
   await afterCatalogWrite(sellerId, sellerSlug, "product", product.id);
 
@@ -206,22 +261,27 @@ export async function updateProduct(
   const rereview = editRequiresRereview(signals, existing.moderationStatus);
   const moderationStatus = rereview ? "PENDING" : existing.moderationStatus;
 
-  await db.$transaction([
-    db.product.update({
-      where: { id },
-      data: { slug, ...productData(input), moderationStatus },
-    }),
-    // Images are replaced wholesale rather than diffed. The set is small and
-    // ordered, and a diff would have to reconcile order, alt text and identity
-    // for no benefit a seller can perceive.
-    db.productImage.deleteMany({ where: { productId: id } }),
-    db.productImage.createMany({
-      data: input.images.map((image, index) => ({
-        productId: id,
-        ...imageRow(image, sellerId, index, moderationStatus),
-      })),
-    }),
-  ]);
+  try {
+    await db.$transaction([
+      db.product.update({
+        where: { id },
+        data: { slug, ...productData(input), moderationStatus },
+      }),
+      // Images are replaced wholesale rather than diffed. The set is small and
+      // ordered, and a diff would have to reconcile order, alt text and identity
+      // for no benefit a seller can perceive.
+      db.productImage.deleteMany({ where: { productId: id } }),
+      db.productImage.createMany({
+        data: input.images.map((image, index) => ({
+          productId: id,
+          ...imageRow(image, sellerId, index, moderationStatus),
+        })),
+      }),
+    ]);
+  } catch (error) {
+    if (isDuplicateSku(error)) return DUPLICATE_SKU;
+    throw error;
+  }
 
   await afterCatalogWrite(sellerId, sellerSlug, "product", id);
 

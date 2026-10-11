@@ -55,6 +55,8 @@ export const TENANT_MODELS = [
   "demandAlert",
   "sellerIntegration",
   "sellerFeature",
+  // Bulk upload (D49). One seller must never read or resume another's import.
+  "importJob",
 ] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];

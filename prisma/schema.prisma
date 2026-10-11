@@ -576,6 +576,7 @@ model Seller {
   purchases     Purchase[]
   refunds       RefundRequest[]
   couponRedemptions CouponRedemption[]
+  imports       ImportJob[]
   // searchVector tsvector column + GIN index: see migration SQL.
 
   @@index([status, deletedAt])
@@ -833,7 +834,11 @@ model Product {
   shortDescription String?
   description      String? @db.Text
   brand            String?
-  sku              String?
+  /// Seller's own product code, and the key bulk photo upload matches on
+  /// (D49). Citext because a seller who types "led-9w-cw" in the photo file
+  /// name and "LED-9W-CW" in the spreadsheet means the same product, and
+  /// case-sensitive matching would silently create a second one.
+  sku              String? @db.Citext
   modelNumber      String?
 
   // Pricing — integer minor units. Null means "ask for price".
@@ -873,6 +878,11 @@ model Product {
   // Slug is unique per tenant, not globally — two sellers may both have
   // /products/led-panel-40w on their own subdomains.
   @@unique([sellerId, slug])
+  // SKU is likewise per tenant, and is what makes a spreadsheet re-upload an
+  // UPDATE rather than a duplicate (D49). Postgres treats NULLs as distinct,
+  // so any number of products without a SKU coexist — only a seller reusing
+  // the same code twice is refused.
+  @@unique([sellerId, sku])
   @@index([sellerId, status, deletedAt])
   @@index([categoryId, status, createdAt(sort: Desc)])
   @@index([status, isFeatured, createdAt(sort: Desc)])
@@ -1951,4 +1961,54 @@ model BlogPost {
   @@index([status, publishedAt(sort: Desc)])
   @@index([categoryIds], type: Gin)
   @@index([authorId])
+}
+
+// ══════════════════════════ BULK UPLOAD (D49) ════════════════════════════════
+
+enum ImportStatus {
+  /// Parsed and waiting in front of the seller, who has not pressed Import.
+  PENDING
+  RUNNING
+  COMPLETED
+  /// Finished, but at least one row could not be written.
+  PARTIAL
+  FAILED
+}
+
+/// One spreadsheet upload: what the seller sent, and what came of it.
+///
+/// Kept because a bulk write is the one catalogue operation a seller cannot
+/// audit by looking at the result — forty products appeared, three did not,
+/// and without a record nobody can say which three or why. The row is also
+/// the double-submit guard: the import that owns a batch id is the only one
+/// allowed to write it (D49).
+model ImportJob {
+  id       String @id @default(cuid())
+  sellerId String
+
+  /// As uploaded, for the seller's own recognition. Never used as a path.
+  fileName String
+  fileSize Int?
+
+  status ImportStatus @default(PENDING)
+
+  /// Row counts, decided at preview and re-counted after the write.
+  totalRows   Int @default(0)
+  createdRows Int @default(0)
+  updatedRows Int @default(0)
+  errorRows   Int @default(0)
+  /// Rows refused because the plan's `maxProducts` was already reached.
+  skippedRows Int @default(0)
+
+  /// [{ row, column, message }] — the same list the preview showed, so the
+  /// history can explain a partial import after the staged batch has expired.
+  errors Json?
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, createdAt(sort: Desc)])
 }

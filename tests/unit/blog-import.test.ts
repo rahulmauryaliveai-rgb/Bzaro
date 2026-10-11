@@ -40,7 +40,11 @@ describe("parseDraftMarkdown", () => {
 
   it("rejects a missing header, unknown fields and thin bodies", () => {
     expect(parseDraftMarkdown(body).ok).toBe(false);
-    expect(parseDraftMarkdown(`---\ntitle: T\nauthor: x\n---\n${body}`).ok).toBe(false);
+    // `author` used to be the unknown field here, but D48 made it a real one
+    // — the test above now relies on it working. An unknown key still has to
+    // be refused, so this asserts that with a key that is actually unknown:
+    // a typo'd field silently ignored is a draft published without its date.
+    expect(parseDraftMarkdown(`---\ntitle: T\nauthr: x\n---\n${body}`).ok).toBe(false);
     expect(parseDraftMarkdown(`---\ntitle: T\n---\nToo short.`).ok).toBe(false);
   });
 });

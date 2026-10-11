@@ -3,11 +3,17 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireSeller } from "@/lib/auth/guards";
-import { deleteCatalogItemSchema, productSchema, serviceSchema } from "@/lib/validation/catalog";
+import {
+  deleteCatalogItemSchema,
+  productSchema,
+  productSchemaKeeping,
+  serviceSchema,
+} from "@/lib/validation/catalog";
 import {
   createProduct,
   createService,
   deleteCatalogItem,
+  getStoredSku,
   setCatalogStatus,
   updateProduct,
   updateService,
@@ -196,17 +202,30 @@ export async function saveProductAction(
 ): Promise<CatalogActionState> {
   const scope = await requireSeller();
 
-  const parsed = productSchema.safeParse(productInputFrom(formData));
+  const id = String(formData.get("id") ?? "").trim();
+
+  // Editing keeps whatever SKU the product already has, so the D49 format rule
+  // cannot block a seller from touching a product they created before it (see
+  // productSchemaKeeping). A create gets the strict rule.
+  const schema = id
+    ? productSchemaKeeping(await getStoredSku(scope.sellerId, id))
+    : productSchema;
+
+  const parsed = schema.safeParse(productInputFrom(formData));
 
   if (!parsed.success) {
     return { fieldErrors: fieldErrorsFrom(parsed.error.issues) };
   }
 
-  const id = String(formData.get("id") ?? "").trim();
-
   const result = id
     ? await updateProduct(scope.sellerId, scope.sellerSlug, id, parsed.data)
     : await createProduct(scope.sellerId, scope.sellerSlug, parsed.data);
+
+  // A duplicate SKU is a field problem, not a page-level failure: it belongs
+  // next to the box the seller has to change.
+  if (!result.ok && result.reason === "duplicate_sku") {
+    return { fieldErrors: { [result.field]: result.message } };
+  }
 
   if (!result.ok) return { error: result.message };
 

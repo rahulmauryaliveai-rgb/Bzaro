@@ -41,6 +41,50 @@ const optionalUrl = z
   .or(z.literal(""));
 
 /**
+ * SKU — the seller's own product code (D49).
+ *
+ * Two jobs beyond identifying a product: it is the key a spreadsheet re-upload
+ * matches on to UPDATE rather than duplicate, and it is the name a seller gives
+ * a photo file so bulk photo upload can find its product.
+ *
+ * That second job is what fixes the character set. `SKU_2.jpg` means "photo 2
+ * of SKU", so an underscore inside the code itself would make `A_2.jpg`
+ * ambiguous between product `A_2` and photo 2 of product `A`. Spaces and
+ * slashes go for the ordinary reason that they do not survive a file name.
+ */
+export const SKU_MAX_LENGTH = 60;
+export const SKU_PATTERN = /^[A-Za-z0-9-]+$/;
+export const SKU_MESSAGE =
+  "Use letters, numbers and hyphen (-) only — no spaces, underscores or slashes.";
+
+/**
+ * `legacy` is the SKU this product is ALREADY stored with.
+ *
+ * Products predate this rule, and a seller editing the price of a product
+ * whose code is `LED 9W/CW` must not be forced to rename it — the rename would
+ * break whatever they print on their own invoices. So the stored value is
+ * always accepted as-is, and the format is enforced on anything new.
+ *
+ * The cost is stated plainly in the UI: a code that does not match the format
+ * cannot be targeted by a photo file name until it is changed.
+ */
+function skuField(legacy?: string | null) {
+  const kept = (legacy ?? "").trim().toLowerCase();
+
+  return z
+    .string()
+    .trim()
+    .max(SKU_MAX_LENGTH)
+    .refine(
+      (value) =>
+        value === "" || SKU_PATTERN.test(value) || (kept !== "" && value.toLowerCase() === kept),
+      SKU_MESSAGE,
+    )
+    .optional()
+    .or(z.literal(""));
+}
+
+/**
  * Price in MAJOR units as typed by the seller.
  *
  * Accepted as a string and converted in the action, because the conversion to
@@ -109,7 +153,12 @@ export const productImageSchema = z.object({
 
 export const productImagesSchema = z.array(productImageSchema).max(12).default([]);
 
-export const productSchema = z.object({
+/**
+ * Everything about a product except the SKU, whose rule depends on what is
+ * already stored (see `skuField`). Spread rather than `.extend()`ed so there is
+ * exactly one definition of the shape and no chance of the two drifting.
+ */
+const productShape = {
   name: z.string().trim().min(2, "Enter a product name").max(200),
   slug: slugField,
   categoryId: z.string().cuid().optional().or(z.literal("")),
@@ -118,7 +167,6 @@ export const productSchema = z.object({
   description: optionalText(5000),
 
   brand: optionalText(100),
-  sku: optionalText(60),
   modelNumber: optionalText(60),
 
   price: priceField,
@@ -141,7 +189,21 @@ export const productSchema = z.object({
   metaDescription: optionalText(180),
 
   status: publishStatusSchema.default("DRAFT"),
-});
+};
+
+/**
+ * The product rules. Use this for anything NEW — the create form, the
+ * spreadsheet import — so the SKU format applies.
+ */
+export const productSchema = z.object({ ...productShape, sku: skuField() });
+
+/**
+ * The same rules, tolerating the SKU this product is already stored with
+ * (D49). Use when editing an existing product.
+ */
+export function productSchemaKeeping(legacySku: string | null | undefined) {
+  return z.object({ ...productShape, sku: skuField(legacySku) });
+}
 
 export type ProductInput = z.infer<typeof productSchema>;
 

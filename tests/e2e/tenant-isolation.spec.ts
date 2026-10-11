@@ -253,3 +253,329 @@ test.describe("private surfaces are not indexable", () => {
     });
   }
 });
+
+// ═════════════════════════ BULK UPLOAD (D49) ═════════════════════════════════
+
+/**
+ * Bulk upload is the largest write surface a seller has: one request can
+ * create or overwrite a thousand products and attach five hundred
+ * photographs. Every other isolation test in this file protects a READ; these
+ * protect the writes, which is where a leak is destructive rather than merely
+ * embarrassing.
+ *
+ * Two properties, stated as a seller would state them:
+ *
+ *   1. A spreadsheet of mine can never change a product of yours — even when
+ *      it names your product code exactly. SKUs are unique PER SELLER, so the
+ *      same code in two catalogues is two products, and "update the row whose
+ *      SKU matches" must only ever consult my own.
+ *
+ *   2. A photo of mine can never land on a product of yours. The upload flow
+ *      decides the product from a file name, so the question is whether that
+ *      matching can ever see across the boundary.
+ *
+ * Driven over HTTP through the real routes, like the rest of this suite. The
+ * spreadsheet goes in as CSV: the upload endpoint accepts it, and an inline
+ * CSV keeps the row under test readable in the diff where an .xlsx fixture
+ * would be opaque.
+ */
+
+const PASSWORD = "devpassword123";
+
+/** Unique per run, so repeated runs never collide. */
+const D49_STAMP = Date.now().toString(36);
+
+/** A product abc-electronics owns, from prisma/seed/catalog.ts. */
+const SELLER_A_SKU = "ABC-LP-40W";
+
+/** Row 1 of the Products sheet, exactly as the template writes it. */
+const IMPORT_HEADERS = [
+  "Product Name *",
+  "SKU / Product Code *",
+  "Main Category *",
+  "Sub Category *",
+  "Price (₹)",
+  "Max Price (₹)",
+  "Unit",
+  "Min Order Qty",
+  "Brand",
+  "Model Number",
+  "Short Description",
+  "Full Description",
+  "Specifications",
+  "Search Tags",
+].join(",");
+
+function importCsv(rows: Array<{ name: string; sku: string; price?: string }>): string {
+  const lines = rows.map((row) =>
+    [
+      row.name,
+      row.sku,
+      "Electronics & Electrical",
+      "LED Panels",
+      row.price ?? "999",
+      "",
+      "Piece",
+      "1",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ].join(","),
+  );
+
+  return [IMPORT_HEADERS, ...lines].join("\n");
+}
+
+/** Sign in, reporting whether a usable session actually resulted. */
+async function signInAs(request: APIRequestContext, email: string): Promise<boolean> {
+  const csrf = await (await request.get(apexUrl("/api/auth/csrf"))).json();
+
+  await request.post(apexUrl("/api/auth/callback/credentials"), {
+    maxRedirects: 0,
+    form: {
+      csrfToken: csrf.csrfToken,
+      email,
+      password: PASSWORD,
+      callbackUrl: apexUrl("/dashboard"),
+      redirect: "false",
+    },
+  });
+
+  // Auth.js answers 302 whether or not the credentials were accepted, so the
+  // status proves nothing on its own.
+  const dashboard = await request.get(apexUrl("/dashboard"), { maxRedirects: 0 });
+  return dashboard.status() === 200;
+}
+
+/**
+ * Everything below asserts over HTTP, with no second database connection.
+ *
+ * Partly for the reason the whole file gives — isolation is a property of the
+ * server's RESPONSE, and reading the database instead would assert something
+ * the seller never sees. Partly practical: the development database is PGlite,
+ * Postgres embedded in a single Node process (D24), and a test client
+ * connecting alongside the dev server's own pool drops connections with
+ * `ECONNRESET`. That surfaced as a failure in whichever assertion happened to
+ * run next, which is precisely the flake that stops a red suite meaning
+ * anything.
+ *
+ * "Seller A's product is untouched" is therefore asserted from seller A's own
+ * dashboard, which is also the stronger claim: not merely that the row is
+ * intact, but that A still sees their product exactly as it was.
+ */
+
+/** Seller A's seeded product, as their dashboard renders it. */
+const SELLER_A_PRODUCT = "LED Panel Light 40W";
+/** priceMinor 129000 in INR, formatted by `formatPrice`. */
+const SELLER_A_PRICE = "₹1,290";
+
+test.describe("bulk upload cannot cross the tenant boundary (D49)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  let sellerA: APIRequestContext;
+  let sellerB: APIRequestContext;
+  let signedIn = false;
+
+  /** The batch seller B stages, so seller A can then be refused it. */
+  let batchOfB = "";
+
+  test.beforeAll(async ({ playwright }) => {
+    sellerA = await playwright.request.newContext();
+    sellerB = await playwright.request.newContext();
+
+    const inA = await signInAs(sellerA, "owner@abc-electronics.test");
+    const inB = await signInAs(sellerB, "owner@sharma-steel.test");
+    signedIn = inA && inB;
+  });
+
+  test.beforeEach(() => {
+    test.skip(
+      !signedIn,
+      "could not sign in — the login rate limit is working; retry within the hour",
+    );
+  });
+
+  test.afterAll(async () => {
+    // Nothing to clean up, by design: this block never presses Import, so no
+    // product is ever written. What it does leave is one PENDING ImportJob row
+    // per run — the record that a preview was looked at and abandoned, which
+    // is exactly what that status is for. It shows in the seller's upload
+    // history as "Not imported" and costs one row.
+    await sellerA.dispose();
+    await sellerB.dispose();
+  });
+
+  test("an anonymous visitor reaches none of the bulk upload surfaces", async ({ request }) => {
+    for (const path of [
+      "/dashboard/products/import",
+      "/dashboard/products/import/photos",
+      "/dashboard/products/import/template",
+      "/dashboard/products/import/errors?batch=anything",
+    ]) {
+      const response = await request.get(apexUrl(path), { maxRedirects: 0 });
+      expect(response.status(), `${path} must not render for a stranger`).not.toBe(200);
+    }
+  });
+
+  test("the upload endpoint refuses an anonymous POST", async ({ request }) => {
+    const response = await request.post(apexUrl("/dashboard/products/import/upload"), {
+      maxRedirects: 0,
+      multipart: {
+        file: {
+          name: "anon.csv",
+          mimeType: "text/csv",
+          buffer: Buffer.from(importCsv([{ name: "Anon", sku: "ANON-1" }])),
+        },
+      },
+    });
+
+    // A redirect carrying a batch id would mean an unauthenticated request had
+    // just staged an import.
+    const location = response.headers()["location"] ?? "";
+    expect(location).not.toContain("batch=");
+  });
+
+  test("a spreadsheet naming ANOTHER seller's SKU is a NEW product, not an update", async () => {
+    // The central assertion of this feature's isolation. Seller B uploads a row
+    // whose product code belongs to seller A. Because SKUs are unique per
+    // seller, B must be told this is a NEW product — if the preview said
+    // "Update", B would be one button press away from overwriting A's listing.
+    const response = await sellerB.post(apexUrl("/dashboard/products/import/upload"), {
+      maxRedirects: 0,
+      multipart: {
+        file: {
+          name: `d49-${D49_STAMP}-collision.csv`,
+          mimeType: "text/csv",
+          buffer: Buffer.from(
+            importCsv([{ name: `Isolation Probe ${D49_STAMP}`, sku: SELLER_A_SKU, price: "1" }]),
+          ),
+        },
+      },
+    });
+
+    const location = response.headers()["location"] ?? "";
+    expect(location, "a staged batch should be produced").toContain("batch=");
+
+    batchOfB = new URL(location, apexUrl()).searchParams.get("batch") ?? "";
+    expect(batchOfB).toBeTruthy();
+
+    const preview = await sellerB.get(apexUrl(`/dashboard/products/import?batch=${batchOfB}`), {
+      maxRedirects: 0,
+    });
+    expect(preview.status()).toBe(200);
+
+    const html = await preview.text();
+
+    expect(html).toContain("New products");
+    expect(
+      html,
+      "another seller's SKU must never be reported as an existing product to update",
+    ).not.toContain("already exist with the same SKU");
+  });
+
+  test("seller A still sees their product exactly as it was", async () => {
+    // The preview said "New", so nothing should have reached A at all. Checked
+    // from A's own catalogue page: B's row carried the same SKU with the name
+    // "Isolation Probe" and a price of ₹1, so either appearing here would mean
+    // the write had crossed the boundary.
+    const response = await sellerA.get(apexUrl("/dashboard/products"), { maxRedirects: 0 });
+    expect(response.status()).toBe(200);
+
+    const html = await response.text();
+
+    expect(html, "seller A's product should still be listed").toContain(SELLER_A_PRODUCT);
+    expect(html, "its price must not have been overwritten").toContain(SELLER_A_PRICE);
+    expect(html, "seller B's row must not appear in seller A's catalogue").not.toContain(
+      "Isolation Probe",
+    );
+  });
+
+  test("one seller cannot download another seller's error report", async () => {
+    // A batch id is a bearer token for "import these rows". It is namespaced by
+    // seller, so A naming B's batch must resolve to nothing — not to B's rows,
+    // and not to a message confirming the batch exists.
+    expect(batchOfB, "the earlier test should have staged a batch").toBeTruthy();
+
+    const response = await sellerA.get(
+      apexUrl(`/dashboard/products/import/errors?batch=${batchOfB}`),
+      { maxRedirects: 0 },
+    );
+
+    expect(response.status()).toBe(404);
+    expect(await response.text()).not.toContain("Isolation Probe");
+  });
+
+  test("one seller cannot open another seller's staged preview", async () => {
+    const response = await sellerA.get(apexUrl(`/dashboard/products/import?batch=${batchOfB}`), {
+      maxRedirects: 0,
+    });
+
+    // The page renders — it is A's own import page — but as the upload step
+    // with an "expired" notice, never with B's rows on it.
+    expect(response.status()).toBe(200);
+    expect(await response.text(), "another seller's rows must not render").not.toContain(
+      "Isolation Probe",
+    );
+  });
+
+  test("the bulk photos page lists only the signed-in seller's products", async () => {
+    // Photo matching resolves a file name against this list, so a product that
+    // is not on it cannot be matched however the file is named. The list is
+    // built server-side from the tenant-scoped query; this asserts the
+    // rendered result rather than the query.
+    const response = await sellerB.get(apexUrl("/dashboard/products/import/photos"), {
+      maxRedirects: 0,
+    });
+    expect(response.status()).toBe(200);
+
+    const html = await response.text();
+
+    expect(html, "another seller's SKU must not appear in the product list").not.toContain(
+      SELLER_A_SKU,
+    );
+    expect(html).not.toContain("LED Panel Light 40W");
+  });
+
+  test("seller B's bulk photo session cannot reach seller A's products", async () => {
+    // The photo flow has one input that decides which product a file lands on:
+    // the SKU in its name. Seller B naming a file after seller A's SKU must
+    // match nothing, which is asserted here at the only point B can observe —
+    // the "Missing photos" filter on B's own catalogue, which is built from
+    // the same tenant-scoped query the matcher uses.
+    //
+    // `attachPhotoAction` is the second line: it re-reads the product through
+    // the tenant client and refuses an id that is not this seller's, and the
+    // inserted row carries `sellerId` for `db-tenant` to verify. Those two are
+    // covered by the unit tests in tests/unit/photo-names.test.ts, which can
+    // assert the matcher directly without an upload.
+    const response = await sellerB.get(apexUrl("/dashboard/products?filter=missing-photos"), {
+      maxRedirects: 0,
+    });
+    expect(response.status()).toBe(200);
+
+    const html = await response.text();
+    expect(html, "another seller's product must not be offered a photo").not.toContain(
+      SELLER_A_PRODUCT,
+    );
+    expect(html).not.toContain(SELLER_A_SKU);
+  });
+
+  test("the template is generated for a signed-in seller", async () => {
+    // Not an isolation property, but the file every other step depends on, and
+    // it is generated from the database on every request.
+    const response = await sellerB.get(apexUrl("/dashboard/products/import/template"), {
+      maxRedirects: 0,
+    });
+
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toContain("spreadsheetml");
+
+    const body = await response.body();
+    // Every .xlsx is a ZIP, so it starts "PK\x03\x04".
+    expect(body.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    expect(body.byteLength).toBeGreaterThan(10_000);
+  });
+});
